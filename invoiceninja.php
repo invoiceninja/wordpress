@@ -20,9 +20,27 @@ function_exists( 'add_action' ) or die( 'Unauthorized' );
 
 class InvoiceNinjaPlugin
 {
+   public $plugin;
+
+   function __construct()
+   {
+      $this->plugin = plugin_basename( __FILE__ );
+   }
+
    function register()
    {
       add_action( 'admin_menu', [ $this, 'add_admin_pages' ] );
+
+      add_filter( "plugin_action_links_$this->plugin", [ $this, 'settings_link' ] );
+   }
+
+   public function settings_link( $links )
+   {
+      $settings_link = '<a href="admin.php?page=invoiceninja">Settings</a>';
+
+      array_push( $links, $settings_link );
+
+      return $links;
    }
 
    public function add_admin_pages() 
@@ -39,7 +57,7 @@ class InvoiceNinjaPlugin
 
    public function admin_index()
    {
-
+      require_once plugin_dir_path( __FILE__ ) . 'templates/settings.php';
    }
 
    function activate()
