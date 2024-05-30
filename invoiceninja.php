@@ -18,6 +18,11 @@
 defined( 'ABSPATH' ) or die( 'Unauthorized' );
 function_exists( 'add_action' ) or die( 'Unauthorized' );
 
+if ( file_exists( dirname( __FILE__ ) . '/vender/autoload.php' ) )
+{
+   require_once dirname( __FILE__ ) . '/vender/autoload.php';
+}
+
 class InvoiceNinjaPlugin
 {
    public $plugin;

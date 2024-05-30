@@ -1,0 +1,19 @@
+{
+    "name": "invoiceninja/wordpress",
+    "description": "WordPress plugin for Invoice Ninja",
+    "type": "project",
+    "license": "AAL",
+    "authors": [
+        {
+            "name": "Inovice Ninja",
+            "email": "contact@invoiceninja.com"
+        }
+    ],
+    "minimum-stability": "dev",
+    "require": {},
+    "autoload": {
+        "psr-4": {
+            "Templates\\": "./templates"
+        }
+    }
+}
