@@ -9,7 +9,9 @@ namespace App\Controllers;
 class BaseController
 {
     public $plugin_basename;
+
     public $plugin_path;
+
     public $plugin_url;
 
     public function __construct()
