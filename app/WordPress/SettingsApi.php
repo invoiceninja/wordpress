@@ -26,6 +26,13 @@ class SettingsApi
 
         return $this;
     }
+    
+    public function add_subpages( array $pages )
+    {
+        $this->admin_subpages = array_merge( $this->admin_subpages, $pages );
+
+        return $this;
+    }
 
     public function with_subpage( string $title = null )
     {
@@ -40,7 +47,7 @@ class SettingsApi
             [
                 'parent_slug' => $admin_page['menu_slug'],
                 'page_title' => $admin_page['page_title'],
-                'menu_title' => $admin_page['menu_title'],
+                'menu_title' => $title ?? $admin_page['menu_title'],
                 'capability' => $admin_page['capability'],
                 'menu_slug' => $admin_page['menu_slug'],
                 'callback' => $admin_page['callback'],
@@ -70,7 +77,7 @@ class SettingsApi
         foreach ($this->admin_subpages as $page)
         {
             add_submenu_page(
-                $page['prent_slug'],
+                $page['parent_slug'],
                 $page['page_title'],
                 $page['menu_title'],
                 $page['capability'],
