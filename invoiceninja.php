@@ -22,10 +22,6 @@ if ( file_exists( dirname( __FILE__ ) . '/vendor/autoload.php' ) )
    require_once dirname( __FILE__ ) . '/vendor/autoload.php';
 }
 
-define( 'INVOICE_NINJA_PLUGIN', plugin_basename( __FILE__ ) );
-define( 'INVOICE_NINJA_PLUGIN_PATH', plugin_dir_path( __FILE__ ) );
-define( 'INVOICE_NINJA_PLUGIN_URL', plugin_dir_url( __FILE__ ) );
-
 /*
 function activate_invoiceninja_plugin()
 {

@@ -6,13 +6,13 @@
 
 namespace App\Controllers;
 
-class SettingsController
+class SettingsController extends BaseController
 {
     public function register()
     {
         add_action( 'admin_menu', [ $this, 'add_page' ] );
 
-        add_filter( 'plugin_action_links_' . INVOICE_NINJA_PLUGIN, [ $this, 'add_link' ] );  
+        add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'add_link' ] );  
     }    
 
     public function add_page() 
@@ -29,7 +29,7 @@ class SettingsController
 
     public function render_page()
     {
-       require_once INVOICE_NINJA_PLUGIN_PATH . 'templates/settings.php';
+       require_once $this->plugin_path . 'templates/settings.php';
     } 
  
     public function add_link( $links )
