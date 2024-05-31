@@ -4,15 +4,15 @@
  * @package Invoice Ninja
  */
 
-namespace App\Pages;
+namespace App\Controllers;
 
-class Settings
+class SettingsController
 {
     public function register()
     {
         add_action( 'admin_menu', [ $this, 'add_page' ] );
 
-        add_filter( 'plugin_action_links_' . PLUGIN_BASENAME, [ $this, 'add_link' ] );  
+        add_filter( 'plugin_action_links_' . INVOICE_NINJA_PLUGIN, [ $this, 'add_link' ] );  
     }    
 
     public function add_page() 
@@ -29,7 +29,7 @@ class Settings
 
     public function render_page()
     {
-       require_once PLUGIN_PATH . 'templates/settings.php';
+       require_once INVOICE_NINJA_PLUGIN_PATH . 'templates/settings.php';
     } 
  
     public function add_link( $links )
