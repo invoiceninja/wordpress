@@ -27,6 +27,11 @@ class Settings
        );
     }
 
+    public function render_page()
+    {
+       require_once PLUGIN_PATH . 'templates/settings.php';
+    } 
+ 
     public function add_link( $links )
     {
        $settings_link = '<a href="admin.php?page=invoiceninja">Settings</a>';
@@ -35,9 +40,4 @@ class Settings
  
        return $links;
     } 
- 
-    public function render_page()
-    {
-       require_once PLUGIN_PATH . 'templates/settings.php';
-    } 
-}
+ }
