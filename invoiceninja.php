@@ -38,5 +38,5 @@ register_deactivation_hook( __FILE__, 'deactivate_invoiceninja_plugin' );
 
 if ( class_exists( 'App\\Init') )
 {
-   App\Init::register_services();
+   App\Init::start();
 }

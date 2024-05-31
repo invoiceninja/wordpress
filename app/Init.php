@@ -8,28 +8,23 @@ namespace App;
 
 final class Init
 {
-    public static function get_services()
+    public static function get_controllers()
     {
         return [
             Controllers\SettingsController::class
         ];
     }
 
-    public static function register_services() 
+    public static function start() 
     {
-        foreach ( self::get_services() as $class )
+        foreach ( self::get_controllers() as $class )
         {
-            $service = self::instantiate( $class );
+            $controller = new $class();
             
-            if ( method_exists( $service, 'register' ) )
+            if ( method_exists( $controller, 'register' ) )
             {
-                $service->register();
+                $controller->register();
             }
         }
-    }
-
-    private static function instantiate( $class )
-    {
-        return new $class();        
     }
 }
