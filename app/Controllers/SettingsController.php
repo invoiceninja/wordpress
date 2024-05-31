@@ -25,7 +25,10 @@ class SettingsController extends BaseController
             'menu_title' => 'Invoice Ninja',
             'capability' => 'manage_options',
             'menu_slug' => 'invoiceninja',
-            'callback' => function() { echo '<h1>Plugin</h1>'; },
+            'callback' => function() 
+            {
+               require_once $this->plugin_path . 'templates/settings.php';               
+            },
             'icon_url' => 'dashicons-money-alt',
             'position' => 110,
          ],
