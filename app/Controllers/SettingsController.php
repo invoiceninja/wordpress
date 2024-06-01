@@ -120,7 +120,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_url' ) );
-               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_api_url"/>'; 
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url"/>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
@@ -135,7 +135,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
-               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_api_token"/>'; 
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"/>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
