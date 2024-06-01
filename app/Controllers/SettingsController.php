@@ -120,7 +120,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_url' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url"/>'; 
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url" placeholder="https://invoice.example.com"/>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
@@ -135,13 +135,15 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"/>'; 
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"/>';
+               echo '<p class="description">API tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_api_token',
                //'class' => '',
+               'help' => 'test',
             ]
          ],
       ];
