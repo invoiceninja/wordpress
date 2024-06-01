@@ -127,7 +127,6 @@ class SettingsApi
             register_setting( 
                 $setting['option_group'], 
                 $setting['option_name'], 
-                ( isset( $setting['callback'] ) ? $setting['callback'] : '' ),
             );
         }
 

@@ -84,9 +84,8 @@ class SettingsController extends BaseController
    {
       $args = [
          [
-            'option_group' => 'invoiceninja_options_group',
+            'option_group' => 'invoiceninja',
             'option_name' => 'invoiceninja_api_url',
-            'callback' => function() { echo "set settings"; },
          ],
       ];
 
@@ -116,7 +115,7 @@ class SettingsController extends BaseController
             'title' => 'API URL',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option('invoiceninja_api_url' ) );
+               $value = esc_attr( get_option( 'invoiceninja_api_url' ) );
                echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_api_url" placeholder="invoices.domain.com"/>'; 
             },
             'page' => 'invoiceninja',

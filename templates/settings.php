@@ -4,7 +4,7 @@
 
     <form action="options.php" method="post">
         <?php
-            settings_fields( 'invoiceninja_options_group' );
+            settings_fields( 'invoiceninja' );
             do_settings_sections( 'invoiceninja' );
             submit_button();
         ?>    
