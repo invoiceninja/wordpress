@@ -113,11 +113,11 @@ class SettingsController extends BaseController
       $args = [
          [
             'id' => 'invoiceninja_api_url',
-            'title' => 'Settings',
+            'title' => 'API URL',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option('api_url' ) );
-               echo '<inupt type="text" class="regular-text" value="' . $value . '" name="api_url"/>'; 
+               $value = esc_attr( get_option('invoiceninja_api_url' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_api_url" placeholder="invoices.domain.com"/>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
