@@ -87,6 +87,10 @@ class SettingsController extends BaseController
             'option_group' => 'invoiceninja',
             'option_name' => 'invoiceninja_api_url',
          ],
+         [
+            'option_group' => 'invoiceninja',
+            'option_name' => 'invoiceninja_api_token',
+         ],
       ];
 
       $this->settings->setSettings( $args );
@@ -98,10 +102,10 @@ class SettingsController extends BaseController
          [
             'id' => 'invoiceninja_admin_index',
             'title' => 'Settings',
-            'callback' => function() { echo "set sections"; },
+            'callback' => function() { echo "API Configuration"; },
             'page' => 'invoiceninja',
             
-         ]
+         ],
       ];
 
       $this->settings->setSections( $args );
@@ -112,11 +116,11 @@ class SettingsController extends BaseController
       $args = [
          [
             'id' => 'invoiceninja_api_url',
-            'title' => 'API URL',
+            'title' => 'URL',
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_url' ) );
-               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_api_url" placeholder="invoices.domain.com"/>'; 
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_api_url"/>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
@@ -124,7 +128,22 @@ class SettingsController extends BaseController
                'label_for' => 'invoiceninja_api_url',
                //'class' => '',
             ]
-         ]
+         ],
+         [
+            'id' => 'invoiceninja_api_token',
+            'title' => 'Token',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_api_token"/>'; 
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_api_token',
+               //'class' => '',
+            ]
+         ],
       ];
 
       $this->settings->setFields( $args );
