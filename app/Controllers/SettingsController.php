@@ -72,5 +72,17 @@ class SettingsController extends BaseController
       array_push( $links, $settings_link );
  
       return $links;
-   } 
+   }
+
+   public function set_settings()
+   {
+      $args = [
+         [
+            'option_group' => 'invoiceninja_option_group',
+            'option_name' => 'api_url',            
+         ],
+      ];
+
+      $this->settings->set_settings( $ars );
+   }
 }

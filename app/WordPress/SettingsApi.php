@@ -93,6 +93,27 @@ class SettingsApi
         }
     }
 
+    public function set_settings( array $settings )
+    {
+        $this->settings = $settings;
+
+        return $this;
+    }
+
+    public function set_sections( array $sections )
+    {
+        $this->sections = $sections;
+
+        return $this;
+    }
+
+    public function set_fields( array $fields )
+    {
+        $this->fields = $fields;
+
+        return $this;
+    }
+
     public function register_custom_fields()
     {
         foreach ( $this->settings as $setting)
