@@ -27,6 +27,7 @@ class SettingsApi
 
         if ( ! empty( $this->settings ) )
         {
+            
             add_action( 'admin_init', [ $this, 'registerCustomFields' ] );
         }
     }
@@ -123,7 +124,7 @@ class SettingsApi
     {
         foreach ( $this->settings as $setting)
         {
-            register_settings( 
+            register_setting( 
                 $setting['option_group'], 
                 $setting['option_name'], 
                 ( isset( $setting['callback'] ) ? $setting['callback'] : '' ),

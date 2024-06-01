@@ -34,11 +34,13 @@ class SettingsController extends BaseController
          ],
       ];
 
-      $this->settings->addPages( $pages )->register();
+      $this->settings->addPages( $pages );
 
       $this->setSections();
-      $this->setSections();
+      $this->setSettings();
       $this->setFields();
+
+      $this->settings->register();
 
       /*
       $subpages = [
@@ -82,7 +84,7 @@ class SettingsController extends BaseController
    {
       $args = [
          [
-            'option_group' => 'invoiceninja_option_group',
+            'option_group' => 'invoiceninja_options_group',
             'option_name' => 'invoiceninja_api_url',
             'callback' => function() { echo "set settings"; },
          ],
@@ -96,7 +98,7 @@ class SettingsController extends BaseController
       $args = [
          [
             'id' => 'invoiceninja_admin_index',
-            'titile' => 'Settings',
+            'title' => 'Settings',
             'callback' => function() { echo "set sections"; },
             'page' => 'invoiceninja',
             
@@ -110,8 +112,8 @@ class SettingsController extends BaseController
    {
       $args = [
          [
-            'id' => 'invoiceninja_admin_index',
-            'titile' => 'Settings',
+            'id' => 'invoiceninja_api_url',
+            'title' => 'Settings',
             'callback' => function() 
             { 
                $value = esc_attr( get_option('api_url' ) );
@@ -126,6 +128,6 @@ class SettingsController extends BaseController
          ]
       ];
 
-      $this->settings->setSections( $args );
+      $this->settings->setFields( $args );
    }
 }
