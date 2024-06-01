@@ -19,7 +19,7 @@ class SettingsController extends BaseController
 
    public function register()
    {
-      $pages = [
+     $pages = [
          [
             'page_title' => 'Inovice Ninja',
             'menu_title' => 'Invoice Ninja',

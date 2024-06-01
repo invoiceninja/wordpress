@@ -11,7 +11,8 @@ final class Init
     public static function getControllers()
     {
         return [
-            Controllers\SettingsController::class
+            Controllers\SettingsController::class,
+            Controllers\ProductController::class,
         ];
     }
 
