@@ -6,7 +6,7 @@
 
 namespace App\WordPress;
 
-class PostsApi
+class PostApi
 {
     public $post_types = [];
 

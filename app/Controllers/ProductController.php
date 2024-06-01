@@ -6,7 +6,7 @@
 
 namespace App\Controllers;
 
-use \App\WordPress\PostsApi;
+use \App\WordPress\PostApi;
 
 class ProductController extends BaseController
 {
@@ -14,7 +14,7 @@ class ProductController extends BaseController
     {
         parent::__construct();
 
-        $this->posts = new PostsApi();
+        $this->posts = new PostApi();
     }
 
     public function register()
