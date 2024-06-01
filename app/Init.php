@@ -8,7 +8,7 @@ namespace App;
 
 final class Init
 {
-    public static function get_controllers()
+    public static function getControllers()
     {
         return [
             Controllers\SettingsController::class
@@ -17,7 +17,7 @@ final class Init
 
     public static function start() 
     {
-        foreach ( self::get_controllers() as $class )
+        foreach ( self::getControllers() as $class )
         {
             $controller = new $class();
             

@@ -22,25 +22,25 @@ class SettingsApi
     {
         if ( ! empty( $this->admin_pages) ) 
         {
-            add_action( 'admin_menu', [ $this, 'add_admin_menu' ] );
+            add_action( 'admin_menu', [ $this, 'addAdminMenu' ] );
         }
     }
 
-    public function add_pages( array $pages )
+    public function addPages( array $pages )
     {
         $this->admin_pages = $pages;
 
         return $this;
     }
     
-    public function add_subpages( array $pages )
+    public function addSubpages( array $pages )
     {
         $this->admin_subpages = array_merge( $this->admin_subpages, $pages );
 
         return $this;
     }
 
-    public function with_subpage( string $title = null )
+    public function withSubpage( string $title = null )
     {
         if ( empty( $this->admin_pages ) ) 
         {
@@ -65,7 +65,7 @@ class SettingsApi
         return $this;
     }
 
-    public function add_admin_menu()
+    public function addAdminMenu()
     {
         foreach ($this->admin_pages as $page)
         {
@@ -93,28 +93,28 @@ class SettingsApi
         }
     }
 
-    public function set_settings( array $settings )
+    public function setSettings( array $settings )
     {
         $this->settings = $settings;
 
         return $this;
     }
 
-    public function set_sections( array $sections )
+    public function setSections( array $sections )
     {
         $this->sections = $sections;
 
         return $this;
     }
 
-    public function set_fields( array $fields )
+    public function setFields( array $fields )
     {
         $this->fields = $fields;
 
         return $this;
     }
 
-    public function register_custom_fields()
+    public function registerCustomFields()
     {
         foreach ( $this->settings as $setting)
         {

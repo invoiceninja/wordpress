@@ -34,7 +34,7 @@ class SettingsController extends BaseController
          ],
       ];
 
-      $this->settings->add_pages( $pages )->register();
+      $this->settings->addPages( $pages )->register();
 
       /*
       $subpages = [
@@ -51,21 +51,21 @@ class SettingsController extends BaseController
       ];
 
       $this->settings
-         ->add_pages( $pages )
-         ->with_subpage( 'Settings' )
-         ->add_subpages( $subpages )
+         ->addPages( $pages )
+         ->withSubpage( 'Settings' )
+         ->addSubpages( $subpages )
          ->register();
       */
 
-      add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'add_link' ] );  
+      add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'addLink' ] );  
    }    
 
-   public function render_page()
+   public function renderPage()
    {
       require_once $this->plugin_path . 'templates/settings.php';
    } 
  
-   public function add_link( $links )
+   public function addLink( $links )
    {
       $settings_link = '<a href="admin.php?page=invoiceninja">Settings</a>';
  
@@ -74,7 +74,7 @@ class SettingsController extends BaseController
       return $links;
    }
 
-   public function set_settings()
+   public function setSettings()
    {
       $args = [
          [
@@ -83,6 +83,6 @@ class SettingsController extends BaseController
          ],
       ];
 
-      $this->settings->set_settings( $ars );
+      $this->settings->setSettings( $args );
    }
 }
