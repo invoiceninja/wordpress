@@ -27,7 +27,7 @@ class SettingsController extends BaseController
             'menu_slug' => 'invoiceninja',
             'callback' => function() 
             {
-               require_once $this->plugin_path . 'templates/settings.php';               
+               require_once "$this->plugin_path/templates/settings.php";
             },
             'icon_url' => 'dashicons-money-alt',
             'position' => 110,
@@ -35,6 +35,10 @@ class SettingsController extends BaseController
       ];
 
       $this->settings->addPages( $pages )->register();
+
+      $this->setSections();
+      $this->setSections();
+      $this->setFields();
 
       /*
       $subpages = [
@@ -79,10 +83,49 @@ class SettingsController extends BaseController
       $args = [
          [
             'option_group' => 'invoiceninja_option_group',
-            'option_name' => 'api_url',            
+            'option_name' => 'invoiceninja_api_url',
+            'callback' => function() { echo "set settings"; },
          ],
       ];
 
       $this->settings->setSettings( $args );
+   }
+
+   public function setSections()
+   {
+      $args = [
+         [
+            'id' => 'invoiceninja_admin_index',
+            'titile' => 'Settings',
+            'callback' => function() { echo "set sections"; },
+            'page' => 'invoiceninja',
+            
+         ]
+      ];
+
+      $this->settings->setSections( $args );
+   }   
+
+   public function setFields()
+   {
+      $args = [
+         [
+            'id' => 'invoiceninja_admin_index',
+            'titile' => 'Settings',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option('api_url' ) );
+               echo '<inupt type="text" class="regular-text" value="' . $value . '" name="api_url"/>'; 
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_api_url',
+               //'class' => '',
+            ]
+         ]
+      ];
+
+      $this->settings->setSections( $args );
    }
 }
