@@ -103,8 +103,8 @@ class SettingsController extends BaseController
             'id' => 'invoiceninja_admin_index',
             'title' => 'Settings',
             'callback' => function() { 
-               $profile = get_option( 'invoiceninja_profile' );
-               echo "Storefront Configuration: $profile"; 
+               $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+               echo "Storefront Configuration: " . $profile->data->settings->name;  
             },
             'page' => 'invoiceninja',
             
@@ -124,7 +124,7 @@ class SettingsController extends BaseController
             { 
                $value = esc_attr( get_option( 'invoiceninja_company_key' ) );
                echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key" required/>';
-               echo '<p class="description">Enable the Storefront feature on Settings > Client Portal to view the company key</p>'; 
+               echo '<p class="description">Enable the Storefront option on Settings > Client Portal to generate a company key</p>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
