@@ -162,7 +162,7 @@ class ProductController extends BaseController
                     $page .= '<div class="wp-block-columns">';
                 }
     
-                $page .= '<div class="wp-block-column">
+                $page .= '<div class="wp-block-column" style="margin-left:16px;margin-right:16px;">
                             <a href="' . get_permalink() . '" style="text-decoration:none" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">
                             <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
                             <div style="height: 8px"></div>
@@ -171,7 +171,7 @@ class ProductController extends BaseController
                 if ( has_post_thumbnail( $post_id ) ) {
                     $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );
                     $page .= '<figure class="wp-block-post-featured-image">
-                                <img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" style="width:300px;height:300px;object-fit:cover;" decoding="async"/>
+                                <img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" style="width:100%;height:400px;display:block;object-fit:cover;" decoding="async"/>
                               </figure>';
                 }
 
