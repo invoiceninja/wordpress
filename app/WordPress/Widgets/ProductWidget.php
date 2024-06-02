@@ -71,6 +71,12 @@ class ProductWidget extends WP_Widget
             echo $before_title . $title . $after_title;
         }
 
+        echo '<ul>';
+
+        echo '<li><a href="">First Product</a></li>';
+        echo '<li><a href="">Second Product</a></li>';
+
+        echo '</ul>';
         echo '</div>';
     
         // WordPress core after_widget hook (always include )
