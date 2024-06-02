@@ -37,6 +37,12 @@ class ProductController extends BaseController
 
     public static function loadProducts()
     {
+        // Disable email notifications for new posts
+        function disable_post_email_notifications() {
+            remove_action( 'publish_post', 'wp_notify_postauthor' );
+        }
+        add_action( 'init', 'disable_post_email_notifications' );
+
         $args = [
             'post_type' => 'invoiceninja_product',
             'posts_per_page' => -1,
@@ -76,8 +82,7 @@ class ProductController extends BaseController
                 ],
             );
 
-            $post_id = wp_insert_post($post_data);
- 
+            $post_id = wp_insert_post($post_data); 
 
             if ( $product->product_image && $post_id && ! is_wp_error( $post_id ) ) 
             {
@@ -148,7 +153,13 @@ class ProductController extends BaseController
             } else {
                 $post_id = wp_insert_post($post_data);
             }                                    
-            */
-        }        
+            */            
+        }     
+        
+        // Re-enable email notifications after post insertion
+        function enable_post_email_notifications() {
+            add_action( 'publish_post', 'wp_notify_postauthor' );
+        }
+        add_action( 'wp_insert_post', 'enable_post_email_notifications' );        
     }
 }
