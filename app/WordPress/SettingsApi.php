@@ -6,6 +6,8 @@
 
 namespace App\WordPress;
 
+use \App\InvoiceNinja\ProfileApi;
+
 class SettingsApi
 {
     public $admin_pages = [];
@@ -152,6 +154,12 @@ class SettingsApi
             );
         }
 
-        
+        /*
+        $profile = ProfileApi::load();
+
+        echo 'Response: ';
+        echo $profile;
+        exit;    
+        */
     }
 }
