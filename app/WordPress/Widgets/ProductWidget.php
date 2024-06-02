@@ -56,7 +56,7 @@ class ProductWidget extends WP_Widget
     public function widget( $args, $instance ) 
     {
         $query_args = array(
-            'post_type' => 'product',
+            'post_type' => 'invoiceninja_product',
             'posts_per_page' => 5,
             'order_by' => 'title', // date, menu_order
             'order' => 'ASC',

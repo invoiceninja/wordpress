@@ -39,7 +39,29 @@ class PostApi
                     'has_archive' => true,
                     'menu_icon' => 'dashicons-products',
                     'show_in_rest' => true,
-                ]
+                    'rewrite' => array( 'slug' => 'product' ),
+                    'capabilities' => [
+                        'create_posts' => 'do_not_allow', 
+                    ],
+                    /*
+                    'capabilities' => [
+                        'edit_post' => 'edit_post',
+                        'read_post' => 'read_post',
+                        'delete_post' => 'delete_post',
+                        'edit_posts' => 'edit_posts',
+                        'edit_others_posts' => 'edit_others_posts',
+                        'publish_posts' => 'publish_posts',
+                        'read_private_posts' => 'read_private_posts',
+                        'delete_posts' => 'delete_posts',
+                        'delete_private_posts' => 'delete_private_posts',
+                        'delete_published_posts' => 'delete_published_posts',
+                        'delete_others_posts' => 'delete_others_posts',
+                        'edit_private_posts' => 'edit_private_posts',
+                        'edit_published_posts' => 'edit_published_posts',
+                        'create_posts' => 'create_posts', 
+                    ],
+                    */
+                ],
             );       
         }
 

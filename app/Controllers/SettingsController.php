@@ -125,7 +125,7 @@ class SettingsController extends BaseController
                   }
 
                   $args = [
-                     'post_type'  => 'product',
+                     'post_type'  => 'invoiceninja_product',
                      'posts_per_page' => -1,
                   ];
 
