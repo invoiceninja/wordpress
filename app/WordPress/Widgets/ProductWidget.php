@@ -11,7 +11,7 @@ use WP_Widget;
 // https://www.wpexplorer.com/create-widget-plugin-wordpress/
 class ProductWidget extends WP_Widget
 {
-    public $widget_ID;
+    public $widget_Id;
 
     public $widget_name;
 
@@ -21,25 +21,25 @@ class ProductWidget extends WP_Widget
 
     public function __construct()
     {        
-        $this->widget_ID = 'invoiceninja';
+        $this->widget_Id = 'invoiceninja';
         $this->widget_name = 'Invoice Ninja';
 
         $this->widget_options = [
             'classname' => 'invoiceninja',
-            'description' => '',
+            'description' => 'Display products',
             'customize_selective_refresh' => true,
         ];
 
         $this->control_options = [
             'width' => 400,
-            'height' => 350,
+            //'height' => 350,
         ];
     }
 
     public function register()
     {
         parent::__construct(
-            $this->widget_ID,
+            $this->widget_Id,
             $this->widget_name,
             $this->widget_options,
             $this->control_options,
@@ -97,12 +97,12 @@ class ProductWidget extends WP_Widget
         <?php
     }
 
-    public function update( $new_intance, $old_instance ) 
+    public function update( $new_instance, $old_instance ) 
     {
         $instance = $old_instance;
 
         $instance['title'] = isset( $new_instance['title'] ) ? wp_strip_all_tags( $new_instance['title'] ) : '';
-
+        
         return $instance;
     }
 }
