@@ -65,7 +65,14 @@ class ProductController extends BaseController
                 'post_type' => 'invoiceninja_product',
                 'meta_input' => [
                     'id' => $product->id,
-                    'price' => $product->price,                    
+                    'price' => $product->price,
+                    'quantity' => $product->quantity,
+                    'max_quantity' => $product->max_quantity,
+                    'in_stock_quantity' => $product->in_stock_quantity,
+                    'custom_value1' => $product->custom_value1,
+                    'custom_value2' => $product->custom_value2,
+                    'custom_value3' => $product->custom_value3,
+                    'custom_value4' => $product->custom_value4,
                 ],
             );
 
