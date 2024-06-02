@@ -99,9 +99,9 @@ class ProductWidget extends WP_Widget
     public function form( $instance ) 
     {
         // Set widget defaults
-        $defaults = array(
+        $defaults = [
             'title' => 'Products',
-        );
+        ];
 
         // Parse current settings with defaults
         extract( wp_parse_args( ( array ) $instance, $defaults ) ); ?>
