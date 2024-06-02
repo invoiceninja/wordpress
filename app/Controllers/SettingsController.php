@@ -107,15 +107,19 @@ class SettingsController extends BaseController
                if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
                   $settings = $profile->data->settings;
 
+                  echo '<div class="card" style="min-height: 120px; padding-top: 20px; margin-bottom: 16px; ">';
+
                   if ($settings->company_logo) {
                      echo '<img src="' . $settings->company_logo . '" height="80" style="float: left;padding-right: 16px;"/>';
                   }
 
-                  echo '<h1>' . $settings->name . '</h1>';
+                  echo '<h1 class="title">' . $settings->name . '</h1>';
                   
                   if ( $settings->website ) {
                      echo '<a href="' . $settings->website . '" target="_blank">' . $settings->website . '</a>';
                   }
+
+                  echo '</div>';
                }
             },
             'page' => 'invoiceninja',
@@ -135,7 +139,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_company_key' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key" required/>';
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key"/>';
                echo '<p class="description">Enable the Storefront option on Settings > Client Portal to generate a company key</p>'; 
             },
             'page' => 'invoiceninja',
