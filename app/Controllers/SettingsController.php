@@ -109,23 +109,36 @@ class SettingsController extends BaseController
             'id' => 'invoiceninja_admin_index',
             'title' => 'Settings',
             'callback' => function() {                
-               echo '<p>Storefront Configuration</p>';
                if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
                   $settings = $profile->data->settings;
 
-                  echo '<div class="card" style="min-height: 120px; padding-top: 20px; margin-bottom: 16px; ">';
+                  echo '<div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 16px; padding-bottom: 20px; ">';
 
                   if ($settings->company_logo) {
                      echo '<img src="' . $settings->company_logo . '" height="80" style="float: left;padding-right: 16px;"/>';
                   }
 
-                  echo '<h1 class="title">' . $settings->name . '</h1>';
+                  echo '<h1 class="title" style="padding-top: 0px">' . $settings->name . '</h1>';
                   
                   if ( $settings->website ) {
                      echo '<a href="' . $settings->website . '" target="_blank">' . $settings->website . '</a>';
                   }
 
-                  echo '</div>';
+                  $args = [
+                     'post_type'  => 'product',
+                     'posts_per_page' => -1,
+                  ];
+
+                  $query = new \WP_Query($args);
+
+                  $total_count = $query->found_posts;
+
+                  if ($total_count > 0) {
+                     $product_label = $total_count == 1 ? $settings->product : $settings->products;
+                     echo '<div style="padding-top: 4px">' . $total_count . ' ' . $product_label . '</div>';
+                  }
+
+                  echo '</div>';                                    
                }
             },
             'page' => 'invoiceninja',
