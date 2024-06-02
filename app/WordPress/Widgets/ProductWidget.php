@@ -8,6 +8,7 @@ namespace App\WordPress\Widgets;
 
 use WP_Widget;
 
+// https://www.wpexplorer.com/create-widget-plugin-wordpress/
 class ProductWidget extends WP_Widget
 {
     public $widget_ID;
@@ -19,7 +20,7 @@ class ProductWidget extends WP_Widget
     public $control_options = [];
 
     public function __construct()
-    {
+    {        
         $this->widget_ID = 'invoiceninja';
         $this->widget_name = 'Invoice Ninja';
 
@@ -81,11 +82,7 @@ class ProductWidget extends WP_Widget
     {
         // Set widget defaults
         $defaults = array(
-            'title'    => '',
-            'text'     => '',
-            'textarea' => '',
-            'checkbox' => '',
-            'select'   => '',
+            'title' => 'Products',
         );
 
         // Parse current settings with defaults
