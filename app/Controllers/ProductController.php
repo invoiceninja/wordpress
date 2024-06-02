@@ -39,8 +39,8 @@ class ProductController extends BaseController
 
         $products = json_decode( $products );
 
-        foreach ($products->data as $product) {
- 
+        foreach ($products->data as $product) 
+        { 
             $post_data = array(
                 'post_title' => $product->product_key,
                 'post_content' => $product->notes,
