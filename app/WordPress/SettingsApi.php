@@ -7,6 +7,7 @@
 namespace App\WordPress;
 
 use \App\InvoiceNinja\ProfileApi;
+use \App\InvoiceNinja\ProductApi;
 
 class SettingsApi
 {
@@ -155,10 +156,11 @@ class SettingsApi
         }
 
         /*
-        $profile = ProfileApi::load();
+        //$profile = ProfileApi::load();
+        $products = ProductApi::load();
 
         echo 'Response: ';
-        echo $profile;
+        echo $products;
         exit;    
         */
     }
