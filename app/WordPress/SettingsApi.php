@@ -151,5 +151,7 @@ class SettingsApi
                 ( isset( $field['args'] ) ? $field['args'] : '' ),
             );
         }
+
+        
     }
 }

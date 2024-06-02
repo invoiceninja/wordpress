@@ -120,7 +120,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_company_key' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key"/>';
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key" required/>';
                echo '<p class="description">Enable the Storefront feature on Settings > Client Portal to view the company key</p>'; 
             },
             'page' => 'invoiceninja',
