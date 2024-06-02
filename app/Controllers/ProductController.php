@@ -138,7 +138,7 @@ class ProductController extends BaseController
         }     
 
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
-        $page = '';
+        $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
 
         $count = 0;
         $args = [
@@ -161,23 +161,15 @@ class ProductController extends BaseController
                             <a href="' . get_permalink() . '">
                                 <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
                                 <div style="height: 8px"></div>
-                                <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>';
-                         
-                $attachments = get_posts( [
-                    'post_type'      => 'attachment',
-                    'posts_per_page' => 1,
-                    'post_status'    => 'inherit',
-                    'post_parent'    => $post_id,
-                    'orderby'        => 'menu_order',
-                    'order'          => 'ASC'
-                ] );
-
-                if ( $attachments ) {
-                    $first_image_url = wp_get_attachment_image_src( $attachments[0]->ID, 'full' )[0];
-                    $page .=  '<img src="' . esc_url( $first_image_url ) . '">';
+                                <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5></a>';
+                    
+                                
+                if ( has_post_thumbnail( $post_id ) ) {
+                    $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );
+                    $page .= '<figure class="wp-block-post-featured-image"><a href="' . get_permalink() . '" target="_self"><img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" style="width:300px;height:300px;object-fit:cover;" decoding="async"/></a></figure>';
                 }
 
-                $page .= '</a></div>';
+                $page .= '</div>';
     
                 if ($count % 3 == 2) {
                     $page .= '</div>';
