@@ -157,19 +157,20 @@ class ProductController extends BaseController
                     $page .= '<div class="wp-block-columns">';
                 }
     
-                $page .= '<div class="wp-block-column card">
-                            <a href="' . get_permalink() . '">
-                                <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
-                                <div style="height: 8px"></div>
-                                <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5></a>';
-                    
-                                
+                $page .= '<div class="wp-block-column">
+                            <a href="' . get_permalink() . '" class="underline-on-hover">
+                            <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
+                            <div style="height: 8px"></div>
+                            <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>';
+                                                    
                 if ( has_post_thumbnail( $post_id ) ) {
                     $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );
-                    $page .= '<figure class="wp-block-post-featured-image"><a href="' . get_permalink() . '" target="_self"><img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" style="width:300px;height:300px;object-fit:cover;" decoding="async"/></a></figure>';
+                    $page .= '<figure class="wp-block-post-featured-image">
+                                <img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" style="width:300px;height:300px;object-fit:cover;" decoding="async"/>
+                              </figure>';
                 }
 
-                $page .= '</div>';
+                $page .= '</a></div>';
     
                 if ($count % 3 == 2) {
                     $page .= '</div>';
