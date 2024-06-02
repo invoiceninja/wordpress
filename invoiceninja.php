@@ -22,19 +22,17 @@ if ( file_exists( dirname( __FILE__ ) . '/vendor/autoload.php' ) )
    require_once dirname( __FILE__ ) . '/vendor/autoload.php';
 }
 
-/*
 function activate_invoiceninja_plugin()
 {
-   Lib\Base\Activate::activate();
+   flush_rewrite_rules();
 }
 register_activation_hook( __FILE__, 'activate_invoiceninja_plugin' );
 
 function deactivate_invoiceninja_plugin()
 {
-   Lib\Base\Deactivate::deactivate();
+   flush_rewrite_rules();
 }
 register_deactivation_hook( __FILE__, 'deactivate_invoiceninja_plugin' );
-*/
 
 if ( class_exists( 'App\\Init') )
 {

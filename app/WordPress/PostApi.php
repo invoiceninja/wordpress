@@ -42,5 +42,7 @@ class PostApi
                 ]
             );       
         }
+
+        flush_rewrite_rules();
     }
 }

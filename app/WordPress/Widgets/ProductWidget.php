@@ -58,6 +58,8 @@ class ProductWidget extends WP_Widget
         $query_args = array(
             'post_type' => 'product',
             'posts_per_page' => 5,
+            'order_by' => 'title',
+            'order' => 'ASC',
         );
         $query = new \WP_Query($query_args);
 
