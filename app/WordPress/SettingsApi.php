@@ -33,6 +33,19 @@ class SettingsApi
             
             add_action( 'admin_init', [ $this, 'registerCustomFields' ] );
         }
+
+        add_action('updated_option', [ $this, 'optionUpdated' ], 10, 3);
+    }
+
+    function optionUpdated($option_name, $old_value, $new_value) 
+    {
+        if ($option_name === 'invoiceninja_company_key' || $option_name === 'invoiceninja_api_url') 
+        {
+            if ($old_value !== $new_value) 
+            {
+                update_option('invoiceninja_profile', ProfileApi::load());
+            }
+        }
     }
 
     public function addPages( array $pages )
@@ -154,14 +167,5 @@ class SettingsApi
                 ( isset( $field['args'] ) ? $field['args'] : '' ),
             );
         }
-
-        /*
-        //$profile = ProfileApi::load();
-        $products = ProductApi::load();
-
-        echo 'Response: ';
-        echo $products;
-        exit;    
-        */
     }
 }

@@ -31,7 +31,7 @@ class BaseApi
         $context = stream_context_create( $opts );
         $url = 'https://staging.invoicing.co/api/v1/' . $route;
 
-        $response = file_get_contents( $url, false, $context );
+        $response = @file_get_contents( $url, false, $context );
 
         return $response;
     }

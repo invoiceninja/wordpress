@@ -102,7 +102,10 @@ class SettingsController extends BaseController
          [
             'id' => 'invoiceninja_admin_index',
             'title' => 'Settings',
-            'callback' => function() { echo "Storefront Configuration"; },
+            'callback' => function() { 
+               $profile = get_option( 'invoiceninja_profile' );
+               echo "Storefront Configuration: $profile"; 
+            },
             'page' => 'invoiceninja',
             
          ],
