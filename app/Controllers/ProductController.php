@@ -82,12 +82,15 @@ class ProductController extends BaseController
                 $upload = wp_upload_bits( $filename, null, $image_data );
 
                 if ( ! $upload['error'] ) {
-                    $attachment_id = wp_insert_attachment( array(
-                        'post_mime_type' => $post_mime_type,
-                        'post_title' => sanitize_file_name( $filename ),
-                        'post_content' => '',
-                        'post_status' => 'inherit'
-                    ), $upload['file'] );
+                    $attachment_id = wp_insert_attachment( 
+                        [
+                            'post_mime_type' => $post_mime_type,
+                            'post_title' => sanitize_file_name( $filename ),
+                            'post_content' => $product->product_key,
+                            'post_status' => 'inherit'
+                        ], 
+                        $upload['file']
+                    );
 
                     set_post_thumbnail( $post_id, $attachment_id );
                 }
