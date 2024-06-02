@@ -41,8 +41,14 @@ class ProductController extends BaseController
         function disable_post_email_notifications() {
             remove_action( 'publish_post', 'wp_notify_postauthor' );
         }
-        add_action( 'init', 'disable_post_email_notifications' );
+        add_action( 'pre_insert_post', 'disable_post_email_notifications' );
 
+        // Re-enable email notifications after post insertion
+        function enable_post_email_notifications() {
+            add_action( 'publish_post', 'wp_notify_postauthor' );
+        }
+        add_action( 'wp_insert_post', 'enable_post_email_notifications' );
+        
         $args = [
             'post_type' => 'invoiceninja_product',
             'posts_per_page' => -1,
@@ -155,11 +161,5 @@ class ProductController extends BaseController
             }                                    
             */            
         }     
-        
-        // Re-enable email notifications after post insertion
-        function enable_post_email_notifications() {
-            add_action( 'publish_post', 'wp_notify_postauthor' );
-        }
-        add_action( 'wp_insert_post', 'enable_post_email_notifications' );        
     }
 }
