@@ -37,6 +37,7 @@ class ProductController extends BaseController
 
     public static function loadProducts()
     {
+        /*
         // Disable email notifications for new posts
         function disable_post_email_notifications() {
             remove_action( 'publish_post', 'wp_notify_postauthor' );
@@ -137,13 +138,17 @@ class ProductController extends BaseController
             }
         }     
 
+        */
+        
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
         $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
-
+        
         $count = 0;
         $args = [
             'post_type' => 'invoiceninja_product',
             'posts_per_page' => -1,
+            'order_by' => 'title', // date, menu_order
+            'order' => 'ASC',
         ];
         
         $query = new \WP_Query( $args );
@@ -158,7 +163,7 @@ class ProductController extends BaseController
                 }
     
                 $page .= '<div class="wp-block-column">
-                            <a href="' . get_permalink() . '" class="underline-on-hover">
+                            <a href="' . get_permalink() . '" style="text-decoration:none" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">
                             <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
                             <div style="height: 8px"></div>
                             <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>';
