@@ -10,6 +10,10 @@ class ProfileApi extends BaseApi
 {
     public static function load()
     {
-        return self::sendRequest( 'shop/profile' );
+        $response = self::sendRequest( 'shop/profile' );
+
+        //echo $response; exit;
+
+        return $response;
     }
 }

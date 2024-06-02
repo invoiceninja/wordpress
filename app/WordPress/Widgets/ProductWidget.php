@@ -105,6 +105,10 @@ class ProductWidget extends WP_Widget
             'title' => 'Products',
         ];
 
+        if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
+            $defaults['title'] = $profile->settings->products;
+        }
+
         // Parse current settings with defaults
         extract( wp_parse_args( ( array ) $instance, $defaults ) ); ?>
 

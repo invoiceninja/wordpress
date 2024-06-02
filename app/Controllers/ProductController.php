@@ -20,11 +20,13 @@ class ProductController extends BaseController
 
     public function register()
     {
+        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+
         $types = [
             [
                 'id' => 'invoiceninja_product',
-                'name' => 'Products',
-                'singular_name' => 'Product',
+                'name' => $profile ? $profile->settings->products : 'Products',
+                'singular_name' => $profile ? $profile->settings->product : 'Product',
             ]
         ];
 
