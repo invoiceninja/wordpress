@@ -135,31 +135,23 @@ class ProductController extends BaseController
                     set_post_thumbnail( $post_id, $attachment_id );
                 }
             }
-
-            /*
-            $args = [
-                'post_type'  => 'invoiceninja_product',
-                'meta_query' => [
-                    [
-                        'key' => 'id',
-                        'value' => $product->id,
-                        'compare' => '=',
-                    ],
-                ],
-            ];
-
-            $query = new \WP_Query($args);
-
-            if ($query->have_posts()) {                
-                while ($query->have_posts()) {
-                    $query->the_post();
-                    wp_update_post($post_data);
-                }                
-                wp_reset_postdata();
-            } else {
-                $post_id = wp_insert_post($post_data);
-            }                                    
-            */            
         }     
+
+        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+
+        $page_data = array(
+            'ID'           => get_option('invoiceninja_product_page_id'),
+            'post_title'   => $profile ? $profile->settings->products : 'Products',
+            'post_content' => 'Page content goes here.',
+            'post_status'  => 'publish',
+            'post_author'  => 1,
+            'post_type'    => 'page',
+        );
+
+        $page_id = wp_insert_post( $page_data );
+
+        if ( ! is_wp_error( $page_id ) ) {
+            update_option('invoiceninja_product_page_id', $page_id);
+        }
     }
 }
