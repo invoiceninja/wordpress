@@ -40,7 +40,40 @@ class ProductController extends BaseController
         $products = json_decode( $products );
 
         foreach ($products->data as $product) {
-            echo $product;
+ 
+            $post_data = array(
+                'post_title' => $product->product_key,
+                'post_content' => $product->notes,
+                'post_status' => 'publish', // publish, draft, pending, private, trash
+                'post_type' => 'product',
+                'meta_input' => [
+                    'id' => $product->id,
+                    'price' => $product->price,                    
+                ],
+            );
+ 
+            $args = [
+                'post_type'  => 'product',
+                'meta_query' => [
+                    [
+                        'key' => 'id',
+                        'value' => $product->id,
+                        'compare' => '=',
+                    ],
+                ],
+            ];
+
+            $query = new \WP_Query($args);
+
+            if ($query->have_posts()) {                
+                while ($query->have_posts()) {
+                    $query->the_post();
+                    wp_update_post($post_data);
+                }                
+                wp_reset_postdata();
+            } else {
+                $post_id = wp_insert_post($post_data);
+            }                                    
         }        
     }
 }
