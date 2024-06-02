@@ -102,9 +102,21 @@ class SettingsController extends BaseController
          [
             'id' => 'invoiceninja_admin_index',
             'title' => 'Settings',
-            'callback' => function() { 
-               $profile = json_decode( get_option( 'invoiceninja_profile' ) );
-               echo "Storefront Configuration: " . $profile->data->settings->name;  
+            'callback' => function() {                
+               echo '<p>Storefront Configuration:</p>';
+               if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
+                  $settings = $profile->data->settings;
+
+                  if ($settings->company_logo) {
+                     echo '<img src="' . $settings->company_logo . '" height="80" style="float: left;padding-right: 16px;"/>';
+                  }
+
+                  echo '<h1>' . $settings->name . '</h1>';
+                  
+                  if ( $settings->website ) {
+                     echo '<a href="' . $settings->website . '" target="_blank">' . $settings->website . '</a>';
+                  }
+               }
             },
             'page' => 'invoiceninja',
             
