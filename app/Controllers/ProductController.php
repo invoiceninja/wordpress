@@ -157,6 +157,7 @@ class ProductController extends BaseController
             while ( $query->have_posts() ) {
                 $query->the_post();
                 $post_id = get_the_ID();
+                $price = get_post_meta( $post_id, 'price', true );
 
                 if ($count % 3 == 0) {
                     $page .= '<div class="wp-block-columns">';
@@ -166,7 +167,8 @@ class ProductController extends BaseController
                             <a href="' . get_permalink() . '" style="text-decoration:none" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">
                             <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
                             <div style="height: 8px"></div>
-                            <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>';
+                            <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>
+                            <div style="padding-top:6px; padding-bottom:10px;">$' . $price . '</div>';
                                                     
                 if ( has_post_thumbnail( $post_id ) ) {
                     $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );
@@ -191,7 +193,7 @@ class ProductController extends BaseController
             'ID' => get_option('invoiceninja_product_page_id'),
             'post_title' => $profile ? $profile->settings->products : 'Products',
             'post_content' => $page,
-            'post_status' => 'draft',
+            'post_status' => 'publish',
             'post_author' => 1,
             'post_type' => 'page',
         );
