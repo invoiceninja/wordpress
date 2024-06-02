@@ -69,6 +69,33 @@ class ProductController extends BaseController
 
             $post_id = wp_insert_post($post_data);
  
+
+            if ( $product->product_image && $post_id && ! is_wp_error( $post_id ) ) 
+            {
+                $image_data = file_get_contents( $product->product_image );
+                $filename = basename( $product->product_image );
+
+                $upload = wp_upload_bits( $filename, null, $image_data );
+
+                if ( ! $upload['error'] ) {
+                    $file_extension = pathinfo( $filename, PATHINFO_EXTENSION );
+                    $allowed_mime_types = wp_get_mime_types();
+                    $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
+                
+                    $attachment_id = wp_insert_attachment( array(
+                        'post_mime_type' => $post_mime_type,
+                        'post_title' => sanitize_file_name( $filename ),
+                        'post_content' => '',
+                        'post_status' => 'inherit'
+                    ), $upload['file'] );
+
+                    // Set the featured image
+                    if ( ! is_wp_error( $attachment_id ) ) {
+                        set_post_thumbnail( $post_id, $attachment_id );
+                    }
+                }
+            }
+
             /*
             $args = [
                 'post_type'  => 'invoiceninja_product',
