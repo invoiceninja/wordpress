@@ -89,7 +89,7 @@ class SettingsController extends BaseController
          ],
          [
             'option_group' => 'invoiceninja',
-            'option_name' => 'invoiceninja_api_token',
+            'option_name' => 'invoiceninja_company_key',
          ],
       ];
 
@@ -102,7 +102,7 @@ class SettingsController extends BaseController
          [
             'id' => 'invoiceninja_admin_index',
             'title' => 'Settings',
-            'callback' => function() { echo "API Configuration"; },
+            'callback' => function() { echo "Storefront Configuration"; },
             'page' => 'invoiceninja',
             
          ],
@@ -115,35 +115,36 @@ class SettingsController extends BaseController
    {
       $args = [
          [
+            'id' => 'invoiceninja_company_key',
+            'title' => 'Company Key',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_company_key' ) );
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key"/>';
+               echo '<p class="description">Enable the Storefront feature on Settings > Client Portal to view the company key</p>'; 
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_company_key',
+               //'class' => '',
+               'help' => 'test',
+            ]
+         ],
+         [
             'id' => 'invoiceninja_api_url',
             'title' => 'URL',
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_url' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url" placeholder="https://invoice.example.com"/>'; 
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url" placeholder="https://invoicing.co"/>'; 
+               echo '<p class="description">Leave this field blank if you\'re using the hosted platform</p>'; 
             },
             'page' => 'invoiceninja',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_api_url',
                //'class' => '',
-            ]
-         ],
-         [
-            'id' => 'invoiceninja_api_token',
-            'title' => 'Token',
-            'callback' => function() 
-            { 
-               $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"/>';
-               echo '<p class="description">API tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
-            },
-            'page' => 'invoiceninja',
-            'section' => 'invoiceninja_admin_index',
-            'args' => [
-               'label_for' => 'invoiceninja_api_token',
-               //'class' => '',
-               'help' => 'test',
             ]
          ],
       ];
