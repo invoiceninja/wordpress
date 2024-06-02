@@ -108,7 +108,7 @@ class SettingsController extends BaseController
          [
             'id' => 'invoiceninja_admin_index',
             'title' => 'Settings',
-            'callback' => function() {                
+            'callback' => function() {               
                if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
                   $settings = $profile->settings;
 
@@ -139,6 +139,8 @@ class SettingsController extends BaseController
                   }
 
                   echo '</div>';                                    
+               } else if ( get_option( 'invoiceninja_company_key' ) ) {
+                  echo '<div class="card"><b>Invalid company key or URL</b></div>';
                }
             },
             'page' => 'invoiceninja',
