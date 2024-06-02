@@ -141,30 +141,53 @@ class ProductController extends BaseController
         $page = '';
 
         $count = 0;
-        foreach ($products as $product) 
-        {
-            if ($count % 3 == 0) {
-                $page .= '<div class="wp-block-columns">';
+        $args = [
+            'post_type' => 'invoiceninja_product',
+            'posts_per_page' => -1,
+        ];
+        
+        $query = new \WP_Query( $args );
+        
+        if ( $query->have_posts() ) {
+            while ( $query->have_posts() ) {
+                $query->the_post();
+                $post_id = get_the_ID();
+
+                if ($count % 3 == 0) {
+                    $page .= '<div class="wp-block-columns">';
+                }
+    
+                $page .= '<div class="wp-block-column card">
+                            <a href="' . get_permalink() . '">
+                                <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
+                                <div style="height: 8px"></div>
+                                <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>';
+                         
+                $attachments = get_posts( [
+                    'post_type'      => 'attachment',
+                    'posts_per_page' => 1,
+                    'post_status'    => 'inherit',
+                    'post_parent'    => $post_id,
+                    'orderby'        => 'menu_order',
+                    'order'          => 'ASC'
+                ] );
+
+                if ( $attachments ) {
+                    $first_image_url = wp_get_attachment_image_src( $attachments[0]->ID, 'full' )[0];
+                    $page .=  '<img src="' . esc_url( $first_image_url ) . '">';
+                }
+
+                $page .= '</a></div>';
+    
+                if ($count % 3 == 2) {
+                    $page .= '</div>';
+                }
+    
+                $count++;
+    
             }
-
-            $page .= '<div class="wp-block-column card">
-                        <a href="' . . '">
-                            <h3 style="padding:0px; margin:0px;">' . $product->product_key . '</h3>
-                            <div style="height: 8px"></div>
-                            <h5 style="padding:0px; margin:0px;">' . substr($product->notes, 0, 100) . '</h5>';
-                     
-            if ($product->product_image) {
-                $page .= '<img src="' . $product->product_image . '" width="150" height="200" style="object-fit:cover"/>';
-            }
-
-            $page .= '</a></div>';
-
-            if ($count % 3 == 2) {
-                $page .= '</div>';
-            }
-
-            $count++;
-        }        
+            wp_reset_postdata();
+        }
 
         $page_data = array(
             'ID' => get_option('invoiceninja_product_page_id'),
