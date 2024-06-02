@@ -29,6 +29,13 @@ class PostApi
     {
         foreach ($this->post_types as $type)
         {
+            $profile = get_option( 'invoiceninja_profile' );
+            $slug = 'product';
+
+            if ( $profile ) {
+                $slug = strtolower( json_decode( $profile )->data->settings->product );
+            }
+
             register_post_type(
                 $type['id'], [
                     'labels' => [
@@ -39,7 +46,7 @@ class PostApi
                     'has_archive' => true,
                     'menu_icon' => 'dashicons-products',
                     'show_in_rest' => true,
-                    'rewrite' => array( 'slug' => 'product' ),
+                    'rewrite' => array( 'slug' => $slug ),
                     'capabilities' => [
                         'create_posts' => 'do_not_allow', 
                     ],
