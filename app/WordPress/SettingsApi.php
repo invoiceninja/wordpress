@@ -7,6 +7,7 @@
 namespace App\WordPress;
 
 use \App\Controllers\SettingsController;
+use \App\Controllers\ProductController;
 use \App\InvoiceNinja\ProfileApi;
 use \App\InvoiceNinja\ProductApi;
 
@@ -45,6 +46,7 @@ class SettingsApi
             if ($old_value !== $new_value) 
             {
                 SettingsController::loadProfile();
+                ProductController::loadProducts();
             }
         }
     }
@@ -172,6 +174,7 @@ class SettingsApi
         if ( isset($_POST['submit']) && isset($_POST['option_page']) && $_POST['option_page'] === 'invoiceninja' ) 
         {
             SettingsController::loadProfile();
+            ProductController::loadProducts();
         }
     }
 }

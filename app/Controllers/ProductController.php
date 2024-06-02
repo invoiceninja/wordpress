@@ -7,6 +7,7 @@
 namespace App\Controllers;
 
 use \App\WordPress\PostApi;
+use \App\InvoiceNinja\ProductApi;
 
 class ProductController extends BaseController
 {
@@ -30,5 +31,16 @@ class ProductController extends BaseController
         $this->posts
             ->setPostTypes($types)
             ->register();
+    }
+
+    public static function loadProducts()
+    {
+        $products = ProductApi::load();
+
+        $products = json_decode( $products );
+
+        foreach ($products->data as $product) {
+            echo $product;
+        }        
     }
 }
