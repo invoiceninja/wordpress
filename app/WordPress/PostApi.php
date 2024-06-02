@@ -37,6 +37,8 @@ class PostApi
                     ],
                     'public' => true,
                     'has_archive' => true,
+                    'menu_icon' => 'dashicons-products',
+                    'show_in_rest' => true,
                 ]
             );       
         }

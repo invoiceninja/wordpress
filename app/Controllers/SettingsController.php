@@ -29,7 +29,7 @@ class SettingsController extends BaseController
             {
                require_once "$this->plugin_path/templates/settings.php";
             },
-            'icon_url' => 'dashicons-money-alt',
+            'icon_url' => 'dashicons-store',
             'position' => 110,
          ],
       ];
