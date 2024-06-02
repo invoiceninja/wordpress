@@ -72,16 +72,16 @@ class ProductController extends BaseController
 
             if ( $product->product_image && $post_id && ! is_wp_error( $post_id ) ) 
             {
+                $file_extension = pathinfo( $product->product_image, PATHINFO_EXTENSION );
+                $allowed_mime_types = wp_get_mime_types();
+                $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
+            
                 $image_data = file_get_contents( $product->product_image );
-                $filename = basename( $product->product_image );
+                $filename = $product->id . '.' . $file_extension;
 
                 $upload = wp_upload_bits( $filename, null, $image_data );
 
                 if ( ! $upload['error'] ) {
-                    $file_extension = pathinfo( $filename, PATHINFO_EXTENSION );
-                    $allowed_mime_types = wp_get_mime_types();
-                    $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
-                
                     $attachment_id = wp_insert_attachment( array(
                         'post_mime_type' => $post_mime_type,
                         'post_title' => sanitize_file_name( $filename ),
@@ -89,10 +89,7 @@ class ProductController extends BaseController
                         'post_status' => 'inherit'
                     ), $upload['file'] );
 
-                    // Set the featured image
-                    if ( ! is_wp_error( $attachment_id ) ) {
-                        set_post_thumbnail( $post_id, $attachment_id );
-                    }
+                    set_post_thumbnail( $post_id, $attachment_id );
                 }
             }
 
