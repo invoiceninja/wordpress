@@ -7,6 +7,7 @@
 namespace App\Controllers;
 
 use \App\WordPress\SettingsApi;
+use \App\InvoiceNinja\ProfileApi;
 
 class SettingsController extends BaseController
 {
@@ -65,6 +66,11 @@ class SettingsController extends BaseController
 
       add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'addLink' ] );  
    }    
+
+   public static function loadProfile()
+   {
+      update_option('invoiceninja_profile', ProfileApi::load());
+   }
 
    public function renderPage()
    {
