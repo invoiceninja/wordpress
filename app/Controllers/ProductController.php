@@ -138,14 +138,41 @@ class ProductController extends BaseController
         }     
 
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+        $page = '';
+
+        $count = 0;
+        foreach ($products as $product) 
+        {
+            if ($count % 3 == 0) {
+                $page .= '<div class="wp-block-columns">';
+            }
+
+            $page .= '<div class="wp-block-column card">
+                        <a href="' . . '">
+                            <h3 style="padding:0px; margin:0px;">' . $product->product_key . '</h3>
+                            <div style="height: 8px"></div>
+                            <h5 style="padding:0px; margin:0px;">' . substr($product->notes, 0, 100) . '</h5>';
+                     
+            if ($product->product_image) {
+                $page .= '<img src="' . $product->product_image . '" width="150" height="200" style="object-fit:cover"/>';
+            }
+
+            $page .= '</a></div>';
+
+            if ($count % 3 == 2) {
+                $page .= '</div>';
+            }
+
+            $count++;
+        }        
 
         $page_data = array(
-            'ID'           => get_option('invoiceninja_product_page_id'),
-            'post_title'   => $profile ? $profile->settings->products : 'Products',
-            'post_content' => 'Page content goes here.',
-            'post_status'  => 'publish',
-            'post_author'  => 1,
-            'post_type'    => 'page',
+            'ID' => get_option('invoiceninja_product_page_id'),
+            'post_title' => $profile ? $profile->settings->products : 'Products',
+            'post_content' => $page,
+            'post_status' => 'draft',
+            'post_author' => 1,
+            'post_type' => 'page',
         );
 
         $page_id = wp_insert_post( $page_data );
