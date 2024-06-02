@@ -54,35 +54,49 @@ class ProductWidget extends WP_Widget
 
     public function widget( $args, $instance ) 
     {
-        echo $args['before_widget'];
+        extract( $args );
 
-        echo "PRODUCTS";
-
-        if ( ! empty( $instance['title'] ) )
-        {
-            echo $args['before_title'] . apply_filter( 'widget_title', $instance['title'] ) . $args['after_title'];
+        // Check the widget options
+        $title = isset( $instance['title'] ) ? apply_filters( 'widget_title', $instance['title'] ) : '';
+    
+        // WordPress core before_widget hook (always include )
+        echo $before_widget;
+    
+        // Display the widget
+        echo '<div class="widget-text wp_widget_plugin_box">';
+        
+        // Display widget title if defined
+        if ( $title ) {
+            echo $before_title . $title . $after_title;
         }
 
-        echo $args['after_widget'];
+        echo '</div>';
+    
+        // WordPress core after_widget hook (always include )
+        echo $after_widget;
+    
     }
 
     public function form( $instance ) 
     {
-        $title = ! empty( $instance['title'] ) ? $instance['title'] : esc_html__('Custom Text', 'invoiceninja');
-        $title_id = esc_attr( $this->get_field_id( 'title' ) );
-        $title_name = esc_attr( $this->get_field_name( 'title' ) );
-        ?>
+        // Set widget defaults
+        $defaults = array(
+            'title'    => '',
+            'text'     => '',
+            'textarea' => '',
+            'checkbox' => '',
+            'select'   => '',
+        );
 
+        // Parse current settings with defaults
+        extract( wp_parse_args( ( array ) $instance, $defaults ) ); ?>
+
+        <?php // Widget Title ?>
         <p>
-
-            <label for="<?php echo $title_id ?>">Title</label>
-
-            <input type="text" class="widefat" id="<?php echo $title_id; ?>" 
-                name="<?php echo $title_name; ?>" 
-                value="<?php echo esc_attr( $title ); ?>"/>
-
+            <label for="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>"><?php _e( 'Widget Title', 'text_domain' ); ?></label>
+            <input class="widefat" id="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'title' ) ); ?>" type="text" value="<?php echo esc_attr( $title ); ?>" />
         </p>
-
+        
         <?php
     }
 
@@ -90,8 +104,7 @@ class ProductWidget extends WP_Widget
     {
         $instance = $old_instance;
 
-        //$instance['title'] = sanitize_text_field( $new_intance['title'] );
-        $instance['title'] = $new_intance['title'];
+        $instance['title'] = isset( $new_instance['title'] ) ? wp_strip_all_tags( $new_instance['title'] ) : '';
 
         return $instance;
     }

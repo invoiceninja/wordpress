@@ -21,7 +21,7 @@ class ProductController extends BaseController
     {
         $types = [
             [
-                'id' => 'invoiceninja_product',
+                'id' => 'product',
                 'name' => 'Products',
                 'singular_name' => 'Product',
             ]
