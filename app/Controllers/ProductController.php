@@ -74,11 +74,31 @@ class ProductController extends BaseController
             {
                 $file_extension = pathinfo( $product->product_image, PATHINFO_EXTENSION );
                 $allowed_mime_types = wp_get_mime_types();
-                $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
-            
-                $image_data = file_get_contents( $product->product_image );
+                $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';            
                 $filename = $product->id . '.' . $file_extension;
 
+                // Delete the old image if it exists 
+                $args = array(
+                    'post_type'      => 'attachment',
+                    'post_status'    => 'inherit',
+                    'posts_per_page' => 1,
+                    'fields'         => 'ids',
+                    'meta_query'     => array(
+                        array(
+                            'key'     => '_wp_attached_file',
+                            'value'   => $filename,
+                            'compare' => 'LIKE',
+                        ),
+                    ),
+                );
+
+                $attachments = get_posts( $args );
+                if ( $attachments ) {
+                    $attachment_id = $attachments[0];                    
+                    $result = wp_delete_attachment( $attachment_id, true );
+                }
+
+                $image_data = file_get_contents( $product->product_image );
                 $upload = wp_upload_bits( $filename, null, $image_data );
 
                 if ( ! $upload['error'] ) {
