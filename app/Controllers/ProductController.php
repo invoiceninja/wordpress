@@ -160,7 +160,7 @@ class ProductController extends BaseController
                 $price = get_post_meta( $post_id, 'price', true );
 
                 if ($count % 3 == 0) {
-                    $page .= '<div class="wp-block-columns">';
+                    $page .= '<div class="wp-block-columns" style="padding:0px; margin:0px;">';
                 }
     
                 $page .= '<div class="wp-block-column" style="margin-left:16px;margin-right:16px;">
@@ -169,8 +169,8 @@ class ProductController extends BaseController
                             <div style="height: 8px"></div>
                             <div style="border-bottom: 2px #000000 solid; width: 50px"></div>
                             <div style="height: 12px"></div>
-                            <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>
-                            <div style="padding-top:6px; padding-bottom:10px;">$' . $price . '</div>';
+                            <h5 style="padding:0px; margin:0px; line-height:1.5em; height:1.5em; overflow:hidden; display:-webkit-box; text-overflow:ellipsis; -webkit-box-orient:vertical; -webkit-line-clamp:1">' . substr(get_the_content(), 0, 100) . '</h5>
+                            <div style="padding-top:6px; padding-bottom:12px;">$' . $price . '</div>';
                                                     
                 if ( has_post_thumbnail( $post_id ) ) {
                     $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );
@@ -190,6 +190,11 @@ class ProductController extends BaseController
             }
             wp_reset_postdata();
         }
+
+        while ($count % 3 != 0) {
+            $page .= '<div class="wp-block-column" style="margin-left:16px;margin-right:16px;"></div>';
+            $count++;
+        }        
 
         $page_data = array(
             'ID' => get_option('invoiceninja_product_page_id'),
