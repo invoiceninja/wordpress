@@ -164,9 +164,11 @@ class ProductController extends BaseController
                 }
     
                 $page .= '<div class="wp-block-column" style="margin-left:16px;margin-right:16px;">
-                            <a href="' . get_permalink() . '" style="text-decoration:none" onmouseover="this.style.textDecoration=\'underline\'" onmouseout="this.style.textDecoration=\'none\'">
+                            <a href="' . get_permalink() . '" style="text-decoration:none">
                             <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
                             <div style="height: 8px"></div>
+                            <div style="border-bottom: 2px #000000 solid; width: 50px"></div>
+                            <div style="height: 12px"></div>
                             <h5 style="padding:0px; margin:0px;">' . substr(get_the_content(), 0, 100) . '</h5>
                             <div style="padding-top:6px; padding-bottom:10px;">$' . $price . '</div>';
                                                     
