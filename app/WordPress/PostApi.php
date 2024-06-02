@@ -33,7 +33,7 @@ class PostApi
             $slug = 'product';
 
             if ( $profile ) {
-                $slug = strtolower( json_decode( $profile )->data->settings->product );
+                $slug = strtolower( json_decode( $profile )->settings->product );
             }
 
             register_post_type(

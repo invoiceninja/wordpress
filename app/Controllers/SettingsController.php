@@ -110,7 +110,7 @@ class SettingsController extends BaseController
             'title' => 'Settings',
             'callback' => function() {                
                if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
-                  $settings = $profile->data->settings;
+                  $settings = $profile->settings;
 
                   echo '<div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 16px; padding-bottom: 20px; ">';
 

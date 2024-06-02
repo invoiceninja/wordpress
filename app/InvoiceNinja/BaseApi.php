@@ -33,6 +33,8 @@ class BaseApi
 
         $response = @file_get_contents( $url, false, $context );        
 
+        $response = json_encode( json_decode( $response )->data );
+
         return $response;
     }
 }

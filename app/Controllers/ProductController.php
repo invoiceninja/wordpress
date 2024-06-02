@@ -54,7 +54,7 @@ class ProductController extends BaseController
         $products = ProductApi::load();
         $products = json_decode( $products );
 
-        foreach ($products->data as $product) 
+        foreach ($products as $product) 
         {             
             $post_data = array(
                 'post_title' => $product->product_key,
