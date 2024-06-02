@@ -167,5 +167,10 @@ class SettingsApi
                 ( isset( $field['args'] ) ? $field['args'] : '' ),
             );
         }
+
+        if ( isset($_POST['submit']) && isset($_POST['option_page']) && $_POST['option_page'] === 'invoiceninja' ) 
+        {
+            update_option('invoiceninja_profile', ProfileApi::load());
+        }
     }
 }
