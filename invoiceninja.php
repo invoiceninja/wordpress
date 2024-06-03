@@ -38,7 +38,7 @@ define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<div class="wp-block-column">
   <a href="$post_url">
     <h3>$title</h3>
     <div class="divider"></div>
-    <h5 title="$content">$content</h5>
+    <h5 title="$content" class="truncated">$content</h5>
     <h5><b>$price</b></h5>
     $image
   </a>

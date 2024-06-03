@@ -19,6 +19,10 @@
 {
     padding: 0px; 
     margin: 0px; 
+}
+
+.invoiceninja .truncated
+{
     line-height: 1.5em; 
     height: 1.5em; 
     overflow: hidden; 

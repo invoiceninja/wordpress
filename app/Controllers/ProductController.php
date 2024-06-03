@@ -188,24 +188,6 @@ class ProductController extends BaseController
 
                 $page .= $template;
 
-                /*
-                $page .= '<div class="wp-block-column">
-                            <a href="' . get_permalink() . '">
-                            <h3>' . get_the_title() . '</h3>
-                            <div class="divider"></div>
-                            <h5 title="' . get_the_content() . '">' . substr(get_the_content(), 0, 100) . '</h5>
-                            <h5><b>$' . $price . '</b></h5>';
-                                                    
-                if ( has_post_thumbnail( $post_id ) ) {
-                    $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );
-                    $page .= '<figure class="wp-block-post-featured-image">
-                                <img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" decoding="async"/>
-                              </figure>';
-                }
-
-                $page .= '</a></div>';
-                */
-
                 if ($count % 3 == 2) {
                     $page .= '</div>';
                 }
