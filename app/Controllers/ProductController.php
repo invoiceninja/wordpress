@@ -37,7 +37,6 @@ class ProductController extends BaseController
 
     public static function loadProducts()
     {
-        /*
         // Disable email notifications for new posts
         function disable_post_email_notifications() {
             remove_action( 'publish_post', 'wp_notify_postauthor' );
@@ -138,8 +137,6 @@ class ProductController extends BaseController
             }
         }     
 
-        */
-        
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
         $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
         
