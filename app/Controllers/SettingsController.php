@@ -97,6 +97,26 @@ class SettingsController extends BaseController
             'option_group' => 'invoiceninja',
             'option_name' => 'invoiceninja_company_key',
          ],
+         [
+            'option_group' => 'invoiceninja',
+            'option_name' => 'invoiceninja_products_label',
+         ],
+         [
+            'option_group' => 'invoiceninja',
+            'option_name' => 'invoiceninja_product_label',
+         ],
+         [
+            'option_group' => 'invoiceninja',
+            'option_name' => 'invoiceninja_product_template',
+         ],
+         [
+            'option_group' => 'invoiceninja',
+            'option_name' => 'invoiceninja_image_template',
+         ],
+         [
+            'option_group' => 'invoiceninja',
+            'option_name' => 'invoiceninja_custom_css',
+         ],
       ];
 
       $this->settings->setSettings( $args );
@@ -184,6 +204,86 @@ class SettingsController extends BaseController
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_api_url',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_product_label',
+            'title' => 'Product Label',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_product_label' ) );
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
+               echo '<p class="description">Singular label to use for individual products</p>'; 
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_product_label',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_products_label',
+            'title' => 'Products Label',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_products_label' ) );
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_products_label" placeholder="Products"/>'; 
+               echo '<p class="description">Plural label to use for multiple products</p>'; 
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_products_label',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_product_template',
+            'title' => 'Product Template',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_product_template' ) );
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_product_template"/>'; 
+               echo '<p class="description">HTML template for each product</p>'; 
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_product_template',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_image_template',
+            'title' => 'Image Template',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_image_template' ) );
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_image_template"/>'; 
+               echo '<p class="description">HTML template for each product image</p>';                
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_image_template',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_custom_css',
+            'title' => 'Custom CSS',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_custom_css' ) );
+               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_custom_css"/>'; 
+               echo '<p class="description"></p>'; 
+            },
+            'page' => 'invoiceninja',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_custom_css',
                //'class' => '',
             ]
          ],
