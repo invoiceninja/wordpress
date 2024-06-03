@@ -161,13 +161,20 @@ class ProductController extends BaseController
                 }
 
                 $page .= '<div class="wp-block-column">';
-                $template = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
+                $template = get_option( 'invoiceninja_product_template' );
+                if ( ! $template ) {
+                    $template = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
+                }
 
                 $image = '';
 
                 if ( has_post_thumbnail( $post_id ) ) {
                     $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
-                    $image = str_replace( '$image_url', $image_url, INVOICENINJA_DEFAULT_IMAGE_TEMPLATE );
+                    $image_template = get_option( 'invoiceninja_image_template' );
+                    if ( ! $image_template ) {
+                        $image_template = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
+                    }
+                    $image = str_replace( '$image_url', $image_url, $image_template );
                 }
 
                 $template = str_replace( [

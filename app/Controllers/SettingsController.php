@@ -213,7 +213,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_product_label' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
                echo '<p class="description">Singular label to use for individual products</p>'; 
             },
             'page' => 'invoiceninja',
@@ -229,7 +229,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_products_label' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_products_label" placeholder="Products"/>'; 
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_products_label" placeholder="Products"/>'; 
                echo '<p class="description">Plural label to use for multiple products</p>'; 
             },
             'page' => 'invoiceninja',
@@ -249,7 +249,7 @@ class SettingsController extends BaseController
                   $value = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
                }
 
-               echo '<textarea class="regular-text code" rows="9" name="invoiceninja_product_template">' . $value . '</textarea>'; 
+               echo '<textarea class="code" cols="60" rows="8" name="invoiceninja_product_template">' . $value . '</textarea>'; 
                echo '<p class="description">HTML template for each product</p>'; 
             },
             'page' => 'invoiceninja',
@@ -268,7 +268,7 @@ class SettingsController extends BaseController
                if ( ! $value ) {
                   $value = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
                }
-               echo '<textarea class="regular-text code" rows="6" name="invoiceninja_image_template">' . $value . '</textarea>'; 
+               echo '<textarea class="code" cols="60" rows="6" name="invoiceninja_image_template">' . $value . '</textarea>'; 
                echo '<p class="description">HTML template for each product image</p>';                
             },
             'page' => 'invoiceninja',
@@ -284,7 +284,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_custom_css' ) );
-               echo '<textarea class="regular-text code" rows="6" name="invoiceninja_custom_css">' . $value . '</textarea>'; 
+               echo '<textarea class="code" cols="60" rows="6" name="invoiceninja_custom_css">' . $value . '</textarea>'; 
                echo '<p class="description"></p>'; 
             },
             'page' => 'invoiceninja',
