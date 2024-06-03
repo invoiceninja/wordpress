@@ -168,7 +168,7 @@ class ProductController extends BaseController
                             <h3>' . get_the_title() . '</h3>
                             <div class="divider"></div>
                             <h5 title="' . get_the_content() . '">' . substr(get_the_content(), 0, 100) . '</h5>
-                            <div class="price">$' . $price . '</div>';
+                            <h5><b>$' . $price . '</b></h5>';
                                                     
                 if ( has_post_thumbnail( $post_id ) ) {
                     $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );

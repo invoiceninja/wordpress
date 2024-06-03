@@ -28,13 +28,6 @@
     -webkit-line-clamp: 1;
 }
 
-.invoiceninja div.price
-{
-    padding-top:4px; 
-    padding-bottom:12px; 
-    color:#666;
-}
-
 .invoiceninja .divider 
 {
     margin-top: 8px;
@@ -49,4 +42,9 @@
     height: 400px;
     display: block;
     object-fit: cover;
+}
+
+.invoiceninja figure
+{
+    padding-top: 8px;
 }
