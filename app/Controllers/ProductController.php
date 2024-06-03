@@ -167,13 +167,13 @@ class ProductController extends BaseController
                             <a href="' . get_permalink() . '">
                             <h3>' . get_the_title() . '</h3>
                             <div class="divider"></div>
-                            <h5 style="padding:0px; margin:0px; line-height:1.5em; height:1.5em; overflow:hidden; display:-webkit-box; text-overflow:ellipsis; -webkit-box-orient:vertical; -webkit-line-clamp:1" title="' . get_the_content() . '">' . substr(get_the_content(), 0, 100) . '</h5>
-                            <div style="padding-top:4px; padding-bottom:12px; color:#666">$' . $price . '</div>';
+                            <h5 title="' . get_the_content() . '">' . substr(get_the_content(), 0, 100) . '</h5>
+                            <div class="price">$' . $price . '</div>';
                                                     
                 if ( has_post_thumbnail( $post_id ) ) {
                     $featured_image = get_the_post_thumbnail_url( $post_id, 'medium' );
                     $page .= '<figure class="wp-block-post-featured-image">
-                                <img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" style="width:100%;height:400px;display:block;object-fit:cover;" decoding="async"/>
+                                <img src="' . esc_url( $featured_image ) . '" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="' . get_the_title() . '" decoding="async"/>
                               </figure>';
                 }
 
