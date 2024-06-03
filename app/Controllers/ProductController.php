@@ -173,7 +173,7 @@ class ProductController extends BaseController
                 }
 
                 $template = str_replace( [
-                    '$link',
+                    '$post_url',
                     '$title',
                     '$content',
                     '$price',
