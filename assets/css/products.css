@@ -1,27 +1,27 @@
-.invoiceninja .wp-block-column
+.wp-invoiceninja.wp-block-column
 {
     margin-left: 16px;
     margin-right: 16px;
 }
 
-.invoiceninja a 
+.wp-invoiceninja a 
 {
     text-decoration: none;
 }
 
-.invoiceninja h3 
+.wp-invoiceninja h3 
 {
     padding: 0px; 
     margin: 0px;
 }
 
-.invoiceninja h5
+.wp-invoiceninja h5
 {
     padding: 0px; 
     margin: 0px; 
 }
 
-.invoiceninja .truncated
+.wp-invoiceninja .truncated
 {
     line-height: 1.5em; 
     height: 1.5em; 
@@ -32,7 +32,7 @@
     -webkit-line-clamp: 1;
 }
 
-.invoiceninja .divider 
+.wp-invoiceninja .divider 
 {
     margin-top: 8px;
     margin-bottom: 12px;
@@ -41,7 +41,7 @@
     transition: border-color 0.3s ease;
 }
 
-.invoiceninja img
+.wp-invoiceninja img
 {
     width: 100%;
     height: 400px;
@@ -49,12 +49,12 @@
     object-fit: cover;
 }
 
-.invoiceninja figure
+.wp-invoiceninja figure
 {
     padding-top: 8px;
 }
 
-.invoiceninja a:hover div.divider
+.wp-invoiceninja a:hover div.divider
 {
     border-color: #0000EE;
 }

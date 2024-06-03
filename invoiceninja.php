@@ -34,7 +34,7 @@ function deactivate_invoiceninja_plugin()
 }
 register_deactivation_hook( __FILE__, 'deactivate_invoiceninja_plugin' );
 
-define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<div class="wp-block-column">
+define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<div class="wp-block-column wp-invoiceninja">
   <a href="$post_url">
     <h3>$title</h3>
     <div class="divider"></div>

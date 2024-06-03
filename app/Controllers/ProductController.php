@@ -141,7 +141,7 @@ class ProductController extends BaseController
         */
         
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
-        $page = '<div class="invoiceninja wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
+        $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
         
         $count = 0;
         $args = [
