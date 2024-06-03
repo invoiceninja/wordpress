@@ -1,0 +1,24 @@
+.invoiceninja .wp-block-column
+{
+    margin-left: 16px;
+    margin-right: 16px;
+}
+
+.invoiceninja a 
+{
+    text-decoration: none;
+}
+
+.invoiceninja h3 
+{
+    padding: 0px; 
+    margin: 0px;
+}
+
+.invoiceninja .divider 
+{
+    margin-top: 8px;
+    margin-bottom: 12px;
+    border-bottom: 2px #000000 solid; 
+    width: 50px;
+}

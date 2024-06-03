@@ -141,7 +141,7 @@ class ProductController extends BaseController
         */
         
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
-        $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
+        $page = '<div class="invoiceninja wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
         
         $count = 0;
         $args = [
@@ -163,12 +163,10 @@ class ProductController extends BaseController
                     $page .= '<div class="wp-block-columns" style="padding:0px; margin:0px;">';
                 }
     
-                $page .= '<div class="wp-block-column" style="margin-left:16px;margin-right:16px;">
-                            <a href="' . get_permalink() . '" style="text-decoration:none">
-                            <h3 style="padding:0px; margin:0px;">' . get_the_title() . '</h3>
-                            <div style="height: 8px"></div>
-                            <div style="border-bottom: 2px #000000 solid; width: 50px"></div>
-                            <div style="height: 12px"></div>
+                $page .= '<div class="wp-block-column">
+                            <a href="' . get_permalink() . '">
+                            <h3>' . get_the_title() . '</h3>
+                            <div class="divider"></div>
                             <h5 style="padding:0px; margin:0px; line-height:1.5em; height:1.5em; overflow:hidden; display:-webkit-box; text-overflow:ellipsis; -webkit-box-orient:vertical; -webkit-line-clamp:1" title="' . get_the_content() . '">' . substr(get_the_content(), 0, 100) . '</h5>
                             <div style="padding-top:4px; padding-bottom:12px; color:#666">$' . $price . '</div>';
                                                     
