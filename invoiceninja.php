@@ -44,7 +44,7 @@ define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<div class="wp-block-column wp
   </a>
 </div>' );
 
-define( 'INVOICENINJA_DEFAULT_PRODUCT_IMAGE_TEMPLATE', '<figure class="wp-block-post-featured-image">
+define( 'INVOICENINJA_DEFAULT_IMAGE_TEMPLATE', '<figure class="wp-block-post-featured-image">
   <img src="$image_url" alt="$title" decoding="async"/>
 </figure>' );
 

@@ -166,7 +166,7 @@ class ProductController extends BaseController
 
                 if ( has_post_thumbnail( $post_id ) ) {
                     $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
-                    $image = str_replace( '$image_url', $image_url, INVOICENINJA_DEFAULT_PRODUCT_IMAGE_TEMPLATE );
+                    $image = str_replace( '$image_url', $image_url, INVOICENINJA_DEFAULT_IMAGE_TEMPLATE );
                 }
 
                 $template = str_replace( [
