@@ -34,6 +34,7 @@
     margin-bottom: 12px;
     border-bottom: 2px #000000 solid; 
     width: 50px;
+    transition: border-color 0.3s ease;
 }
 
 .invoiceninja img
@@ -47,4 +48,9 @@
 .invoiceninja figure
 {
     padding-top: 8px;
+}
+
+.invoiceninja a:hover div.divider
+{
+    border-color: #0000EE;
 }

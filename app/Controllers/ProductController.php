@@ -162,7 +162,33 @@ class ProductController extends BaseController
                 if ($count % 3 == 0) {
                     $page .= '<div class="wp-block-columns" style="padding:0px; margin:0px;">';
                 }
-    
+
+                $template = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
+
+                $image = '';
+
+                if ( has_post_thumbnail( $post_id ) ) {
+                    $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
+                    $image = str_replace( '$image_url', $image_url, INVOICENINJA_DEFAULT_PRODUCT_IMAGE_TEMPLATE );
+                }
+
+                $template = str_replace( [
+                    '$link',
+                    '$title',
+                    '$content',
+                    '$price',
+                    '$image',
+                ], [
+                    get_permalink(),
+                    get_the_title(),
+                    get_the_content(),
+                    $price,
+                    $image,
+                ], $template );
+
+                $page .= $template;
+
+                /*
                 $page .= '<div class="wp-block-column">
                             <a href="' . get_permalink() . '">
                             <h3>' . get_the_title() . '</h3>
@@ -178,7 +204,8 @@ class ProductController extends BaseController
                 }
 
                 $page .= '</a></div>';
-    
+                */
+
                 if ($count % 3 == 2) {
                     $page .= '</div>';
                 }

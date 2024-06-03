@@ -34,7 +34,19 @@ function deactivate_invoiceninja_plugin()
 }
 register_deactivation_hook( __FILE__, 'deactivate_invoiceninja_plugin' );
 
-define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '' );
+define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<div class="wp-block-column">
+  <a href="$link">
+    <h3>$title</h3>
+    <div class="divider"></div>
+    <h5 title="$content">$content</h5>
+    <h5><b>$price</b></h5>
+    $image
+  </a>
+</div>' );
+
+define( 'INVOICENINJA_DEFAULT_PRODUCT_IMAGE_TEMPLATE', '<figure class="wp-block-post-featured-image">
+  <img src="$image_url" class="attachment-post-thumbnail size-post-thumbnail wp-post-image" alt="$title" decoding="async"/>
+</figure>' );
 
 if ( class_exists( 'App\\Init') )
 {
