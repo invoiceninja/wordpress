@@ -160,6 +160,7 @@ class ProductController extends BaseController
                     $page .= '<div class="wp-block-columns" style="padding:0px; margin:0px;">';
                 }
 
+                $page .= '<div class="wp-block-column">';
                 $template = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
 
                 $image = '';
@@ -184,6 +185,7 @@ class ProductController extends BaseController
                 ], $template );
 
                 $page .= $template;
+                $page .= '</div>';
 
                 if ($count % 3 == 2) {
                     $page .= '</div>';

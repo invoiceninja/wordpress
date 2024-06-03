@@ -249,7 +249,7 @@ class SettingsController extends BaseController
                   $value = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
                }
 
-               echo '<textarea class="regular-text code" rows="11" name="invoiceninja_product_template">' . $value . '</textarea>'; 
+               echo '<textarea class="regular-text code" rows="9" name="invoiceninja_product_template">' . $value . '</textarea>'; 
                echo '<p class="description">HTML template for each product</p>'; 
             },
             'page' => 'invoiceninja',

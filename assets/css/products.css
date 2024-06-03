@@ -1,11 +1,8 @@
-.wp-invoiceninja.wp-block-column
+a.wp-invoiceninja
 {
+    display: block;
     margin-left: 16px;
     margin-right: 16px;
-}
-
-.wp-invoiceninja a 
-{
     text-decoration: none;
 }
 
