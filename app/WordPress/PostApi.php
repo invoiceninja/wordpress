@@ -39,11 +39,11 @@ class PostApi
     {
         foreach ($this->post_types as $type)
         {
-            $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+            $productLabel = get_option( 'invoiceninja_product_label' );
             $slug = 'product';
 
-            if ( $profile ) {
-                $slug = strtolower(  $profile->settings->product );
+            if ( $productLabel ) {
+                $slug = strtolower( $productLabel );
             }
 
             register_post_type(

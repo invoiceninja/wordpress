@@ -154,7 +154,7 @@ class SettingsController extends BaseController
                   $total_count = $query->found_posts;
 
                   if ($total_count > 0) {
-                     $product_label = $total_count == 1 ? $settings->product : $settings->products;
+                     $product_label = $total_count == 1 ? get_option( 'invoiceninja_product_label', 'Product' ) : get_option( 'invoiceninja_products_label', 'Products' );
                      echo '<div style="padding-top: 4px">' . $total_count . ' ' . $product_label . '</div>';
                   }
 
@@ -213,7 +213,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_product_label' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
                echo '<p class="description">Singular label to use for individual products</p>'; 
             },
             'page' => 'invoiceninja',
@@ -229,7 +229,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_products_label' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_products_label" placeholder="Products"/>'; 
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_products_label" placeholder="Products"/>'; 
                echo '<p class="description">Plural label to use for multiple products</p>'; 
             },
             'page' => 'invoiceninja',
@@ -245,7 +245,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_product_template' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_product_template"/>'; 
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_product_template"/>'; 
                echo '<p class="description">HTML template for each product</p>'; 
             },
             'page' => 'invoiceninja',
@@ -261,7 +261,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_image_template' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_image_template"/>'; 
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_image_template"/>'; 
                echo '<p class="description">HTML template for each product image</p>';                
             },
             'page' => 'invoiceninja',
@@ -277,7 +277,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_custom_css' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_custom_css"/>'; 
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_custom_css"/>'; 
                echo '<p class="description"></p>'; 
             },
             'page' => 'invoiceninja',

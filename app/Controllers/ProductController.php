@@ -25,8 +25,8 @@ class ProductController extends BaseController
         $types = [
             [
                 'id' => 'invoiceninja_product',
-                'name' => $profile ? $profile->settings->products : 'Products',
-                'singular_name' => $profile ? $profile->settings->product : 'Product',
+                'name' => get_option( 'invoiceninja_products_label', 'Products' ),
+                'singular_name' => get_option( 'invoiceninja_product_label', 'Product' ),
             ]
         ];
 
@@ -202,7 +202,7 @@ class ProductController extends BaseController
 
         $page_data = array(
             'ID' => get_option('invoiceninja_product_page_id'),
-            'post_title' => $profile ? $profile->settings->products : 'Products',
+            'post_title' => get_option( 'invoiceninja_products_label', 'Products' ),
             'post_content' => $page,
             'post_status' => 'publish',
             'post_author' => 1,
