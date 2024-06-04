@@ -273,6 +273,11 @@ class SettingsController extends BaseController
                   $value = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
                }
 
+               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
+               if ( ! $products_label ) {
+                  $products_label = 'Products';
+               }
+
                $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
                if ( ! $product_label ) {
                   $product_label = 'Product';
@@ -280,7 +285,7 @@ class SettingsController extends BaseController
          
                echo '<div><textarea class="code" style="width:100%" rows="8" id="invoiceninja_product_template" name="invoiceninja_product_template">' . $value . '</textarea></div>';
                echo '<p style="float:right;"><a href="#" onclick=\'document.querySelector("#invoiceninja_product_template").value = ' . json_encode( INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE ) . ';return false;\'>Reset</a></p>';
-               echo '<p class="description" style="float:left;">HTML template for each ' . strtolower( $product_label ) . '</p>';                
+               echo '<p class="description" style="float:left;">HTML template for each ' . strtolower( $product_label ) . ' on the ' . strtolower( $products_label ) . ' page</p>';                
             },
             'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
@@ -299,6 +304,11 @@ class SettingsController extends BaseController
                   $value = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
                }
 
+               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
+               if ( ! $products_label ) {
+                  $products_label = 'Products';
+               }
+
                $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
                if ( ! $product_label ) {
                   $product_label = 'Product';
@@ -306,7 +316,7 @@ class SettingsController extends BaseController
 
                echo '<div><textarea class="code" style="width:100%" rows="8" id="invoiceninja_image_template" name="invoiceninja_image_template">' . $value . '</textarea></div>';
                echo '<p style="float:right;"><a href="#" onclick=\'document.querySelector("#invoiceninja_image_template").value = ' . json_encode( INVOICENINJA_DEFAULT_IMAGE_TEMPLATE ) . ';return false;\'>Reset</a></p>';
-               echo '<p class="description">HTML template for each ' . strtolower( $product_label ) . ' image</p>';                               
+               echo '<p class="description">HTML template for each image on the ' . strtolower( $products_label ) . ' page</p>';
             },
             'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
@@ -328,7 +338,7 @@ class SettingsController extends BaseController
                }
 
                echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_custom_css">' . $value . '</textarea>'; 
-               echo '<p class="description">CSS to include on ' . strtolower( $products_label ) . ' page</p>'; 
+               echo '<p class="description">CSS to include on the ' . strtolower( $products_label ) . ' page</p>'; 
             },
             'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',

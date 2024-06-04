@@ -179,10 +179,22 @@ class SettingsApi
             );
         }
 
+        /*
         if ( isset($_POST['submit']) && isset($_POST['option_page']) && substr( $_POST['option_page'], 0, 12 ) === 'invoiceninja' ) 
         {
-            SettingsController::loadProfile();
+            SettingsController::loadProfile();            
+        }
+        */
+
+        if (isset($_POST['my_plugin_action']) && $_POST['my_plugin_action'] == 'run_code') 
+        {
+            // Check the nonce for security
+            if ( ! isset($_POST['my_plugin_nonce']) || !wp_verify_nonce($_POST['my_plugin_nonce'], 'my_plugin_run_code') ) {
+                wp_die('Security check failed');
+            }
+    
             ProductController::loadProducts();
         }
+    
     }
 }
