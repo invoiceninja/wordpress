@@ -31,10 +31,10 @@
         </div>            
         <div id="tab-4" class="tab-pane">
             <p>
-                Thank you for installing the Invoice Ninja plugin for WordPress!
+                Thank you for installing the <a href="https://invoiceninja.com" target="_blank">Invoice Ninja</a> plugin for WordPress!
             </p>
             <p>
-                Please <a href="https://github.com/invoiceninja/wordpress/issues" target="_blank">create issues</a> on GitHub to suggest features you'd like to see added.
+                Please <a href="https://github.com/invoiceninja/wordpress/issues" target="_blank">create an issue</a> on GitHub to suggest a feature you'd like to see added.
             <p>
         </div>            
     </div>
