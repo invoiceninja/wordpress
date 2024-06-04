@@ -53,7 +53,17 @@ class SettingsController extends BaseController
                   $total_count = $query->found_posts;
 
                   if ($total_count > 0) {
-                     $product_label = $total_count == 1 ? get_option( 'invoiceninja_product_label', 'Product' ) : get_option( 'invoiceninja_products_label', 'Products' );
+                     if ($total_count == 1) {
+                        $product_label = get_option( 'invoiceninja_product_label');
+                        if ( ! $product_label ) {
+                           $product_label = 'Product';
+                        }
+                     } else {
+                        $product_label = get_option( 'invoiceninja_products_label');
+                        if ( ! $product_label ) {
+                           $product_label = 'Products';
+                        }
+                     }
                      $company .= '<div style="padding-top: 4px">' . $total_count . ' ' . $product_label . '</div>';
                   }
                } else if ( get_option( 'invoiceninja_company_key' ) ) {

@@ -100,9 +100,14 @@ class ProductWidget extends WP_Widget
 
     public function form( $instance ) 
     {
+        $products_label = get_option( 'invoiceninja_products_label');
+        if ( ! $products_label ) {
+           $products_label = 'Products';
+        }
+
         // Set widget defaults
         $defaults = [
-            'title' => get_option( 'invoiceninja_products_label', 'Products' ),
+            'title' => $products_label,
         ];
 
         // Parse current settings with defaults

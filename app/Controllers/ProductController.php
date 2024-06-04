@@ -22,11 +22,21 @@ class ProductController extends BaseController
     {
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
 
+        $product_label = get_option( 'invoiceninja_product_label');
+        if ( ! $product_label ) {
+           $product_label = 'Product';
+        }
+
+        $products_label = get_option( 'invoiceninja_products_label');
+        if ( ! $products_label ) {
+           $products_label = 'Products';
+        }
+
         $types = [
             [
                 'id' => 'invoiceninja_product',
-                'name' => get_option( 'invoiceninja_products_label', 'Products' ),
-                'singular_name' => get_option( 'invoiceninja_product_label', 'Product' ),
+                'name' => $products_label,
+                'singular_name' => $product_label,
             ]
         ];
 
@@ -209,9 +219,14 @@ class ProductController extends BaseController
             $count++;
         }        
 
+        $products_label = get_option( 'invoiceninja_products_label');
+        if ( ! $products_label ) {
+           $products_label = 'Products';
+        }
+
         $page_data = array(
             'ID' => get_option('invoiceninja_product_page_id'),
-            'post_title' => get_option( 'invoiceninja_products_label', 'Products' ),
+            'post_title' => $products_label,
             'post_content' => $page,
             'post_status' => 'publish',
             'post_author' => 1,
