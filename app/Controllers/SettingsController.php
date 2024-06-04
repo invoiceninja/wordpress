@@ -28,6 +28,38 @@ class SettingsController extends BaseController
             'menu_slug' => 'invoiceninja',
             'callback' => function() 
             {
+               $company = '';
+
+               if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
+                  $settings = $profile->settings;
+
+                  if ($settings->company_logo) {
+                     $company .= '<img src="' . $settings->company_logo . '" height="80" style="float: left;padding-right: 16px;"/>';
+                  }
+
+                  $company .= '<h1 class="title" style="padding-top: 0px">' . $settings->name . '</h1>';
+                  
+                  if ( $settings->website ) {
+                     $company .= '<a href="' . $settings->website . '" target="_blank">' . $settings->website . '</a>';
+                  }
+
+                  $args = [
+                     'post_type'  => 'invoiceninja_product',
+                     'posts_per_page' => -1,
+                  ];
+
+                  $query = new \WP_Query($args);
+
+                  $total_count = $query->found_posts;
+
+                  if ($total_count > 0) {
+                     $product_label = $total_count == 1 ? get_option( 'invoiceninja_product_label', 'Product' ) : get_option( 'invoiceninja_products_label', 'Products' );
+                     $company .= '<div style="padding-top: 4px">' . $total_count . ' ' . $product_label . '</div>';
+                  }
+               } else if ( get_option( 'invoiceninja_company_key' ) ) {
+                  $company = '<b>Invalid company key or URL</b>';
+               }
+
                require_once "$this->plugin_path/templates/settings.php";
             },
             'icon_url' => 'dashicons-store',
@@ -127,53 +159,19 @@ class SettingsController extends BaseController
       $args = [
          [
             'id' => 'invoiceninja_admin_index',
-            'title' => 'Settings',
-            'callback' => function() {               
-               if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
-                  $settings = $profile->settings;
-
-                  echo '<div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 16px; padding-bottom: 20px; ">';
-
-                  if ($settings->company_logo) {
-                     echo '<img src="' . $settings->company_logo . '" height="80" style="float: left;padding-right: 16px;"/>';
-                  }
-
-                  echo '<h1 class="title" style="padding-top: 0px">' . $settings->name . '</h1>';
-                  
-                  if ( $settings->website ) {
-                     echo '<a href="' . $settings->website . '" target="_blank">' . $settings->website . '</a>';
-                  }
-
-                  $args = [
-                     'post_type'  => 'invoiceninja_product',
-                     'posts_per_page' => -1,
-                  ];
-
-                  $query = new \WP_Query($args);
-
-                  $total_count = $query->found_posts;
-
-                  if ($total_count > 0) {
-                     $product_label = $total_count == 1 ? get_option( 'invoiceninja_product_label', 'Product' ) : get_option( 'invoiceninja_products_label', 'Products' );
-                     echo '<div style="padding-top: 4px">' . $total_count . ' ' . $product_label . '</div>';
-                  }
-
-                  echo '</div>';                                    
-               } else if ( get_option( 'invoiceninja_company_key' ) ) {
-                  echo '<div class="card"><b>Invalid company key or URL</b></div>';
-               }
-            },
+            'title' => '',
+            'callback' => function() {},
             'page' => 'invoiceninja_configuration',            
          ],
          [
             'id' => 'invoiceninja_admin_index',
-            'title' => 'Settings',
+            'title' => '',
             'callback' => function() {},
             'page' => 'invoiceninja_localization',
          ],
          [
             'id' => 'invoiceninja_admin_index',
-            'title' => 'Settings',
+            'title' => '',
             'callback' => function() {},
             'page' => 'invoiceninja_templates',            
          ],

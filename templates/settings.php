@@ -2,6 +2,10 @@
     <h1>Invoice Ninja</h1>
     <?php settings_errors(); ?>
 
+    <div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 16px; padding-bottom: 20px; ">
+        <?php echo $company ?>
+    </div>
+
     <form action="options.php" method="post">
 
     <ul class="nav nav-tabs">
