@@ -182,6 +182,11 @@ class SettingsController extends BaseController
 
    public function setFields()
    {
+      $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
+      if ( ! $product_label ) {
+         $product_label = 'Product';
+      }
+
       $args = [
          [
             'id' => 'invoiceninja_company_key',
@@ -250,7 +255,7 @@ class SettingsController extends BaseController
          ],
          [
             'id' => 'invoiceninja_product_template',
-            'title' => 'Product Template',
+            'title' => $product_label . ' Template',
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_product_template' ) );
@@ -258,8 +263,13 @@ class SettingsController extends BaseController
                   $value = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
                }
 
+               $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
+               if ( ! $product_label ) {
+                  $product_label = 'Product';
+               }
+         
                echo '<textarea class="code" cols="60" rows="8" name="invoiceninja_product_template">' . $value . '</textarea>'; 
-               echo '<p class="description">HTML template for each product</p>'; 
+               echo '<p class="description">HTML template for each ' . strtolower( $product_label ) . '</p>'; 
             },
             'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
@@ -277,8 +287,14 @@ class SettingsController extends BaseController
                if ( ! $value ) {
                   $value = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
                }
+
+               $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
+               if ( ! $product_label ) {
+                  $product_label = 'Product';
+               }
+
                echo '<textarea class="code" cols="60" rows="6" name="invoiceninja_image_template">' . $value . '</textarea>'; 
-               echo '<p class="description">HTML template for each product image</p>';                
+               echo '<p class="description">HTML template for each ' . strtolower( $product_label ) . ' image</p>';                
             },
             'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
@@ -293,8 +309,14 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_custom_css' ) );
+
+               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
+               if ( ! $products_label ) {
+                  $products_label = 'Products';
+               }
+
                echo '<textarea class="code" cols="60" rows="6" name="invoiceninja_custom_css">' . $value . '</textarea>'; 
-               echo '<p class="description">CSS to include on products page</p>'; 
+               echo '<p class="description">CSS to include on ' . strtolower( $products_label ) . ' page</p>'; 
             },
             'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
