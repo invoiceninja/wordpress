@@ -2,7 +2,7 @@
     <h1>Invoice Ninja</h1>
     <?php settings_errors(); ?>
 
-    <div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 16px; padding-bottom: 20px; ">
+    <div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 40px; padding-bottom: 30px; ">
         <?php echo $company ?>
     </div>
 
@@ -32,8 +32,8 @@
         </div>            
     </div>
 
-
-    <?php submit_button(); ?>    
-
+    <br class="clearfix"/>
+    <?php submit_button(); ?>        
+    
     </form>
 </dvi>
