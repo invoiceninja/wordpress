@@ -42,7 +42,7 @@ class SettingsApi
     }
 
     public function enqueueStyles()
-    {
+    {        
         wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/settings.css', __FILE__ ) );
         wp_enqueue_script( 'custom-script', plugins_url( '/../../assets/js/settings.js', __FILE__ ) );        
     }
