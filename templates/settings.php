@@ -6,7 +6,8 @@
         <?php echo $company ?>
     </div>
 
-    <form action="options.php" method="post">
+    <form action="options.php" method="post" autocomplete="off">
+    <input autocomplete="new-password" name="hidden" type="text" style="display:none;"/>
 
     <ul class="nav nav-tabs">
         <li class="active"><a href="#tab-1">Configuration</a></li>
@@ -29,6 +30,12 @@
             <?php do_settings_sections( 'invoiceninja_templates' ); ?>
         </div>            
         <div id="tab-4" class="tab-pane">
+            <p>
+                Thank you for installing the Invoice Ninja plugin for WordPress!
+            </p>
+            <p>
+                Please <a href="https://github.com/invoiceninja/wordpress/issues" target="_blank">create issues</a> on GitHub to suggest features you'd like to see added.
+            <p>
         </div>            
     </div>
 
