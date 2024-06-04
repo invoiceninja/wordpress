@@ -3,6 +3,14 @@
     clear: both;
 }
 
+.connection-info
+{
+    min-height: 100px; 
+    padding-top: 20px; 
+    margin-bottom: 30px; 
+    padding-bottom: 20px;
+}
+
 .nav-tabs
 {
     width: 100%;
