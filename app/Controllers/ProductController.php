@@ -219,19 +219,19 @@ class ProductController extends BaseController
             $count++;
         }        
 
-        $products_label = get_option( 'invoiceninja_products_label');
+        $products_label = get_option( 'invoiceninja_products_label' );
         if ( ! $products_label ) {
            $products_label = 'Products';
         }
 
-        $page_data = array(
-            'ID' => get_option('invoiceninja_product_page_id'),
+        $page_data = [
+            'ID' => get_option( 'invoiceninja_product_page_id' ),
             'post_title' => $products_label,
             'post_content' => $page,
             'post_status' => 'publish',
             'post_author' => 1,
             'post_type' => 'page',
-        );
+        ];
 
         $page_id = wp_insert_post( $page_data );
 

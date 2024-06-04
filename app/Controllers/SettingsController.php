@@ -54,12 +54,12 @@ class SettingsController extends BaseController
 
                   if ($total_count > 0) {
                      if ($total_count == 1) {
-                        $product_label = get_option( 'invoiceninja_product_label');
+                        $product_label = get_option( 'invoiceninja_product_label' );
                         if ( ! $product_label ) {
                            $product_label = 'Product';
                         }
                      } else {
-                        $product_label = get_option( 'invoiceninja_products_label');
+                        $product_label = get_option( 'invoiceninja_products_label' );
                         if ( ! $product_label ) {
                            $product_label = 'Products';
                         }
