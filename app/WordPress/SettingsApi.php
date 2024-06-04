@@ -25,6 +25,8 @@ class SettingsApi
 
     public function register()
     {
+        add_action( 'admin_enqueue_scripts', [ $this, 'enqueueStyles' ] );
+
         if ( ! empty( $this->admin_pages) ) 
         {
             add_action( 'admin_menu', [ $this, 'addAdminMenu' ] );
@@ -37,6 +39,11 @@ class SettingsApi
         }
 
         add_action('updated_option', [ $this, 'optionUpdated' ], 10, 3);
+    }
+
+    public function enqueueStyles()
+    {
+        wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/settings.css', __FILE__ ) );
     }
 
     function optionUpdated($option_name, $old_value, $new_value) 

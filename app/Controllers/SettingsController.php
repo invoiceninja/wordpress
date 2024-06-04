@@ -90,11 +90,11 @@ class SettingsController extends BaseController
    {
       $args = [
          [
-            'option_group' => 'invoiceninja',
+            'option_group' => 'invoiceninja_configuration',
             'option_name' => 'invoiceninja_api_url',
          ],
          [
-            'option_group' => 'invoiceninja',
+            'option_group' => 'invoiceninja_configuration',
             'option_name' => 'invoiceninja_company_key',
          ],
          [
@@ -163,7 +163,7 @@ class SettingsController extends BaseController
                   echo '<div class="card"><b>Invalid company key or URL</b></div>';
                }
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_configuration',
             
          ],
       ];
@@ -183,7 +183,7 @@ class SettingsController extends BaseController
                echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key"/>';
                echo '<p class="description">Enable the Storefront option on Settings > Client Portal to generate a company key</p>'; 
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_configuration',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_company_key',
@@ -200,7 +200,7 @@ class SettingsController extends BaseController
                echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url" placeholder="https://invoicing.co"/>'; 
                echo '<p class="description">Leave this field blank if you\'re using the hosted platform</p>'; 
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_configuration',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_api_url',
