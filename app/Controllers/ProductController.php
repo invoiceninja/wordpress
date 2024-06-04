@@ -47,6 +47,7 @@ class ProductController extends BaseController
 
     public static function loadProducts()
     {
+        /*
         // Disable email notifications for new posts
         function disable_post_email_notifications() {
             remove_action( 'publish_post', 'wp_notify_postauthor' );
@@ -58,6 +59,7 @@ class ProductController extends BaseController
             add_action( 'publish_post', 'wp_notify_postauthor' );
         }
         add_action( 'wp_insert_post', 'enable_post_email_notifications' );
+        */
         
         $args = [
             'post_type' => 'invoiceninja_product',
