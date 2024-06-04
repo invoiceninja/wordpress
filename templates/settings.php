@@ -2,16 +2,6 @@
     <h1>Invoice Ninja</h1>
     <?php settings_errors(); ?>
 
-    <div class="card connection-info">
-        <?php echo $company ?>
-    </div>
-
-    <form method="post" action="">
-        <input type="hidden" name="my_plugin_action" value="run_code">
-        <?php wp_nonce_field('my_plugin_run_code', 'my_plugin_nonce'); ?>
-        <input type="submit" name="run_code_button" class="button button-primary" value="Import Products">
-    </form>
-
     <form method="post" action="options.php" autocomplete="off">
     <input autocomplete="new-password" name="hidden" type="text" style="display:none;"/>
 
@@ -48,4 +38,17 @@
     <?php submit_button(); ?>        
     
     </form>
+
+    <?php if ($company) { ?>
+        <div class="card connection-info">
+            <?php echo $company ?>
+        </div>
+
+        <form method="post" action="">
+            <input type="hidden" name="my_plugin_action" value="run_code">
+            <?php wp_nonce_field('my_plugin_run_code', 'my_plugin_nonce'); ?>
+            <input type="submit" name="run_code_button" class="button button-primary" value="Import Products">
+        </form>
+    <?php } ?>
+
 </dvi>

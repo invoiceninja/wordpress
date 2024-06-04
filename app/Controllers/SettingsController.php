@@ -66,8 +66,6 @@ class SettingsController extends BaseController
                      }
                      $company .= '<div style="padding-top: 4px">' . $total_count . ' ' . $product_label . '</div>';
                   }
-               } else if ( get_option( 'invoiceninja_company_key' ) ) {
-                  $company = '<b>Invalid company key or URL</b>';
                }
 
                require_once "$this->plugin_path/templates/settings.php";
