@@ -46,12 +46,23 @@ class PostApi
                 $slug = strtolower( $productLabel );
             }
 
+
+            $query_args = array(
+                'post_type' => 'invoiceninja_product',
+                'posts_per_page' => 5,
+                'order_by' => 'title', // date, menu_order
+                'order' => 'ASC',
+            );
+            $query = new \WP_Query($query_args);
+                
             register_post_type(
                 $type['id'], [
                     'labels' => [
                         'name' => $type['name'],
                         'singular_name' => $type['singular_name'],
                     ],
+                    'hierarchical' => true,
+                    'show_in_menu' => $query->have_posts(),
                     'public' => true,
                     'has_archive' => true,
                     'menu_icon' => 'dashicons-products',
