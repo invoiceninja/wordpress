@@ -68,9 +68,6 @@ class PostApi
                     'menu_icon' => 'dashicons-products',
                     'show_in_rest' => true,
                     'rewrite' => array( 'slug' => $slug ),
-                    'capabilities' => [
-                        'create_posts' => 'do_not_allow', 
-                    ],
                     /*
                     'capabilities' => [
                         'edit_post' => 'edit_post',
