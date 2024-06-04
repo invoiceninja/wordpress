@@ -62,7 +62,13 @@ class SettingsController extends BaseController
 
                   $total_count = $query->found_posts;
 
-                  $company .= '<div style="padding-top: 8px">' . $total_count . ' ' . ( $total_count == 1 ? $product_label : $products_label ) . ' • <a href="/' . strtolower( $products_label ) . '" target="_blank">View Page</a></div>';
+                  $company .= '<div style="padding-top: 8px">' . $total_count . ' ' . ( $total_count == 1 ? $product_label : $products_label );
+
+                  if ( $total_count > 0 ) {
+                     $company .= ' • <a href="/' . strtolower( $products_label ) . '" target="_blank">View Page</a>';
+                  }
+
+                  $company .= '</div>';
                }
 
                require_once "$this->plugin_path/templates/settings.php";
