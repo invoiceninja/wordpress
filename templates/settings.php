@@ -16,17 +16,16 @@
         <li><a href="#tab-4">About</a></li>
     </ul>
 
+    <?php settings_fields( 'invoiceninja_settings' ); ?>
+
     <div class="tab-content">
         <div id="tab-1" class="tab-pane active">
-            <?php settings_fields( 'invoiceninja_configuration' ); ?>
             <?php do_settings_sections( 'invoiceninja_configuration' ); ?>
         </div>
         <div id="tab-2" class="tab-pane">
-            <?php settings_fields( 'invoiceninja_localization' ); ?> 
             <?php do_settings_sections( 'invoiceninja_localization' ); ?>
         </div>            
         <div id="tab-3" class="tab-pane">
-            <?php settings_fields( 'invoiceninja_templates' ); ?> 
             <?php do_settings_sections( 'invoiceninja_templates' ); ?>
         </div>            
         <div id="tab-4" class="tab-pane">

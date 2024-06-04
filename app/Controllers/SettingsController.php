@@ -122,31 +122,31 @@ class SettingsController extends BaseController
    {
       $args = [
          [
-            'option_group' => 'invoiceninja_configuration',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_api_url',
          ],
          [
-            'option_group' => 'invoiceninja_configuration',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_company_key',
          ],
          [
-            'option_group' => 'invoiceninja_localization',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_products_label',
          ],
          [
-            'option_group' => 'invoiceninja_localization',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_product_label',
          ],
          [
-            'option_group' => 'invoiceninja_templates',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_product_template',
          ],
          [
-            'option_group' => 'invoiceninja_templates',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_image_template',
          ],
          [
-            'option_group' => 'invoiceninja_templates',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_custom_css',
          ],
       ];

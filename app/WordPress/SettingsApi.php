@@ -53,8 +53,8 @@ class SettingsApi
         {
             if ($old_value !== $new_value) 
             {
-                SettingsController::loadProfile();
-                ProductController::loadProducts();
+                //SettingsController::loadProfile();
+                //ProductController::loadProducts();
             }
         }
     }
@@ -181,8 +181,8 @@ class SettingsApi
 
         if ( isset($_POST['submit']) && isset($_POST['option_page']) && substr( $_POST['option_page'], 0, 12 ) === 'invoiceninja' ) 
         {
-            SettingsController::loadProfile();
-            ProductController::loadProducts();
+            //SettingsController::loadProfile();
+            //ProductController::loadProducts();
         }
     }
 }
