@@ -199,7 +199,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_company_key' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key"/>';
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key"' . ( $value ? '' : ' autofocus' ) . '/>';
                echo '<p class="description">Enable the Storefront option on Settings > Client Portal to generate a company key</p>'; 
             },
             'page' => 'invoiceninja_configuration',
