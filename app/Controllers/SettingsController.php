@@ -28,6 +28,16 @@ class SettingsController extends BaseController
             'menu_slug' => 'invoiceninja',
             'callback' => function() 
             {
+               $product_label = get_option( 'invoiceninja_product_label' );
+               if ( ! $product_label ) {
+                  $product_label = 'Product';
+               }
+            
+               $products_label = get_option( 'invoiceninja_products_label' );
+               if ( ! $products_label ) {
+                  $products_label = 'Products';
+               }
+
                $company = '';
 
                if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
@@ -52,20 +62,7 @@ class SettingsController extends BaseController
 
                   $total_count = $query->found_posts;
 
-                  if ($total_count > 0) {
-                     if ($total_count == 1) {
-                        $product_label = get_option( 'invoiceninja_product_label' );
-                        if ( ! $product_label ) {
-                           $product_label = 'Product';
-                        }
-                     } else {
-                        $product_label = get_option( 'invoiceninja_products_label' );
-                        if ( ! $product_label ) {
-                           $product_label = 'Products';
-                        }
-                     }
-                     $company .= '<div style="padding-top: 4px">' . $total_count . ' ' . $product_label . '</div>';
-                  }
+                  $company .= '<div style="padding-top: 4px">' . $total_count . ' ' . ( $total_count == 1 ? $product_label : $products_label ) . '</div>';
                }
 
                require_once "$this->plugin_path/templates/settings.php";

@@ -48,7 +48,7 @@
         <form method="post" action="">
             <input type="hidden" name="my_plugin_action" value="run_code">
             <?php wp_nonce_field('my_plugin_run_code', 'my_plugin_nonce'); ?>
-            <input type="submit" name="run_code_button" class="button button-primary" value="Import Products">
+            <input type="submit" name="run_code_button" class="button button-primary" value="Import <?php echo $products_label; ?>">
         </form>
     <?php } ?>
 
