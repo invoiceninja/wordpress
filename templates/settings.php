@@ -2,7 +2,7 @@
     <h1>Invoice Ninja</h1>
     <?php settings_errors(); ?>
 
-    <div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 40px; padding-bottom: 30px; ">
+    <div class="card" style="min-height: 100px; padding-top: 20px; margin-bottom: 30px; padding-bottom: 20px; ">
         <?php echo $company ?>
     </div>
 

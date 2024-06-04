@@ -179,7 +179,7 @@ class SettingsApi
             );
         }
 
-        if ( isset($_POST['submit']) && isset($_POST['option_page']) && $_POST['option_page'] === 'invoiceninja' ) 
+        if ( isset($_POST['submit']) && isset($_POST['option_page']) && substr( $_POST['option_page'], 0, 12 ) === 'invoiceninja' ) 
         {
             SettingsController::loadProfile();
             ProductController::loadProducts();
