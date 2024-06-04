@@ -76,7 +76,7 @@ class PostApi
                     'has_archive' => true,
                     'menu_icon' => 'dashicons-products',
                     'show_in_rest' => true,
-                    'rewrite' => array( 'slug' => $slug ),
+                    'rewrite' => [ 'slug' => sanitize_title( $slug ) ],
                     /*
                     'capabilities' => [
                         'edit_post' => 'edit_post',

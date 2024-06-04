@@ -233,6 +233,7 @@ class ProductController extends BaseController
             'post_status' => 'publish',
             'post_author' => 1,
             'post_type' => 'page',
+            'post_name' => sanitize_title( strtolower( $products_label ) ),
         ];
 
         $page_id = wp_insert_post( $page_data );
