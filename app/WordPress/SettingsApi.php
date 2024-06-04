@@ -186,15 +186,26 @@ class SettingsApi
         }
         */
 
-        if (isset($_POST['my_plugin_action']) && $_POST['my_plugin_action'] == 'run_code') 
+        if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'import_products') 
         {
             // Check the nonce for security
-            if ( ! isset($_POST['my_plugin_nonce']) || !wp_verify_nonce($_POST['my_plugin_nonce'], 'my_plugin_run_code') ) {
+            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_import_products') ) {
                 wp_die('Security check failed');
             }
     
             ProductController::loadProducts();
-        }
-    
+
+            $products_label = get_option( 'invoiceninja_products_label' );
+            if ( ! $products_label ) {
+               $products_label = 'Products';
+            }
+
+            add_settings_error(
+                'invoiceninja',
+                'imported_products',
+                'Successfully imported ' . strtolower( $products_label ) . '!',
+                'success'
+            );
+        }    
     }
 }
