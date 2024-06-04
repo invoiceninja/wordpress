@@ -98,23 +98,23 @@ class SettingsController extends BaseController
             'option_name' => 'invoiceninja_company_key',
          ],
          [
-            'option_group' => 'invoiceninja',
+            'option_group' => 'invoiceninja_localization',
             'option_name' => 'invoiceninja_products_label',
          ],
          [
-            'option_group' => 'invoiceninja',
+            'option_group' => 'invoiceninja_localization',
             'option_name' => 'invoiceninja_product_label',
          ],
          [
-            'option_group' => 'invoiceninja',
+            'option_group' => 'invoiceninja_templates',
             'option_name' => 'invoiceninja_product_template',
          ],
          [
-            'option_group' => 'invoiceninja',
+            'option_group' => 'invoiceninja_templates',
             'option_name' => 'invoiceninja_image_template',
          ],
          [
-            'option_group' => 'invoiceninja',
+            'option_group' => 'invoiceninja_templates',
             'option_name' => 'invoiceninja_custom_css',
          ],
       ];
@@ -163,8 +163,19 @@ class SettingsController extends BaseController
                   echo '<div class="card"><b>Invalid company key or URL</b></div>';
                }
             },
-            'page' => 'invoiceninja_configuration',
-            
+            'page' => 'invoiceninja_configuration',            
+         ],
+         [
+            'id' => 'invoiceninja_admin_index',
+            'title' => 'Settings',
+            'callback' => function() {},
+            'page' => 'invoiceninja_localization',
+         ],
+         [
+            'id' => 'invoiceninja_admin_index',
+            'title' => 'Settings',
+            'callback' => function() {},
+            'page' => 'invoiceninja_templates',            
          ],
       ];
 
@@ -216,7 +227,7 @@ class SettingsController extends BaseController
                echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
                echo '<p class="description">Singular label to use for individual products</p>'; 
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_localization',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_product_label',
@@ -232,7 +243,7 @@ class SettingsController extends BaseController
                echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_products_label" placeholder="Products"/>'; 
                echo '<p class="description">Plural label to use for multiple products</p>'; 
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_localization',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_products_label',
@@ -252,7 +263,7 @@ class SettingsController extends BaseController
                echo '<textarea class="code" cols="60" rows="8" name="invoiceninja_product_template">' . $value . '</textarea>'; 
                echo '<p class="description">HTML template for each product</p>'; 
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_product_template',
@@ -271,7 +282,7 @@ class SettingsController extends BaseController
                echo '<textarea class="code" cols="60" rows="6" name="invoiceninja_image_template">' . $value . '</textarea>'; 
                echo '<p class="description">HTML template for each product image</p>';                
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_image_template',
@@ -285,9 +296,9 @@ class SettingsController extends BaseController
             { 
                $value = esc_attr( get_option( 'invoiceninja_custom_css' ) );
                echo '<textarea class="code" cols="60" rows="6" name="invoiceninja_custom_css">' . $value . '</textarea>'; 
-               echo '<p class="description"></p>'; 
+               echo '<p class="description">CSS to include on products page</p>'; 
             },
-            'page' => 'invoiceninja',
+            'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_custom_css',

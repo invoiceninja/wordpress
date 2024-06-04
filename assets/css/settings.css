@@ -1,8 +1,6 @@
 .nav-tabs
 {
-    float: left;
     width: 100%;
-    margin: 0;
     list-style-type: none;
     border-bottom: 1px solid transparent;
 }
@@ -41,7 +39,7 @@
 .tab-content > .tab-pane 
 {
     float: left;
-    width: 100%;
+    width: 96%;
     display: none;
 }
 
