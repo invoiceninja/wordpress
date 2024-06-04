@@ -34,8 +34,9 @@
         </div>            
     </div>
 
-    <br class="clearfix"/>
-    <?php submit_button(); ?>        
+    <p class="clearfix">
+        <?php submit_button(); ?>        
+    </p>
     
     </form>
 
