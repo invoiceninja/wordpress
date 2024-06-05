@@ -49,9 +49,9 @@ class SettingsApi
 
     function optionUpdated($option_name, $old_value, $new_value) 
     {
-        /*
         SettingsController::loadProfile();
 
+        /*        
         if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') 
         {
             if ($old_value !== $new_value) 
