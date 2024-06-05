@@ -14,8 +14,6 @@ class ProductApi extends BaseApi
 
         $response = self::sendRequest( "$route?per_page=100" );
 
-        
-
         //echo $response; exit;
 
         return $response;

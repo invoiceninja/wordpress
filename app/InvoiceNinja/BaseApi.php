@@ -32,7 +32,7 @@ class BaseApi
         $url = 'https://staging.invoicing.co/api/v1/' . $route;
 
         $response = file_get_contents( $url, false, $context );        
-
+        
         $response = json_encode( json_decode( $response )->data );
 
         return $response;

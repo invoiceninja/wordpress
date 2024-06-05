@@ -14,6 +14,10 @@ class ProfileApi extends BaseApi
 
         $response = self::sendRequest( $route );
 
+        if (self::isUsingToken()) {
+            $response = json_encode( json_decode( $response )[0] );
+        }
+
         //echo $response; exit;
 
         return $response;
