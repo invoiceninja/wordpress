@@ -101,9 +101,9 @@ class ProductController extends BaseController
             );
 
             $post_id = wp_insert_post($post_data); 
-
+            
             if ( $product->product_image && $post_id && ! is_wp_error( $post_id ) ) 
-            {
+            {                
                 $file_extension = pathinfo( $product->product_image, PATHINFO_EXTENSION );
                 $allowed_mime_types = wp_get_mime_types();
                 $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';            
@@ -129,8 +129,9 @@ class ProductController extends BaseController
                     $attachment_id = $attachments[0];                    
                     $result = wp_delete_attachment( $attachment_id, true );
                 }
-
-                if ( $image_data = @file_get_contents( $product->product_image ) ) 
+                
+                if (filter_var($product->product_image, FILTER_VALIDATE_URL) 
+                    && $image_data = @file_get_contents( $product->product_image ) ) 
                 {                
                     $upload = wp_upload_bits( $filename, null, $image_data );
 
@@ -150,7 +151,7 @@ class ProductController extends BaseController
                 }
             }
         }     
-
+        
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
         $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
         
