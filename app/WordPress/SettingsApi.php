@@ -52,7 +52,7 @@ class SettingsApi
         /*
         SettingsController::loadProfile();
 
-        if ($option_name === 'invoiceninja_company_key' || $option_name === 'invoiceninja_api_url') 
+        if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') 
         {
             if ($old_value !== $new_value) 
             {

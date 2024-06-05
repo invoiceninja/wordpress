@@ -138,7 +138,7 @@ class SettingsController extends BaseController
          ],
          [
             'option_group' => 'invoiceninja_settings',
-            'option_name' => 'invoiceninja_company_key',
+            'option_name' => 'invoiceninja_api_token',
          ],
          [
             'option_group' => 'invoiceninja_settings',
@@ -200,18 +200,18 @@ class SettingsController extends BaseController
 
       $args = [
          [
-            'id' => 'invoiceninja_company_key',
-            'title' => 'Company Key',
+            'id' => 'invoiceninja_api_token',
+            'title' => 'Token',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option( 'invoiceninja_company_key' ) );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_company_key"' . ( $value ? '' : ' autofocus' ) . '/>';
-               echo '<p class="description">Enable the Storefront option on Settings > Client Portal to generate a company key</p>'; 
+               $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . '/>';
+               echo '<p class="description">Tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
             },
             'page' => 'invoiceninja_configuration',
             'section' => 'invoiceninja_admin_index',
             'args' => [
-               'label_for' => 'invoiceninja_company_key',
+               'label_for' => 'invoiceninja_api_token',
                //'class' => '',
                'help' => 'test',
             ]

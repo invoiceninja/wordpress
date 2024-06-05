@@ -10,7 +10,7 @@ class BaseApi
 {
     public static function sendRequest( $route )
     {
-        $key = esc_attr( get_option( 'invoiceninja_company_key' ) );
+        $key = esc_attr( get_option( 'invoiceninja_api_token' ) );
         $url = esc_attr( get_option( 'invoiceninja_api_url' ) );
 
         if ( empty( $url ) ) {
@@ -40,7 +40,7 @@ class BaseApi
 
     public static function isUsingToken()
     {
-        $value = get_option( 'invoiceninja_company_key' );
+        $value = get_option( 'invoiceninja_api_token' );
 
         return strlen( $value ) == 64;
     }
