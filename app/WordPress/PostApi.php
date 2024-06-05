@@ -47,14 +47,13 @@ class PostApi
     public function init()
     {
         foreach ($this->post_types as $type)
-        {
-            $productLabel = get_option( 'invoiceninja_product_label' );
+        {            
+            $product_label = get_option( 'invoiceninja_product_label' );
             $slug = 'product';
 
-            if ( $productLabel ) {
-                $slug = strtolower( $productLabel );
+            if ( $product_label ) {
+                $slug = strtolower( $product_label );
             }
-
 
             $query_args = array(
                 'post_type' => 'invoiceninja_product',
