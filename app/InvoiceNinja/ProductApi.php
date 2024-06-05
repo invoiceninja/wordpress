@@ -10,7 +10,11 @@ class ProductApi extends BaseApi
 {
     public static function load()
     {
-        $response = self::sendRequest( 'shop/products?per_page=100' );
+        $route = self::isUsingToken() ? 'products' : 'shop/products';
+
+        $response = self::sendRequest( "$route?per_page=100" );
+
+        
 
         //echo $response; exit;
 

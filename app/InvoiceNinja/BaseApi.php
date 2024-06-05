@@ -24,17 +24,24 @@ class BaseApi
 
         $opts = [
             "http" => [
-                "header" => "X-API-COMPANY-KEY: $key\r\n",
+                "header" => "X-API-" . ( self::isUsingToken() ? 'TOKEN' : 'COMPANY-KEY' ) . ": $key\r\n",
             ]
         ];
 
         $context = stream_context_create( $opts );
         $url = 'https://staging.invoicing.co/api/v1/' . $route;
 
-        $response = @file_get_contents( $url, false, $context );        
+        $response = file_get_contents( $url, false, $context );        
 
         $response = json_encode( json_decode( $response )->data );
 
         return $response;
+    }
+
+    public static function isUsingToken()
+    {
+        $value = get_option( 'invoiceninja_company_key' );
+
+        return strlen( $value ) == 64;
     }
 }

@@ -49,6 +49,9 @@ class SettingsApi
 
     function optionUpdated($option_name, $old_value, $new_value) 
     {
+        /*
+        SettingsController::loadProfile();
+
         if ($option_name === 'invoiceninja_company_key' || $option_name === 'invoiceninja_api_url') 
         {
             if ($old_value !== $new_value) 
@@ -57,6 +60,7 @@ class SettingsApi
                 ProductController::loadProducts();
             }
         }
+        */
     }
 
     public function addPages( array $pages )
@@ -179,12 +183,10 @@ class SettingsApi
             );
         }
 
-        /*
         if ( isset($_POST['submit']) && isset($_POST['option_page']) && substr( $_POST['option_page'], 0, 12 ) === 'invoiceninja' ) 
         {
             SettingsController::loadProfile();            
         }
-        */
 
         if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'import_products') 
         {
