@@ -228,11 +228,20 @@ class ProductController extends BaseController
            $products_label = 'Products';
         }
 
+        $post_status = 'draft';
+        if ( $post_id = get_option( 'invoiceninja_product_page_id' ) ) 
+        {
+            if ( $post = get_post($post_id) ) 
+            {
+                $post_status = $post->post_status;
+            }
+        }
+
         $page_data = [
-            'ID' => get_option( 'invoiceninja_product_page_id' ),
+            'ID' => $post_id,
             'post_title' => $products_label,
             'post_content' => $page,
-            'post_status' => 'publish',
+            'post_status' => $post_status,
             'post_author' => 1,
             'post_type' => 'page',
             'post_name' => sanitize_title( strtolower( $products_label ) ),
