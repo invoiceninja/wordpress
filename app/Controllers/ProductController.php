@@ -130,21 +130,23 @@ class ProductController extends BaseController
                     $result = wp_delete_attachment( $attachment_id, true );
                 }
 
-                $image_data = file_get_contents( $product->product_image );
-                $upload = wp_upload_bits( $filename, null, $image_data );
+                if ( $image_data = @file_get_contents( $product->product_image ) ) 
+                {                
+                    $upload = wp_upload_bits( $filename, null, $image_data );
 
-                if ( ! $upload['error'] ) {
-                    $attachment_id = wp_insert_attachment( 
-                        [
-                            'post_mime_type' => $post_mime_type,
-                            'post_title' => sanitize_file_name( $filename ),
-                            'post_content' => $product->product_key,
-                            'post_status' => 'inherit'
-                        ], 
-                        $upload['file']
-                    );
+                    if ( ! $upload['error'] ) {
+                        $attachment_id = wp_insert_attachment( 
+                            [
+                                'post_mime_type' => $post_mime_type,
+                                'post_title' => sanitize_file_name( $filename ),
+                                'post_content' => $product->product_key,
+                                'post_status' => 'inherit'
+                            ], 
+                            $upload['file']
+                        );
 
-                    set_post_thumbnail( $post_id, $attachment_id );
+                        set_post_thumbnail( $post_id, $attachment_id );
+                    }
                 }
             }
         }     
