@@ -49,10 +49,10 @@ class SettingsController extends BaseController
                      $company .= '<img src="' . $settings->company_logo . '" height="80" style="float: left;padding-right: 16px;"/>';
                   }
 
-                  $company .= '<h1 class="title" style="padding-top: 0px">' . $settings->name . '</h1>';
+                  $company .= '<h1 class="title" style="padding-top: 0px">' . esc_attr( $settings->name ) . '</h1>';
                   
                   if ( $settings->website ) {
-                     $company .= '<a href="' . $settings->website . '" target="_blank">' . $settings->website . '</a>';
+                     $company .= '<a href="' . esc_attr( $settings->website ) . '" target="_blank">' . esc_attr( $settings->website ) . '</a>';
                   }
 
                   $args = [

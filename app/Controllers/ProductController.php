@@ -107,20 +107,20 @@ class ProductController extends BaseController
         foreach ($products as $product) 
         {             
             $post_data = array(
-                'post_title' => $product->product_key,
-                'post_content' => $product->notes,
+                'post_title' => esc_attr( $product->product_key ),
+                'post_content' => esc_attr( $product->notes ),
                 'post_status' => 'publish', // publish, draft, pending, private, trash
                 'post_type' => 'invoiceninja_product',
                 'meta_input' => [
-                    'id' => $product->id,
-                    'price' => $product->price,
-                    'quantity' => $product->quantity,
-                    'max_quantity' => $product->max_quantity,
-                    'in_stock_quantity' => $product->in_stock_quantity,
-                    'custom_value1' => $product->custom_value1,
-                    'custom_value2' => $product->custom_value2,
-                    'custom_value3' => $product->custom_value3,
-                    'custom_value4' => $product->custom_value4,
+                    'id' => esc_attr( $product->id ),
+                    'price' => esc_attr( $product->price ),
+                    'quantity' => esc_attr( $product->quantity ),
+                    'max_quantity' => esc_attr( $product->max_quantity ),
+                    'in_stock_quantity' => esc_attr( $product->in_stock_quantity ),
+                    'custom_value1' => esc_attr( $product->custom_value1 ),
+                    'custom_value2' => esc_attr( $product->custom_value2 ),
+                    'custom_value3' => esc_attr( $product->custom_value3 ),
+                    'custom_value4' => esc_attr( $product->custom_value4 ),
                 ],
             );
 
