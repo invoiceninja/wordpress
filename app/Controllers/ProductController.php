@@ -50,23 +50,34 @@ class ProductController extends BaseController
 
     public function registerCron()
     {
-        if ( ! wp_next_scheduled('auto_import_products') ) {
-            wp_schedule_event( time(), 'hourly', 'auto_import_products' );
+        if ( ! wp_next_scheduled('auto_refresh') ) {
+            wp_schedule_event( time(), 'hourly', 'auto_refresh' );
         }
 
-        add_action('auto_import_products', [ $this, 'autoImportProducts' ] );
+        add_action('auto_refresh', [ $this, 'autoRefresh' ] );
     }
 
     function deactivation() 
     {
-        $timestamp = wp_next_scheduled( 'auto_import_products' );
+        $timestamp = wp_next_scheduled( 'auto_refresh' );
         
-        wp_unschedule_event( $timestamp, 'auto_import_products' );
+        wp_unschedule_event( $timestamp, 'auto_refresh' );
     }
 
-    public function autoImportProducts()
+    public function autoRefresh()
     {
-        ProductController::loadProducts();
+        SettingsController::loadProfile();
+
+        $args = [
+            'post_type' => 'invoiceninja_product',
+            'posts_per_page' => -1,
+        ];
+        
+        $query = new \WP_Query( $args );
+        
+        if ( $query->have_posts() ) {
+            ProductController::loadProducts();
+        }        
     }
 
     public static function loadProducts()
