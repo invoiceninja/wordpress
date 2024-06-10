@@ -50,11 +50,15 @@
     border: 1px solid #c3c4c7;    
 }
 
+.tab-content 
+{
+    padding-right: 20px;
+}
 
 .tab-content > .tab-pane 
 {
     float: left;
-    width: 96%;
+    width: 100%;
     display: none;
 }
 
