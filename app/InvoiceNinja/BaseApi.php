@@ -31,9 +31,28 @@ class BaseApi
         $context = stream_context_create( $opts );
         $url = 'https://staging.invoicing.co/api/v1/' . $route;
 
-        $response = file_get_contents( $url, false, $context );        
-        
-        $response = json_encode( json_decode( $response )->data );
+        set_error_handler(
+            function ($severity, $message, $file, $line) {
+                throw new \ErrorException($message, $severity, $severity, $file, $line);
+            }
+        );
+
+        try {
+            $response = file_get_contents( $url, false, $context );
+        } catch (\Exception $e) {
+            add_settings_error(
+                'invoiceninja',
+                'api_request',
+                $e->getMessage(),
+                'error'
+            );
+        }
+
+        restore_error_handler();
+
+        if ( $response ) {
+            $response = json_encode( json_decode( $response )->data );
+        }
 
         return $response;
     }
