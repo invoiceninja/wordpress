@@ -46,6 +46,8 @@ class BaseApi
                 $e->getMessage(),
                 'error'
             );
+
+            return null;
         }
 
         restore_error_handler();

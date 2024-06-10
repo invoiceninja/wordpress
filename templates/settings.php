@@ -45,11 +45,18 @@
             <?php echo $company ?>
         </div>
 
+        <form method="post" action="" style="float: left; margin-right: 12px">
+            <input type="hidden" name="invoiceninja_action" value="refresh_company">
+            <?php wp_nonce_field('invoiceninja_refresh_company', 'invoiceninja_nonce'); ?>
+            <input type="submit" class="button button-primary" value="Refresh Company">
+        </form>
+
         <form method="post" action="">
             <input type="hidden" name="invoiceninja_action" value="import_products">
             <?php wp_nonce_field('invoiceninja_import_products', 'invoiceninja_nonce'); ?>
             <input type="submit" class="button button-primary" value="Import <?php echo $products_label; ?>">
         </form>
+
     <?php } ?>
 
 </dvi>

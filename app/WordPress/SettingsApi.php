@@ -49,18 +49,13 @@ class SettingsApi
 
     function optionUpdated($option_name, $old_value, $new_value) 
     {
-        SettingsController::loadProfile();
-
-        /*        
         if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') 
         {
             if ($old_value !== $new_value) 
             {
                 SettingsController::loadProfile();
-                ProductController::loadProducts();
             }
         }
-        */
     }
 
     public function addPages( array $pages )
@@ -183,14 +178,24 @@ class SettingsApi
             );
         }
 
-        if ( isset($_POST['submit']) && isset($_POST['option_page']) && substr( $_POST['option_page'], 0, 12 ) === 'invoiceninja' ) 
+        if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'refresh_company') 
         {
-            SettingsController::loadProfile();            
-        }
+            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_refresh_company') ) {
+                wp_die('Security check failed');
+            }
+    
+            SettingsController::loadProfile();
 
+            add_settings_error(
+                'invoiceninja',
+                'imported_products',
+                'Successfully refreshed company!',
+                'success'
+            );
+        } 
+        
         if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'import_products') 
         {
-            // Check the nonce for security
             if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_import_products') ) {
                 wp_die('Security check failed');
             }
