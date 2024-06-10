@@ -213,7 +213,13 @@ class ProductController extends BaseController
                     if ( ! $image_template ) {
                         $image_template = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
                     }
-                    $image = str_replace( '$image_url', $image_url, $image_template );
+                    $image = str_replace( [ 
+                        '$image_url',
+                        '$title',
+                    ], [ 
+                        $image_url,
+                        get_the_title(),
+                    ], $image_template );
                 }
 
                 $template = str_replace( [
