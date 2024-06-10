@@ -43,6 +43,30 @@ class ProductController extends BaseController
         $this->posts
             ->setPostTypes($types)
             ->register();
+
+        add_action('init', [ $this, 'registerCron' ] );
+        register_deactivation_hook(__FILE__, [ $this, 'deactivation' ] );
+    }
+
+    public function registerCron()
+    {
+        if ( ! wp_next_scheduled('auto_import_products') ) {
+            wp_schedule_event( time(), 'hourly', 'auto_import_products' );
+        }
+
+        add_action('auto_import_products', [ $this, 'autoImportProducts' ] );
+    }
+
+    function deactivation() 
+    {
+        $timestamp = wp_next_scheduled( 'auto_import_products' );
+        
+        wp_unschedule_event( $timestamp, 'auto_import_products' );
+    }
+
+    public function autoImportProducts()
+    {
+        ProductController::loadProducts();
     }
 
     public static function loadProducts()
