@@ -222,12 +222,20 @@ class ProductController extends BaseController
                     '$content',
                     '$price',
                     '$image',
+                    '$custom1',
+                    '$custom2',
+                    '$custom3',
+                    '$custom4',
                 ], [
                     get_permalink(),
                     get_the_title(),
                     get_the_content(),
                     $price,
                     $image,
+                    get_post_meta( $post_id, 'custom_value1', true ),
+                    get_post_meta( $post_id, 'custom_value2', true ),
+                    get_post_meta( $post_id, 'custom_value3', true ),
+                    get_post_meta( $post_id, 'custom_value4', true ),
                 ], $template );
 
                 $page .= $template;
