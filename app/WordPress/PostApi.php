@@ -27,19 +27,27 @@ class PostApi
         if ($post->post_type == 'invoiceninja_product') {
             wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/product.css', __FILE__ ) );
             
+            add_action( 'wp_head', [ $this, 'printInlineProductScript' ] );
         }
 
         if ( get_the_ID() == get_option('invoiceninja_product_page_id') ) {
             wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/products.css', __FILE__ ) );
 
-            add_action( 'wp_head', [ $this, 'printInlineScript' ] );
+            add_action( 'wp_head', [ $this, 'printInlineProductsScript' ] );
         }
     }
 
-    public function printInlineScript()
+    public function printInlineProductsScript()
     {
         echo '<style type="text/css">
-            ' . get_option( 'invoiceninja_custom_css' ) . '
+            ' . get_option( 'invoiceninja_products_css' ) . '
+        </style>';        
+    }
+
+    public function printInlineProductScript()
+    {
+        echo '<style type="text/css">
+            ' . get_option( 'invoiceninja_product_css' ) . '
         </style>';        
     }
 
