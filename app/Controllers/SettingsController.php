@@ -342,7 +342,7 @@ class SettingsController extends BaseController
                   $product_label = 'Product';
                }
 
-               echo '<div><textarea class="code" style="width:100%" rows="8" id="invoiceninja_image_template" name="invoiceninja_image_template">' . $value . '</textarea></div>';
+               echo '<div><textarea class="code" style="width:100%" rows="6" id="invoiceninja_image_template" name="invoiceninja_image_template">' . $value . '</textarea></div>';
                echo '<p style="float:right;">
                         <a href="#" onclick=\'alert("$image_url\n$title")\'>Variables</a> | 
                         <a href="#" onclick=\'document.querySelector("#invoiceninja_image_template").value = ' . json_encode( INVOICENINJA_DEFAULT_IMAGE_TEMPLATE ) . ';return false;\'>Reset</a>
