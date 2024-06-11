@@ -136,7 +136,7 @@ class ProductController extends BaseController
             {                
                 $file_extension = pathinfo( $product->product_image, PATHINFO_EXTENSION );
                 $allowed_mime_types = wp_get_mime_types();
-                $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';            
+                $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
                 $filename = $product->id . '.' . $file_extension;
 
                 // Delete the old image if it exists 

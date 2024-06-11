@@ -45,10 +45,27 @@ class SettingsController extends BaseController
                if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
                   $settings = $profile->settings;
 
-                  if ($settings->company_logo) {
-                     $company .= '<img src="' . $settings->company_logo . '" height="80" style="float: left;padding-right: 16px;"/>';
+                  $args = array(
+                     'post_type'      => 'attachment',
+                     'post_status'    => 'inherit',
+                     'posts_per_page' => 1,
+                     'fields'         => 'ids',
+                     'meta_query'     => array(
+                         array(
+                             'key'     => '_wp_attached_file',
+                             'value'   => 'invoiceninja_plugin',
+                             'compare' => 'LIKE',
+                         ),
+                     ),
+                 );
+ 
+                  $attachments = get_posts( $args );
+                  if ( $attachments ) {
+                     $attachment_id = $attachments[0];                    
+                     $logo_url = wp_get_attachment_url($attachment_id);
+                     $company .= '<img src="' . $logo_url . '" height="80" style="float: left;padding-right: 16px;"/>';
                   }
-
+ 
                   $company .= '<h1 class="title" style="padding-top: 0px">' . esc_attr( $settings->name ) . '</h1>';
                   
                   if ( $settings->website ) {
