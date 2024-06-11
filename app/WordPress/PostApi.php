@@ -71,6 +71,10 @@ class PostApi
 
     public function init()
     {
+        if ( ! session_id() ) {
+            session_start();
+        }
+
         foreach ($this->post_types as $type)
         {            
             $product_label = get_option( 'invoiceninja_product_label' );
@@ -124,5 +128,42 @@ class PostApi
         }
 
         flush_rewrite_rules();
+
+        add_shortcode('add_to_cart', [ $this, 'addToCartShortcode' ] );
+    }
+
+    public function addToCartShortcode($atts)
+    {
+        $atts = shortcode_atts(array(
+            'product' => '',
+        ), $atts, 'add_to_cart');
+
+        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_to_cart'])) {
+            $product = $_POST['product'];
+
+            if (wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['product']))) {
+                if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
+                    $_SESSION['invoiceninja_cart'] = [];
+                }
+
+                if (isset($_SESSION['invoiceninja_cart'][$product])) {
+                    $_SESSION['invoiceninja_cart'][$product]++;
+                } else {
+                    $_SESSION['invoiceninja_cart'][$product] = 1;
+                }
+            }
+        }
+    
+        ob_start();
+        
+        ?>
+        <form method="post" action="">
+            <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['product']), 'invoiceninja_nonce'); ?>
+            <input type="hidden" name="product" value="<?php echo esc_attr($atts['product']); ?>">
+            <button type="submit" name="add_to_cart">Add to Cart</button>
+        </form>
+        <?php
+
+        return ob_get_clean();    
     }
 }
