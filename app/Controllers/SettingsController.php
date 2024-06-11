@@ -60,14 +60,20 @@ class SettingsController extends BaseController
                      'posts_per_page' => -1,
                   ];
 
+                  $statuses = get_post_statuses();
                   $query = new \WP_Query($args);
-
                   $total_count = $query->found_posts;
-
                   $company .= '<div style="padding-top: 8px">' . $total_count . ' ' . ( $total_count == 1 ? $product_label : $products_label );
+                  $has_page = false;
 
-                  if ( $total_count > 0 ) {
-                     $company .= ' • <a href="/' . strtolower( $products_label ) . '" target="_blank">View Page</a>';
+                  if ( $page_id = get_option( 'invoiceninja_product_page_id' ) ) {
+                     if ( $page = get_post( $page_id ) ) {
+                        $has_page = $page->post_status != 'trash';
+                     }
+                  }
+
+                  if ( $has_page && $total_count > 0 ) {
+                     $company .= ' • <a href="/' . strtolower( $products_label ) . '" target="_blank">View Page</a> [' . $statuses[$page->post_status] . ']';
                   }
 
                   $company .= '</div>';
