@@ -134,7 +134,7 @@ class ProductController extends BaseController
         {             
             $post_data = array(
                 'post_title' => esc_attr( $product->product_key ),
-                'post_content' => esc_attr( $product->notes ),
+                'post_content' => '<p>[add_to_cart product="' . $product->product_key . '"]</p>' . esc_attr( $product->notes ),
                 'post_status' => 'publish', // publish, draft, pending, private, trash
                 'post_type' => 'invoiceninja_product',
                 'meta_input' => [
