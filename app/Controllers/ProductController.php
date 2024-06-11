@@ -279,11 +279,14 @@ class ProductController extends BaseController
         }
 
         $post_status = 'draft';
-        if ( $post_id = get_option( 'invoiceninja_product_page_id' ) ) 
-        {
-            if ( $post = get_post($post_id) ) 
-            {
-                $post_status = $post->post_status;
+        if ( $post_id = get_option( 'invoiceninja_product_page_id' ) ) {
+            if ( $post = get_post($post_id) ) {
+                if ( $post->post_status == 'trash' ) {
+                    $post_id = '';
+                    update_option( 'invoiceninja_product_page_id', '' );
+                } else {
+                    $post_status = $post->post_status;
+                }
             }
         }
 
@@ -300,7 +303,7 @@ class ProductController extends BaseController
         $page_id = wp_insert_post( $page_data );
 
         if ( ! is_wp_error( $page_id ) ) {
-            update_option('invoiceninja_product_page_id', $page_id);
+            update_option( 'invoiceninja_product_page_id', $page_id );
         }
     }
 }
