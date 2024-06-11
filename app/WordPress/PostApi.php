@@ -17,7 +17,18 @@ class PostApi
         if ( ! empty( $this->post_types) ) 
         {
             add_action( 'init', [ $this, 'init' ] );
-        }        
+        }
+
+        add_filter( 'the_content', [ $this, 'addDynamicContent' ] );
+    }
+
+    public function addDynamicContent($content)
+    {
+        if ( is_singular( 'invoiceninja_product' ) ) {
+            $content = '[add_to_cart]' . $content;
+        }
+
+        return $content;
     }
 
     public function enqueueStyles()
@@ -141,7 +152,7 @@ class PostApi
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_to_cart'])) {
             $product = $_POST['product'];
 
-            if (wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['product']))) {
+            if ($product && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['product']))) {
                 if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
                     $_SESSION['invoiceninja_cart'] = [];
                 }
@@ -152,6 +163,8 @@ class PostApi
                     $_SESSION['invoiceninja_cart'][$product] = 1;
                 }
             }
+
+            echo 'CART: ' . json_encode($_SESSION['invoiceninja_cart']);        
         }
     
         ob_start();
