@@ -22,8 +22,14 @@ class PostApi
 
     public function enqueueStyles()
     {
-        if ( get_the_ID() == get_option('invoiceninja_product_page_id') ) 
-        {
+        global $post;
+
+        if ($post->post_type == 'invoiceninja_product') {
+            wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/product.css', __FILE__ ) );
+            
+        }
+
+        if ( get_the_ID() == get_option('invoiceninja_product_page_id') ) {
             wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/products.css', __FILE__ ) );
 
             add_action( 'wp_head', [ $this, 'printInlineScript' ] );

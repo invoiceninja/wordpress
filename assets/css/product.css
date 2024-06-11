@@ -1,0 +1,7 @@
+.wp-block-post-date {
+    display: none;
+}
+
+.wp-block-post-date ~ p.has-text-color {
+    display: none;
+}
