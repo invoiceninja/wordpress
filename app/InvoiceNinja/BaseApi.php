@@ -61,8 +61,12 @@ class BaseApi
 
     public static function isUsingToken()
     {
+        return true;
+        
+        /*
         $value = get_option( 'invoiceninja_api_token' );
 
         return strlen( $value ) == 64;
+        */
     }
 }

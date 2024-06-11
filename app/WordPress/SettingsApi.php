@@ -47,12 +47,13 @@ class SettingsApi
 
     function optionUpdated($option_name, $old_value, $new_value) 
     {
-        if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') 
-        {
-            if ($old_value !== $new_value) 
-            {
-                update_option('invoiceninja_profile', ProfileApi::load());
-            }
+        if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') {
+            update_option('invoiceninja_profile', ProfileApi::load());
+        } else if ($option_name === 'invoiceninja_product_label' 
+            || $option_name === 'invoiceninja_products_label' 
+            || $option_name === 'invoiceninja_product_template' 
+            || $option_name === 'invoiceninja_image_template') {
+                ProductController::loadProducts();
         }
     }
 
@@ -198,7 +199,7 @@ class SettingsApi
                 wp_die('Security check failed');
             }
     
-            ProductController::loadProducts();
+            ProductController::loadProducts(true);
 
             $products_label = get_option( 'invoiceninja_products_label' );
             if ( ! $products_label ) {

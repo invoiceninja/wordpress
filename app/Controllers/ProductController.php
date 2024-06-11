@@ -67,7 +67,11 @@ class ProductController extends BaseController
     public function autoRefresh()
     {
         SettingsController::loadProfile();
+        ProductController::loadProducts();
+    }
 
+    public static function loadProducts($force = false)
+    {
         $args = [
             'post_type' => 'invoiceninja_product',
             'posts_per_page' => -1,
@@ -75,13 +79,10 @@ class ProductController extends BaseController
         
         $query = new \WP_Query( $args );
         
-        if ( $query->have_posts() ) {
-            ProductController::loadProducts();
-        }        
-    }
+        if ( ! $force && ! $query->have_posts() ) {
+            return;
+        }            
 
-    public static function loadProducts()
-    {
         /*
         // Disable email notifications for new posts
         function disable_post_email_notifications() {
@@ -95,14 +96,7 @@ class ProductController extends BaseController
         }
         add_action( 'wp_insert_post', 'enable_post_email_notifications' );
         */
-        
-        $args = [
-            'post_type' => 'invoiceninja_product',
-            'posts_per_page' => -1,
-        ];
-        
-        $query = new \WP_Query( $args );
-        
+                
         if ( $query->have_posts() ) {
             while ( $query->have_posts() ) {
                 $query->the_post();
@@ -113,6 +107,7 @@ class ProductController extends BaseController
         }
 
         $products = ProductApi::load();
+
         $products = json_decode( $products );
 
         foreach ($products as $product) 
