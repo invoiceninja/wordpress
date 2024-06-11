@@ -50,8 +50,3 @@ a.wp-invoiceninja
 {
     padding-top: 8px;
 }
-
-.wp-invoiceninja a:hover div.divider
-{
-    border-color: #0000EE;
-}

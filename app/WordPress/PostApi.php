@@ -39,8 +39,19 @@ class PostApi
 
     public function printInlineProductsScript()
     {
+        $color = '#0000EE';
+        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+        if ($profile->settings->primary_color) {
+            $color = $profile->settings->primary_color;
+        }
+
         echo '<style type="text/css">
             ' . get_option( 'invoiceninja_products_css' ) . '
+
+            a:hover div.divider
+            {
+                border-color: ' . esc_attr( $color ) . '
+            }
         </style>';        
     }
 
