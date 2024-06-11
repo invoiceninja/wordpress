@@ -162,9 +162,9 @@ class PostApi
                 } else {
                     $_SESSION['invoiceninja_cart'][$product] = 1;
                 }
-            }
 
-            echo 'CART: ' . json_encode($_SESSION['invoiceninja_cart']);        
+                //echo 'CART: ' . json_encode($_SESSION['invoiceninja_cart']);
+            }
         }
     
         ob_start();
