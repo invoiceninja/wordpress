@@ -9,7 +9,8 @@
         <li class="active"><a href="#tab-1">Configuration</a></li>
         <li><a href="#tab-2">Localization</a></li>
         <li><a href="#tab-3">Templates</a></li>
-        <li><a href="#tab-4">About</a></li>
+        <li><a href="#tab-4">Custom CSS</a></li>
+        <li><a href="#tab-5">About</a></li>
     </ul>
 
     <?php settings_fields( 'invoiceninja_settings' ); ?>
@@ -25,6 +26,9 @@
             <?php do_settings_sections( 'invoiceninja_templates' ); ?>
         </div>            
         <div id="tab-4" class="tab-pane">
+            <?php do_settings_sections( 'invoiceninja_custom_css' ); ?>
+        </div>            
+        <div id="tab-5" class="tab-pane">
             <p>
                 Thank you for installing the <a href="https://invoiceninja.com" target="_blank">Invoice Ninja</a> plugin for WordPress!
             </p>

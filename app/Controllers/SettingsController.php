@@ -199,6 +199,12 @@ class SettingsController extends BaseController
             'callback' => function() {},
             'page' => 'invoiceninja_templates',            
          ],
+         [
+            'id' => 'invoiceninja_admin_index',
+            'title' => '',
+            'callback' => function() {},
+            'page' => 'invoiceninja_custom_css',            
+         ],
       ];
 
       $this->settings->setSections( $args );
@@ -365,7 +371,7 @@ class SettingsController extends BaseController
                echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_products_css">' . $value . '</textarea>'; 
                echo '<p class="description">CSS to include on the ' . strtolower( $products_label ) . ' list page</p>'; 
             },
-            'page' => 'invoiceninja_templates',
+            'page' => 'invoiceninja_custom_css',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_products_css',
@@ -387,7 +393,7 @@ class SettingsController extends BaseController
                echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_product_css">' . $value . '</textarea>'; 
                echo '<p class="description">CSS to include on the individual ' . strtolower( $product_label ) . ' page</p>'; 
             },
-            'page' => 'invoiceninja_templates',
+            'page' => 'invoiceninja_custom_css',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_product_css',
