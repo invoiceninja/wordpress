@@ -167,7 +167,11 @@ class SettingsController extends BaseController
          ],
          [
             'option_group' => 'invoiceninja_settings',
-            'option_name' => 'invoiceninja_custom_css',
+            'option_name' => 'invoiceninja_products_css',
+         ],
+         [
+            'option_group' => 'invoiceninja_settings',
+            'option_name' => 'invoiceninja_product_css',
          ],
       ];
 
@@ -205,6 +209,11 @@ class SettingsController extends BaseController
       $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
       if ( ! $product_label ) {
          $product_label = 'Product';
+      }
+
+      $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
+      if ( ! $products_label ) {
+         $products_label = 'Products';
       }
 
       $args = [
@@ -342,24 +351,46 @@ class SettingsController extends BaseController
             ]
          ],
          [
-            'id' => 'invoiceninja_custom_css',
-            'title' => 'Custom CSS',
+            'id' => 'invoiceninja_products_css',
+            'title' => $products_label . ' Page',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option( 'invoiceninja_custom_css' ) );
+               $value = esc_attr( get_option( 'invoiceninja_products_css' ) );
 
                $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
                if ( ! $products_label ) {
                   $products_label = 'Products';
                }
 
-               echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_custom_css">' . $value . '</textarea>'; 
-               echo '<p class="description">CSS to include on the ' . strtolower( $products_label ) . ' page</p>'; 
+               echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_products_css">' . $value . '</textarea>'; 
+               echo '<p class="description">CSS to include on the ' . strtolower( $products_label ) . ' list page</p>'; 
             },
             'page' => 'invoiceninja_templates',
             'section' => 'invoiceninja_admin_index',
             'args' => [
-               'label_for' => 'invoiceninja_custom_css',
+               'label_for' => 'invoiceninja_products_css',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_product_css',
+            'title' => $product_label . ' Page',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_product_css' ) );
+
+               $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
+               if ( ! $product_label ) {
+                  $product_label = 'Product';
+               }
+
+               echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_product_css">' . $value . '</textarea>'; 
+               echo '<p class="description">CSS to include on the individual ' . strtolower( $product_label ) . ' page</p>'; 
+            },
+            'page' => 'invoiceninja_templates',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_product_css',
                //'class' => '',
             ]
          ],
