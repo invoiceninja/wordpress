@@ -1,7 +1,9 @@
-.wp-block-post-date {
+.wp-block-post-date,
+.wp-block-post-author-name {
     display: none;
 }
 
-.wp-block-post-date ~ p.has-text-color {
+.wp-block-post-date ~ p.has-text-color,
+.wp-block-post-author-name ~ p.has-text-color {
     display: none;
 }
