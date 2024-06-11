@@ -102,6 +102,26 @@ class ProductController extends BaseController
                 $query->the_post();
                 $post_id = get_the_ID();
                 wp_delete_post( $post_id, true );
+
+                $args = array(
+                    'post_type'      => 'attachment',
+                    'post_status'    => 'inherit',
+                    'posts_per_page' => 1,
+                    'fields'         => 'ids',
+                    'meta_query'     => array(
+                        array(
+                            'key'     => '_wp_attached_file',
+                            'value'   => get_post_meta( $post_id, 'id' ),
+                            'compare' => 'LIKE',
+                        ),
+                    ),
+                );
+
+                $attachments = get_posts( $args );
+                if ( $attachments ) {
+                    $attachment_id = $attachments[0];                    
+                    $result = wp_delete_attachment( $attachment_id, true );
+                }
             }
             wp_reset_postdata();
         }
@@ -138,27 +158,6 @@ class ProductController extends BaseController
                 $allowed_mime_types = wp_get_mime_types();
                 $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
                 $filename = $product->id . '.' . $file_extension;
-
-                // Delete the old image if it exists 
-                $args = array(
-                    'post_type'      => 'attachment',
-                    'post_status'    => 'inherit',
-                    'posts_per_page' => 1,
-                    'fields'         => 'ids',
-                    'meta_query'     => array(
-                        array(
-                            'key'     => '_wp_attached_file',
-                            'value'   => $filename,
-                            'compare' => 'LIKE',
-                        ),
-                    ),
-                );
-
-                $attachments = get_posts( $args );
-                if ( $attachments ) {
-                    $attachment_id = $attachments[0];                    
-                    $result = wp_delete_attachment( $attachment_id, true );
-                }
                 
                 if (filter_var($product->product_image, FILTER_VALIDATE_URL) 
                     && $image_data = @file_get_contents( $product->product_image ) ) 
