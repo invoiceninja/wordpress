@@ -357,28 +357,6 @@ class SettingsController extends BaseController
             ]
          ],
          [
-            'id' => 'invoiceninja_products_css',
-            'title' => $products_label . ' Page',
-            'callback' => function() 
-            { 
-               $value = esc_attr( get_option( 'invoiceninja_products_css' ) );
-
-               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
-               if ( ! $products_label ) {
-                  $products_label = 'Products';
-               }
-
-               echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_products_css">' . $value . '</textarea>'; 
-               echo '<p class="description">CSS to include on the ' . strtolower( $products_label ) . ' list page</p>'; 
-            },
-            'page' => 'invoiceninja_custom_css',
-            'section' => 'invoiceninja_admin_index',
-            'args' => [
-               'label_for' => 'invoiceninja_products_css',
-               //'class' => '',
-            ]
-         ],
-         [
             'id' => 'invoiceninja_product_css',
             'title' => $product_label . ' Page',
             'callback' => function() 
@@ -397,6 +375,28 @@ class SettingsController extends BaseController
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_product_css',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_products_css',
+            'title' => $products_label . ' Page',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_products_css' ) );
+
+               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
+               if ( ! $products_label ) {
+                  $products_label = 'Products';
+               }
+
+               echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_products_css">' . $value . '</textarea>'; 
+               echo '<p class="description">CSS to include on the ' . strtolower( $products_label ) . ' list page</p>'; 
+            },
+            'page' => 'invoiceninja_custom_css',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_products_css',
                //'class' => '',
             ]
          ],
