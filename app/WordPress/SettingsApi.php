@@ -6,7 +6,6 @@
 
 namespace App\WordPress;
 
-use \App\Controllers\SettingsController;
 use \App\Controllers\ProductController;
 use \App\InvoiceNinja\ProfileApi;
 use \App\InvoiceNinja\ProductApi;
@@ -52,7 +51,7 @@ class SettingsApi
         {
             if ($old_value !== $new_value) 
             {
-                SettingsController::loadProfile();
+                update_option('invoiceninja_profile', ProfileApi::load());
             }
         }
     }
@@ -183,7 +182,7 @@ class SettingsApi
                 wp_die('Security check failed');
             }
     
-            SettingsController::loadProfile();
+            update_option('invoiceninja_profile', ProfileApi::load());
 
             add_settings_error(
                 'invoiceninja',
