@@ -28,6 +28,36 @@ class PostApi
             $content = '[add_to_cart]' . $content;
         }
 
+        if ( isset( $_SESSION['invoiceninja_cart'] ) && ! empty( $_SESSION['invoiceninja_cart'] ) ) {
+            $cart = $_SESSION['invoiceninja_cart'];
+            $color = '#0000EE';
+            $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+            if ($profile->settings->primary_color) {
+                $color = $profile->settings->primary_color;
+            }    
+            $str = '<div style="
+                padding: 4px 10px 4px 10px; 
+                border-radius: 5px; 
+                color: white; 
+                background-color: ' . $color . ';
+                ">';
+
+            if ( count($cart) == 1 ) {
+                $str .= '1 item in cart';
+            } else {
+                $str .= count($cart) . ' items in cart';
+            }
+
+            $str .= '<form method="post" action="" style="float:right; padding-top: 3px;">' 
+                    . wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce')
+                    . '<button type="submit" name="checkout">Checkout</button>
+                    </form>';
+            
+            $content = $str . '</div>' . $content;
+        }
+        
+        //$content = json_encode( $_SESSION['invoiceninja_cart'] ) . $content;
+
         return $content;
     }
 
@@ -141,6 +171,7 @@ class PostApi
         flush_rewrite_rules();
 
         add_shortcode('add_to_cart', [ $this, 'addToCartShortcode' ] );
+        add_shortcode('checkout', [ $this, 'checkoutShortcode' ] );
     }
 
     public function addToCartShortcode($atts)
