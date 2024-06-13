@@ -25,8 +25,18 @@ class PostApi
     public function addDynamicContent($content)
     {
         if ( is_singular( 'invoiceninja_product' ) ) {
-            $productId = get_post_meta( get_the_ID(), 'product_id', true );
-            $content = '[add_to_cart product_id="' . $productId . '"]' . $content;
+            $post_id = get_the_ID();
+            $product_id = get_post_meta( $post_id, 'product_id', true );
+            $price = get_post_meta( $post_id, 'price', true );
+            $online_purcases = get_option( 'invoiceninja_online_purchases' );
+
+            $price = '<p>' . $price . '</p>';
+
+            if ( $online_purcases == 'single' ) {
+                $content = $price . '[buy_now product_id="' . $product_id . '"]' . $content;
+            } else if ( $online_purcases == 'multiple' ) {
+                $content = $price . '[add_to_cart product_id="' . $product_id . '"]' . $content;
+            }
         }
 
         if ( isset( $_SESSION['invoiceninja_cart'] ) && ! empty( $_SESSION['invoiceninja_cart'] ) ) {
