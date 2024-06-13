@@ -152,6 +152,7 @@ class SettingsApi
             register_setting( 
                 $setting['option_group'], 
                 $setting['option_name'], 
+                ( isset( $section['option_sanitize'] ) ? $section['option_sanitize'] : '' ),
             );
         }
 
