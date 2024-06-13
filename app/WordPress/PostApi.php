@@ -348,9 +348,9 @@ class PostApi
                         unset( $_SESSION['invoiceninja_cart'] );
                         
                         wp_redirect($invoice->invitations[0]->link);
-                    }
-                    
-                    exit;
+
+                        exit;
+                    }                    
                 }
             }
         }            
