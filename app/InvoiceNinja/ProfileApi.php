@@ -12,7 +12,9 @@ class ProfileApi extends BaseApi
     {
         $route = self::isUsingToken() ? 'companies' : 'shop/profile';
 
-        $response = self::sendRequest( $route );
+        if ( ! $response = self::sendRequest( $route ) ) {
+            return false;
+        }
 
         if (self::isUsingToken()) {
             $response = json_encode( json_decode( $response )[0] );

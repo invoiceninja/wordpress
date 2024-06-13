@@ -8,7 +8,7 @@ namespace App\InvoiceNinja;
 
 class BaseApi
 {
-    public static function sendRequest( $route, $data )
+    public static function sendRequest( $route, $method = 'GET', $data = false )
     {
         $key = esc_attr( get_option( 'invoiceninja_api_token' ) );
         $url = esc_attr( get_option( 'invoiceninja_api_url' ) );
@@ -24,14 +24,16 @@ class BaseApi
 
         $opts = [
             "http" => [
-                "header" => "Content-type: application/x-www-form-urlencoded\r\nX-API-" . ( self::isUsingToken() ? 'TOKEN' : 'COMPANY-KEY' ) . ": $key\r\n",
-                'method'  => 'POST',
+                'header' => "Content-type: application/x-www-form-urlencoded\r\nX-API-" . ( self::isUsingToken() ? 'TOKEN' : 'COMPANY-KEY' ) . ": $key\r\n",
+                'method'  => $method,
                 'content' => json_encode( $data ),
             ]
         ];
 
         $context = stream_context_create( $opts );
         $url = 'https://staging.invoicing.co/api/v1/' . $route;
+
+        echo $url . ' ' . $method;exit;
 
         set_error_handler(
             function ($severity, $message, $file, $line) {
@@ -41,7 +43,7 @@ class BaseApi
 
         try {
             $response = file_get_contents( $url, false, $context );
-        } catch (\Exception $e) {
+        } catch (\Exception $e) {            
             if ( function_exists( 'add_settings_error' ) ) {
                 add_settings_error(
                     'invoiceninja',
@@ -50,7 +52,7 @@ class BaseApi
                     'error'
                 );
             } else {
-                echo $e->getMessage();
+                echo 'Error: ' . $e->getMessage();
                 exit;
             }
 

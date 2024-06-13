@@ -187,14 +187,17 @@ class SettingsApi
                 wp_die('Security check failed');
             }
     
-            update_option('invoiceninja_profile', ProfileApi::load());
+            if ( $profile = ProfileApi::load() ) {
 
-            add_settings_error(
-                'invoiceninja',
-                'imported_products',
-                'Successfully refreshed company!',
-                'success'
-            );
+                update_option('invoiceninja_profile', $profile);
+
+                add_settings_error(
+                    'invoiceninja',
+                    'imported_products',
+                    'Successfully refreshed company!',
+                    'success'
+                );
+            }
         } 
         
         if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'import_products') 

@@ -14,7 +14,7 @@ class InvoiceApi extends BaseApi
             'client_id' => 'J0dNxm2aLO',
         ];
 
-        $response = self::sendRequest( "invoices", $cart );
+        $response = self::sendRequest( 'invoices', 'POST', $cart );
 
         echo $response; exit;
 
