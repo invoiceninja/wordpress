@@ -328,8 +328,13 @@ class SettingsController extends BaseController
             'title' => 'Online Purchases',
             'callback' => function() 
             { 
-               $value = get_option( 'invoiceninja_online_purchases' );
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_online_purchases"/>';
+               $value = get_option( 'invoiceninja_online_purchases', 'disabled' );
+               
+               echo '<select name="invoiceninja_online_purchases">
+                  <option value="disabled" ' . ( $value == 'disabled' ? 'SELECTED' : '' ) . '>Disabled</option>
+                  <option value="single" ' . ( $value == 'single' ? 'SELECTED' : '' ) . '>Single [Buy Now]</option>
+                  <option value="multiple" ' . ( $value == 'multiple' ? 'SELECTED' : '' ) . '>Multiple [Add to Cart]</option>
+               </select>';
             },
             'page' => 'invoiceninja_options',
             'section' => 'invoiceninja_admin_index',
