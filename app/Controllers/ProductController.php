@@ -147,6 +147,14 @@ class ProductController extends BaseController
                     'custom_value2' => esc_attr( $product->custom_value2 ),
                     'custom_value3' => esc_attr( $product->custom_value3 ),
                     'custom_value4' => esc_attr( $product->custom_value4 ),
+                    'cost' => esc_attr( $product->cost ),
+                    'tax_name1' => esc_attr( $product->tax_name1 ),
+                    'tax_rate1' => esc_attr( $product->tax_rate1 ),
+                    'tax_name2' => esc_attr( $product->tax_name2 ),
+                    'tax_rate2' => esc_attr( $product->tax_rate2 ),
+                    'tax_name3' => esc_attr( $product->tax_name3 ),
+                    'tax_rate3' => esc_attr( $product->tax_rate3 ),
+                    'tax_id' => esc_attr( $product->tax_id ),
                 ],
             );
 

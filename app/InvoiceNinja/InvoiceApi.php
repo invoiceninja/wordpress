@@ -40,14 +40,24 @@ class InvoiceApi extends BaseApi
                 $url = get_permalink();
                 $product = get_the_title();
                 $content = get_the_content();
-                $price = get_post_meta( $post_id, 'price', true );
-
 
                 $invoice['line_items'][] = [
                     'product_key' => $product,
                     'quantity' => $quantity,
-                    'cost' => $price,
                     'notes' => $content,
+                    'cost' => get_post_meta( $post_id, 'price', true ),
+                    'product_cost' => get_post_meta( $post_id, 'cost', true ),
+                    'tax_name1' => get_post_meta( $post_id, 'tax_name1', true ),
+                    'tax_rate1' => get_post_meta( $post_id, 'tax_rate1', true ),
+                    'tax_name2' => get_post_meta( $post_id, 'tax_name2', true ),
+                    'tax_rate2' => get_post_meta( $post_id, 'tax_rate2', true ),
+                    'tax_name3' => get_post_meta( $post_id, 'tax_name3', true ),
+                    'tax_rate3' => get_post_meta( $post_id, 'tax_rate3', true ),
+                    'tax_id' => get_post_meta( $post_id, 'tax_id', true ),
+                    'custom_value1' => get_post_meta( $post_id, 'custom_value1', true ),
+                    'custom_value2' => get_post_meta( $post_id, 'custom_value2', true ),
+                    'custom_value3' => get_post_meta( $post_id, 'custom_value3', true ),
+                    'custom_value4' => get_post_meta( $post_id, 'custom_value4', true ),
                 ];
             }
         }
