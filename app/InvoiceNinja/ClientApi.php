@@ -10,11 +10,7 @@ class ClientApi extends BaseApi
 {
     public static function load()
     {
-        //$route = self::isUsingToken() ? 'products' : 'shop/products';
-
         $response = self::sendRequest( "clients?per_page=100&status=active" );
-
-        //echo $response; exit;
 
         if ( $response ) {
             $response = json_encode( json_decode( $response )->data );
