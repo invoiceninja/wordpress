@@ -47,7 +47,10 @@ class PostApi
 
             $str .= '[checkout details="true"]</div>';
 
-            $str .= '<table style="displayx:none">';
+            $str .= '<table style="displayx:none">
+                     <form method="POST" action="" id="invoiceninja_cart">
+                     <input type="text" id="product_id" name="product_id"/>
+                     <input type="text" id="quantity" name="quantity"/>';
             
             foreach ( $_SESSION['invoiceninja_cart'] as $product_id => $quantity ) {
 
@@ -82,7 +85,9 @@ class PostApi
                     
                     $str .= '</td>
                         <td style="width: 30%"><a href="' . $url . '">' . $product . '</a><br/>' . $price . '</td>
-                        <td><select name="">';
+                        <td><select onchange="document.getElementById(\'quantity\').value = this.value;
+                                              document.getElementById(\'product_id\').value = \'' . $product_id . '\';
+                                              document.getElementById(\'invoiceninja_cart\').submit();">';
                         
                     for ($i=1; $i<100; $i++) {
                         $str .= '<option value="' . $i . '"' . ($quantity == $i ? 'SELECTED' : '') . '>' . $i . '</option>';
@@ -97,7 +102,7 @@ class PostApi
             }
 
 
-            $str .= '</table>';
+            $str .= '</form></table>';
                        
             $content = $str . '</div>' . $content;
         }
