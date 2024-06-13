@@ -128,7 +128,17 @@ class SettingsController extends BaseController
       */
 
       add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'addLink' ] );  
+      add_filter( 'pre_update_option_invoiceninja_api_token', [ $this, 'filterToken' ], 10, 2 );
    }    
+
+   public function filterToken( $new_value, $old_value )
+   {
+      if (preg_match('/^\*+$/', $new_value) === 1) {
+         return $old_value;
+      }
+
+      return $new_value;
+   }
 
    public static function loadProfile()
    {
@@ -260,6 +270,9 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
+               if ( $value ) {
+                  $value = '****************';
+               }
                echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . '/>';
                echo '<p class="description">API tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
             },
