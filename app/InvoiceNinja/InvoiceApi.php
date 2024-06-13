@@ -13,17 +13,34 @@ class InvoiceApi extends BaseApi
     public static function create($cart)
     {
         $user = wp_get_current_user();        
+
         if ( ! $client = ClientApi::find( $user->user_email ) ) {            
             $data = [
-                
+                'contacts' => array(
+                    array(
+                        'first_name' => $user->first_name,
+                        'last_name' => $user->last_name,
+                        'email' => $user->user_email,
+                        'phone' => $user->billing_phone,
+                    ),
+                ),
+                'name' => $user->nickname,
+                'address1' => $user->billing_address_1,
+                'address2' => $user->billing_address_2,
+                'city' => $user->billing_city,
+                'state' => $user->billing_state,
+                'postal_code' => $user->billing_postcode,
+                'private_notes' => 'Synced from WordPress (' . site_url() . ') on ' . date('j F Y H:i'),
             ];
 
             $client = ClientApi::create( $data );
         }
 
+        $client = json_decode( $client );
+
         $client_id = $client->id;
 
-        echo $user->user_email . ': ' . json_encode( $client ); exit;
+        echo json_encode( $client ); exit;
 
         $invoice = [
             //'client_id' => 'J0dNxm2aLO',

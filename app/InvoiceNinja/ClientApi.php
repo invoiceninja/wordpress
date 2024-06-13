@@ -34,7 +34,7 @@ class ClientApi extends BaseApi
                 return null;
             }
 
-            $response = json_encode( $response );
+            $response = json_encode( $response[0] );
         }
         
         return $response;
