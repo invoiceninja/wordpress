@@ -67,10 +67,13 @@ class PostApi
                 if ( $query->have_posts() ) {
                     $query->the_post();
                     $post_id = get_the_ID();
-                    $title = get_the_title();
+                    
+                    $url = get_permalink();
+                    $product = get_the_title();
+                    $description = get_the_content();
                     $price = get_post_meta( $post_id, 'price', true );
                     
-                    $str .= '<tr><td>';
+                    $str .= '<tr><td style="width: 0px">';
 
                     $image_url = '';
                     if ( has_post_thumbnail( $post_id ) ) {
@@ -79,7 +82,7 @@ class PostApi
                     }
                     
                     $str .= '</td>
-                        <td>' . $title . '<br/>' . $price . '</td>
+                        <td><a href="' . $url . '">' . $product . '</a><br/>' . $price . '</td>
                         <td></td>
                         <td></td>';
 
