@@ -336,11 +336,14 @@ class PostApi
                     } else {
                         $_SESSION['invoiceninja_cart'][$product_id] = $quantity;
                     }
+
+                    $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
+                    wp_safe_redirect($current_url);
+                } else if ($action == 'checkout') {
+                    echo 'checkout';
+                    exit;
                 }
             }
-
-            $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
-            wp_safe_redirect($current_url);
         }            
 
         ob_start();
@@ -348,6 +351,7 @@ class PostApi
         ?>
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
+            <input type="hidden" name="cart_action" value="checkout"/>
             <button type="submit" name="checkout" style="margin-top:3px">Checkout</button>
         </form>
         <?php
