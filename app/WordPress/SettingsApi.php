@@ -48,7 +48,11 @@ class SettingsApi
     function optionUpdated($option_name, $old_value, $new_value) 
     {
         if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') {
+            $profile = ProfileApi::load();
             update_option('invoiceninja_profile', ProfileApi::load());
+            if ( ! $profile ) {
+                update_option('invoiceninja_api_token', '');
+            }
         } else if ($option_name === 'invoiceninja_product_label' 
             || $option_name === 'invoiceninja_products_label' 
             || $option_name === 'invoiceninja_product_template' 
