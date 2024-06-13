@@ -35,12 +35,8 @@ class PostApi
             if ($profile->settings->primary_color) {
                 $color = $profile->settings->primary_color;
             }    
-            $str = '<div style="
-                padding: 4px 10px 4px 10px; 
-                border-radius: 5px; 
-                color: white; 
-                background-color: ' . $color . ';
-                ">';
+            $str = '<div class="invoiceninja-cart">
+                    <div class="cart-header" style="background-color: ' . $color . ';">';
 
             if ( count($cart) == 1 ) {
                 $str .= '1 item in cart';
@@ -53,7 +49,7 @@ class PostApi
                     . '<button type="submit" name="checkout">Checkout</button>
                     </form>';
             
-            $content = $str . '</div>' . $content;
+            $content = $str . '</div></div>' . $content;
         }
         
         //$content = json_encode( $_SESSION['invoiceninja_cart'] ) . $content;
@@ -65,16 +61,20 @@ class PostApi
     {
         global $post;
 
-        if ($post->post_type == 'invoiceninja_product') {
-            wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/product.css', __FILE__ ) );
+        if ( $post->post_type == 'invoiceninja_product' ) {
+            wp_enqueue_style( 'product-styles', plugins_url( '/../../assets/css/product.css', __FILE__ ) );
             
             add_action( 'wp_head', [ $this, 'printInlineProductScript' ] );
         }
 
-        if ( get_the_ID() == get_option('invoiceninja_product_page_id') ) {
-            wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/products.css', __FILE__ ) );
+        if ( get_the_ID() == get_option( 'invoiceninja_product_page_id' ) ) {
+            wp_enqueue_style( 'products-styles', plugins_url( '/../../assets/css/products.css', __FILE__ ) );
 
             add_action( 'wp_head', [ $this, 'printInlineProductsScript' ] );
+        }
+
+        if ( ! is_admin() ) {
+            wp_enqueue_style( 'frontend-styles', plugins_url( '/../../assets/css/frontend.css', __FILE__ ) );
         }
     }
 
