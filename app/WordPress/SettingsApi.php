@@ -9,6 +9,7 @@ namespace App\WordPress;
 use \App\Controllers\ProductController;
 use \App\InvoiceNinja\ProfileApi;
 use \App\InvoiceNinja\ProductApi;
+use \App\InvoiceNinja\ClientApi;
 
 class SettingsApi
 {
@@ -220,6 +221,22 @@ class SettingsApi
                 'invoiceninja',
                 'imported_products',
                 'Successfully imported ' . strtolower( $products_label ) . '!',
+                'success'
+            );
+        }    
+ 
+        if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'export_clients') 
+        {
+            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_export_clients') ) {
+                wp_die('Security check failed');
+            }
+    
+            ClientApi::export();
+
+            add_settings_error(
+                'invoiceninja',
+                'exported_clients',
+                'Successfully exported clients!',
                 'success'
             );
         }    

@@ -50,4 +50,9 @@ class ClientApi extends BaseApi
 
         return $response;
     }        
+
+    public static function export()
+    {
+        //
+    }
 }
