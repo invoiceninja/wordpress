@@ -44,9 +44,34 @@ class PostApi
                 $str .= count($cart) . ' items in cart';
             }
 
-            $str .= '[checkout details="true"]';
-           
-            $content = $str . '</div></div>' . $content;
+            $str .= '[checkout details="true"]</div>';
+
+            $str .= '<div style="displayx:none">';
+            
+            foreach ( $_SESSION['invoiceninja_cart'] as $product => $quantity ) {
+                $args = [
+                    'post_type' => 'invoiceninja_product',                    
+                ];
+                
+                $query = new \WP_Query( $args );
+                
+                if ( $query->have_posts() ) {
+                    $query->the_post();
+                    $post_id = get_the_ID();
+                    $price = get_post_meta( $post_id, 'price', true );
+                    
+                    $image_url = '';
+                    if ( has_post_thumbnail( $post_id ) ) {
+                        $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
+                    }
+                    
+                    $str .= $product . ' ' . $price . '<br/>';
+                }
+            }
+
+            $str .= '</div>';
+                       
+            $content = $str . '</div>' . $content;
         }
         
         //$content = json_encode( $_SESSION['invoiceninja_cart'] ) . $content;
