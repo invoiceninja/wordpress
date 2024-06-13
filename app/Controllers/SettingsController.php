@@ -133,7 +133,7 @@ class SettingsController extends BaseController
 
    public function filterToken( $new_value, $old_value )
    {
-      if (preg_match('/^\*+$/', $new_value) === 1) {
+      if ( strlen($new_value) > 10 && preg_match('/^\*+$/', substr( $new_value, 10 ) ) === 1 ) {
          return $old_value;
       }
 
@@ -271,7 +271,7 @@ class SettingsController extends BaseController
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
                if ( $value ) {
-                  $value = '****************';
+                  $value = substr( $value, 0, 10) . '******************';
                }
                echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . '/>';
                echo '<p class="description">API tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
