@@ -6,6 +6,8 @@
 
 namespace App\WordPress;
 
+use \App\InvoiceNinja\InvoiceApi;
+
 class PostApi
 {
     public $post_types = [];
@@ -340,7 +342,7 @@ class PostApi
                     $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
                     wp_safe_redirect($current_url);
                 } else if ($action == 'checkout') {
-                    echo 'checkout';
+                    $url = InvoiceApi::create($_SESSION['invoiceninja_cart']);
                     exit;
                 }
             }

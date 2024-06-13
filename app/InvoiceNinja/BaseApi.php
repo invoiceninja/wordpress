@@ -8,7 +8,7 @@ namespace App\InvoiceNinja;
 
 class BaseApi
 {
-    public static function sendRequest( $route )
+    public static function sendRequest( $route, $data )
     {
         $key = esc_attr( get_option( 'invoiceninja_api_token' ) );
         $url = esc_attr( get_option( 'invoiceninja_api_url' ) );
@@ -24,7 +24,9 @@ class BaseApi
 
         $opts = [
             "http" => [
-                "header" => "X-API-" . ( self::isUsingToken() ? 'TOKEN' : 'COMPANY-KEY' ) . ": $key\r\n",
+                "header" => "Content-type: application/x-www-form-urlencoded\r\nX-API-" . ( self::isUsingToken() ? 'TOKEN' : 'COMPANY-KEY' ) . ": $key\r\n",
+                'method'  => 'POST',
+                'content' => json_encode( $data ),
             ]
         ];
 
@@ -40,12 +42,17 @@ class BaseApi
         try {
             $response = file_get_contents( $url, false, $context );
         } catch (\Exception $e) {
-            add_settings_error(
-                'invoiceninja',
-                'api_request',
-                $e->getMessage(),
-                'error'
-            );
+            if ( function_exists( 'add_settings_error' ) ) {
+                add_settings_error(
+                    'invoiceninja',
+                    'api_request',
+                    $e->getMessage(),
+                    'error'
+                );
+            } else {
+                echo $e->getMessage();
+                exit;
+            }
 
             return null;
         }
