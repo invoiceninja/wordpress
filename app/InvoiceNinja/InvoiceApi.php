@@ -37,13 +37,10 @@ class InvoiceApi extends BaseApi
         }
 
         $client = json_decode( $client );
-
         $client_id = $client->id;
 
-        echo json_encode( $client ); exit;
-
         $invoice = [
-            //'client_id' => 'J0dNxm2aLO',
+            'client_id' => $client_id,
             'line_items' => [],
         ];
 
