@@ -327,7 +327,7 @@ class SettingsController extends BaseController
          
                echo '<div><textarea class="code" style="width:100%" rows="8" id="invoiceninja_product_template" name="invoiceninja_product_template">' . $value . '</textarea></div>';
                echo '<p style="float:right;">
-                        <a href="#" onclick=\'alert("$post_url\n$title\n$content\n$price\n$image\n$custom1\n$custom2\n$custom3\n$custom4")\'>Variables</a> | 
+                        <a href="#" onclick=\'alert("$id\n$page_url\n$product\n$description\n$price\n$image\n$custom1\n$custom2\n$custom3\n$custom4\n")\'>Variables</a> | 
                         <a href="#" onclick=\'document.querySelector("#invoiceninja_product_template").value = ' . json_encode( INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE ) . ';return false;\'>Reset</a>
                      </p>';
                echo '<p class="description" style="float:left;">HTML template for each ' . strtolower( $product_label ) . ' on the ' . strtolower( $products_label ) . ' page</p>';                
@@ -361,7 +361,7 @@ class SettingsController extends BaseController
 
                echo '<div><textarea class="code" style="width:100%" rows="6" id="invoiceninja_image_template" name="invoiceninja_image_template">' . $value . '</textarea></div>';
                echo '<p style="float:right;">
-                        <a href="#" onclick=\'alert("$image_url\n$title")\'>Variables</a> | 
+                        <a href="#" onclick=\'alert("$image_url\n$product")\'>Variables</a> | 
                         <a href="#" onclick=\'document.querySelector("#invoiceninja_image_template").value = ' . json_encode( INVOICENINJA_DEFAULT_IMAGE_TEMPLATE ) . ';return false;\'>Reset</a>
                      </p>';
                echo '<p class="description">HTML template for each image on the ' . strtolower( $products_label ) . ' page</p>';
