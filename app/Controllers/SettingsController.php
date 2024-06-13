@@ -167,17 +167,17 @@ class SettingsController extends BaseController
             'option_name' => 'invoiceninja_api_token',
          ],
          [
-            'option_group' => 'invoiceninja_options',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_sync_clients',
             'option_sanitize' => 'intval',
          ],
          [
-            'option_group' => 'invoiceninja_options',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_sync_products',
             'option_sanitize' => 'intval',
          ],
          [
-            'option_group' => 'invoiceninja_options',
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_online_purchases',
          ],
          [
@@ -299,7 +299,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = get_option( 'invoiceninja_sync_clients' );
-               echo '<label for="invoiceninja_sync_clients"><input type="checkbox" ' . checked(1, $value) . ' value="1" id="invoiceninja_sync_clients" name="invoiceninja_sync_clients"/> Automatically create Invoice Ninja clients from users in WordPress</label>'; 
+               echo '<label for="invoiceninja_sync_clients"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_clients" name="invoiceninja_sync_clients"/> Automatically create Invoice Ninja clients from users in WordPress</label>'; 
             },
             'page' => 'invoiceninja_options',
             'section' => 'invoiceninja_admin_index',
@@ -314,7 +314,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = get_option( 'invoiceninja_sync_products' );
-               echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked(1, $value) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically create WordPress pages from products in Invoice Ninja</label>'; 
+               echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically create WordPress pages from products in Invoice Ninja</label>'; 
             },
             'page' => 'invoiceninja_options',
             'section' => 'invoiceninja_admin_index',
