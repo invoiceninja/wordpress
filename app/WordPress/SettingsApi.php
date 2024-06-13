@@ -52,8 +52,7 @@ class SettingsApi
         } else if ($option_name === 'invoiceninja_product_label' 
             || $option_name === 'invoiceninja_products_label' 
             || $option_name === 'invoiceninja_product_template' 
-            || $option_name === 'invoiceninja_image_template'
-            || $option_name === 'invoiceninja_online_purchases') {
+            || $option_name === 'invoiceninja_image_template') {
                 if ( get_option( 'invoiceninja_sync_products' ) ) {
                     ProductController::loadProducts();
                 }

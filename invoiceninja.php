@@ -39,7 +39,7 @@ define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<a href="$page_url" class="wp-
   <div class="divider"></div>
   <h5 title="$description" class="truncated">$description</h5>
   <h5><b>$price</b></h5>
-  $purchase
+  [purchase product_id="$product_id"]
   $image
 </a>' );
 

@@ -34,10 +34,8 @@ class PostApi
 
             $price = '<p>' . $price . '</p>';
 
-            if ( $online_purcases == 'single' ) {
-                $content = $price . '[buy_now product_id="' . $product_id . '"]' . $content;
-            } else if ( $online_purcases == 'multiple' ) {
-                $content = $price . '[add_to_cart product_id="' . $product_id . '"]' . $content;
+            if ( $online_purcases == 'single' || $online_purcases == 'multiple' ) {
+                $content = $price . '[purchase product_id="' . $product_id . '"]' . $content;
             }
         }
 
@@ -57,7 +55,7 @@ class PostApi
                 $str .= count($cart) . ' items in cart';
             }
 
-            $str .= '[checkout details="true"]</div>';
+            $str .= '[checkout]</div>';
 
             $str .= '<table>
                      <form method="POST" action="" id="invoiceninja_cart">
@@ -239,29 +237,41 @@ class PostApi
 
         flush_rewrite_rules();
 
-        add_shortcode('add_to_cart', [ $this, 'addToCartShortcode' ] );
-        add_shortcode('buy_now', [ $this, 'buyNowShortcode' ] );
+        add_shortcode('purchase', [ $this, 'purchaseShortcode' ] );
         add_shortcode('checkout', [ $this, 'checkoutShortcode' ] );
     }
 
-    public function addToCartShortcode($atts)
+    public function purchaseShortcode($atts)
     {
+        $is_single = get_option('invoiceninja_online_purchases') == 'single';
+        $is_multiple = get_option('invoiceninja_online_purchases') == 'multiple';
+
         $atts = shortcode_atts(array(
             'product_id' => '',
-        ), $atts, 'add_to_cart');
+        ), $atts, 'purchase');
 
-        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_to_cart'])) {
+        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase'])) {
             $product_id = $_POST['product_id'];
             
-            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['product_id']))) {
-                if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
-                    $_SESSION['invoiceninja_cart'] = [];
-                }
-
-                if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
-                    $_SESSION['invoiceninja_cart'][$product_id]++;
+            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_purchase_' . esc_attr($atts['product_id']))) {
+                if ($is_single) {
+                    if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
+                        $invoice = json_decode( $invoice );
+                                            
+                        wp_redirect($invoice->invitations[0]->link);
+    
+                        exit;
+                    }                                            
                 } else {
-                    $_SESSION['invoiceninja_cart'][$product_id] = 1;
+                    if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
+                        $_SESSION['invoiceninja_cart'] = [];
+                    }
+
+                    if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
+                        $_SESSION['invoiceninja_cart'][$product_id]++;
+                    } else {
+                        $_SESSION['invoiceninja_cart'][$product_id] = 1;
+                    }
                 }
             }
 
@@ -270,72 +280,22 @@ class PostApi
         }
     
         ob_start();
-        
-        ?>
-        <form method="post" action="">
-            <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
-            <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
-            <button type="submit" name="add_to_cart">Add to Cart</button>
-        </form>
-        <?php
-
-        return ob_get_clean();    
-    }
-
-    public function buyNowShortcode($atts)
-    {
-        $atts = shortcode_atts(array(
-            'product_id' => '',
-        ), $atts, 'buy_now');
-
-        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['buy_now'])) {
-            $product_id = $_POST['product_id'];
-            
-            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_buy_now_' . esc_attr($product_id))) {
-
-                if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
-                    $invoice = json_decode( $invoice );
-                                        
-                    wp_redirect($invoice->invitations[0]->link);
-
-                    exit;
-                }                    
-
-
-                if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
-                    $_SESSION['invoiceninja_cart'] = [];
-                }
-
-                if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
-                    $_SESSION['invoiceninja_cart'][$product_id]++;
-                } else {
-                    $_SESSION['invoiceninja_cart'][$product_id] = 1;
-                }
-            }
-
-            $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
-            wp_safe_redirect($current_url);
+ 
+        if ( $is_single || $is_multiple ) {
+            ?>
+            <form method="post" action="">
+                <?php wp_nonce_field('invoiceninja_purchase_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
+                <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
+                <button type="submit" name="purchase"><?php echo ($is_single ? 'Buy Now' : 'Add to Cart') ?></button>
+            </form>
+            <?php
         }
-    
-        ob_start();
-        
-        ?>
-        <form method="post" action="">
-            <?php wp_nonce_field('invoiceninja_buy_now_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
-            <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
-            <button type="submit" name="buy_now">Buy Now</button>
-        </form>
-        <?php
 
         return ob_get_clean();    
     }
 
-    public function checkoutShortcode($atts)
+    public function checkoutShortcode()
     {
-        $atts = shortcode_atts(array(
-            'details' => false,
-        ), $atts, 'add_to_cart');
-
         if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['cart_action'] ) ) {
             if ( wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_checkout' ) ) {
                 $action = $_POST['cart_action'];

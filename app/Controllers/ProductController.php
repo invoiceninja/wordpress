@@ -208,15 +208,6 @@ class ProductController extends BaseController
                 $product_id = get_post_meta( $post_id, 'product_id', true );
                 $price = get_post_meta( $post_id, 'price', true );
 
-                $online_purchases = get_option( 'invoiceninja_online_purchases ');
-                $purchase = '';
-
-                if ($online_purchases == 'single') {
-                    $purchase = '[buy_now product_id="' . $product_id . '"]';
-                } else if ($online_purchases == 'multiple') {
-                    $purchase = '[add_to_cart product_id="' . $product_id . '"]';
-                }
-
                 if ($count % 3 == 0) {
                     $page .= '<div class="wp-block-columns" style="padding:0px; margin:0px;">';
                 }
@@ -250,7 +241,6 @@ class ProductController extends BaseController
                     '$product',
                     '$description',
                     '$price',
-                    '$purchase',
                     '$image',
                     '$custom1',
                     '$custom2',
@@ -262,7 +252,6 @@ class ProductController extends BaseController
                     get_the_title(),
                     get_the_content(),
                     $price,
-                    $purchase,
                     $image,
                     get_post_meta( $post_id, 'custom_value1', true ),
                     get_post_meta( $post_id, 'custom_value2', true ),
