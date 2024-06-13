@@ -53,7 +53,9 @@ class SettingsApi
             || $option_name === 'invoiceninja_products_label' 
             || $option_name === 'invoiceninja_product_template' 
             || $option_name === 'invoiceninja_image_template') {
-                ProductController::loadProducts();
+                if ( get_option( 'invoiceninja_sync_products' ) ) {
+                    ProductController::loadProducts();
+                }
         }
     }
 
@@ -200,7 +202,7 @@ class SettingsApi
                 wp_die('Security check failed');
             }
     
-            ProductController::loadProducts(true);
+            ProductController::loadProducts();
 
             $products_label = get_option( 'invoiceninja_products_label' );
             if ( ! $products_label ) {

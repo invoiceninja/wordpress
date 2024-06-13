@@ -67,10 +67,13 @@ class ProductController extends BaseController
     public function autoRefresh()
     {
         SettingsController::loadProfile();
-        ProductController::loadProducts();
+
+        if ( get_option( 'invoiceninja_sync_products' ) ) {
+            ProductController::loadProducts();
+        }
     }
 
-    public static function loadProducts($force = false)
+    public static function loadProducts()
     {
         $args = [
             'post_type' => 'invoiceninja_product',
@@ -79,9 +82,6 @@ class ProductController extends BaseController
         
         $query = new \WP_Query( $args );
         
-        if ( ! $force && ! $query->have_posts() ) {
-            return;
-        }            
 
         /*
         // Disable email notifications for new posts
