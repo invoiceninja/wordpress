@@ -291,7 +291,7 @@ class PostApi
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['buy_now'])) {
             $product_id = $_POST['product_id'];
             
-            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_buy_now_' . esc_attr($atts['product_id']))) {
+            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_buy_now_' . esc_attr($product_id))) {
 
                 if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
                     $invoice = json_decode( $invoice );

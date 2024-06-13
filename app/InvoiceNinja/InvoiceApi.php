@@ -6,15 +6,27 @@
 
 namespace App\InvoiceNinja;
 
+use \App\InvoiceNinja\ClientApi;
+
 class InvoiceApi extends BaseApi
 {
     public static function create($cart)
     {
-        //$invoice = new \stdClass;
-        //$invoice->client_id = 'J0dNxm2aLO';
+        $user = wp_get_current_user();        
+        if ( ! $client = ClientApi::find( $user->user_email ) ) {            
+            $data = [
+                
+            ];
+
+            $client = ClientApi::create( $data );
+        }
+
+        $client_id = $client->id;
+
+        echo $user->user_email . ': ' . json_encode( $client ); exit;
 
         $invoice = [
-            'client_id' => 'J0dNxm2aLO',
+            //'client_id' => 'J0dNxm2aLO',
             'line_items' => [],
         ];
 
