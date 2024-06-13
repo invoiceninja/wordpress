@@ -47,7 +47,7 @@ class PostApi
 
             $str .= '[checkout details="true"]</div>';
 
-            $str .= '<table style="displayx:none">
+            $str .= '<table>
                      <form method="POST" action="" id="invoiceninja_cart">
                      <input type="hidden" id="cart_action" name="cart_action" value=""/>
                      <input type="hidden" id="product_id" name="product_id"/>
@@ -293,8 +293,7 @@ class PostApi
         ?>
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
-            <?php echo $atts['details'] ? '<button name="">View Details</button>' : '' ?>
-            <button type="submit" name="checkout">Checkout</button>
+            <button type="submit" name="checkout" style="margin-top:3px">Checkout</button>
         </form>
         <?php
 
