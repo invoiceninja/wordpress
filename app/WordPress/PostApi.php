@@ -85,11 +85,11 @@ class PostApi
                         <td><select name="">';
                         
                     for ($i=1; $i<100; $i++) {
-                        $str .= '<option value="' . $i . '">' . $i . '</option>';
+                        $str .= '<option value="' . $i . '"' . ($quantity == $i ? 'SELECTED' : '') . '>' . $i . '</option>';
                     }
 
                     $str .= '</select></td>
-                        <td>' . $price . '</td>
+                        <td>' . ($quantity * $price) . '</td>
                         <td>[<a href="">Remove</a>]';
 
                     $str .= '</tr>';
