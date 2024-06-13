@@ -25,7 +25,8 @@ class PostApi
     public function addDynamicContent($content)
     {
         if ( is_singular( 'invoiceninja_product' ) ) {
-            $content = '[add_to_cart]' . $content;
+            $productId = get_post_meta( get_the_ID(), 'id', true );
+            $content = '[add_to_cart id="' . $productId . '"]' . $content;
         }
 
         if ( isset( $_SESSION['invoiceninja_cart'] ) && ! empty( $_SESSION['invoiceninja_cart'] ) ) {
@@ -199,21 +200,21 @@ class PostApi
     public function addToCartShortcode($atts)
     {
         $atts = shortcode_atts(array(
-            'product' => '',
+            'id' => '',
         ), $atts, 'add_to_cart');
 
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_to_cart'])) {
-            $product = $_POST['product'];
-
-            if ($product && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['product']))) {
+            $product_id = $_POST['product_id'];
+            
+            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['id']))) {
                 if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
                     $_SESSION['invoiceninja_cart'] = [];
                 }
 
-                if (isset($_SESSION['invoiceninja_cart'][$product])) {
-                    $_SESSION['invoiceninja_cart'][$product]++;
+                if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
+                    $_SESSION['invoiceninja_cart'][$product_id]++;
                 } else {
-                    $_SESSION['invoiceninja_cart'][$product] = 1;
+                    $_SESSION['invoiceninja_cart'][$product_id] = 1;
                 }
             }
         }
@@ -222,8 +223,8 @@ class PostApi
         
         ?>
         <form method="post" action="">
-            <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['product']), 'invoiceninja_nonce'); ?>
-            <input type="hidden" name="product" value="<?php echo esc_attr($atts['product']); ?>">
+            <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['id']), 'invoiceninja_nonce'); ?>
+            <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['id']); ?>">
             <button type="submit" name="add_to_cart">Add to Cart</button>
         </form>
         <?php
