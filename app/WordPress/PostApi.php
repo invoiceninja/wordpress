@@ -49,8 +49,10 @@ class PostApi
 
             $str .= '<table style="displayx:none">
                      <form method="POST" action="" id="invoiceninja_cart">
+                     <input type="text" id="cart_action" name="cart_action" value=""/>
                      <input type="text" id="product_id" name="product_id"/>
                      <input type="text" id="quantity" name="quantity"/>';
+            $str .= wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce');
             
             foreach ( $_SESSION['invoiceninja_cart'] as $product_id => $quantity ) {
 
@@ -85,7 +87,8 @@ class PostApi
                     
                     $str .= '</td>
                         <td style="width: 30%"><a href="' . $url . '">' . $product . '</a><br/>' . $price . '</td>
-                        <td><select onchange="document.getElementById(\'quantity\').value = this.value;
+                        <td><select onchange="document.getElementById(\'cart_action\').value = \'update\';
+                                              document.getElementById(\'quantity\').value = this.value;
                                               document.getElementById(\'product_id\').value = \'' . $product_id . '\';
                                               document.getElementById(\'invoiceninja_cart\').submit();">';
                         
@@ -270,9 +273,12 @@ class PostApi
             'details' => false,
         ), $atts, 'add_to_cart');
 
-        if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['checkout'] ) ) {
+        if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['cart_action'] ) ) {
             if ( wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_checkout' ) ) {
-                echo 'checkout';exit;
+                $action = $_POST['cart_action'];
+                if ($action == 'update') {                    
+                    $_SESSION['invoiceninja_cart'][$_POST['product_id']] = $_POST['quantity'];
+                }
             }
         }
     
