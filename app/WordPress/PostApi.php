@@ -70,7 +70,6 @@ class PostApi
                     
                     $url = get_permalink();
                     $product = get_the_title();
-                    $description = get_the_content();
                     $price = get_post_meta( $post_id, 'price', true );
                     
                     $str .= '<tr><td style="width: 0px">';
@@ -82,13 +81,21 @@ class PostApi
                     }
                     
                     $str .= '</td>
-                        <td><a href="' . $url . '">' . $product . '</a><br/>' . $price . '</td>
-                        <td></td>
-                        <td></td>';
+                        <td style="width: 30%"><a href="' . $url . '">' . $product . '</a><br/>' . $price . '</td>
+                        <td><select name="">';
+                        
+                    for ($i=1; $i<100; $i++) {
+                        $str .= '<option value="' . $i . '">' . $i . '</option>';
+                    }
+
+                    $str .= '</select></td>
+                        <td>' . $price . '</td>
+                        <td>[<a href="">Remove</a>]';
 
                     $str .= '</tr>';
                 }
             }
+
 
             $str .= '</table>';
                        
