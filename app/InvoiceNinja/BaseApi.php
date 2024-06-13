@@ -57,12 +57,10 @@ class BaseApi
                                 
                 $body = wp_remote_retrieve_body( $response );
 
-                //echo $body;exit;
-
                 return $body;
 
             } else {
-                
+                // todo                
             }
         }
 
