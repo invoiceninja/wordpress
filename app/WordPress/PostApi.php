@@ -228,6 +228,7 @@ class PostApi
         flush_rewrite_rules();
 
         add_shortcode('add_to_cart', [ $this, 'addToCartShortcode' ] );
+        add_shortcode('buy_now', [ $this, 'buyNowShortcode' ] );
         add_shortcode('checkout', [ $this, 'checkoutShortcode' ] );
     }
 
@@ -263,6 +264,44 @@ class PostApi
             <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
             <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
             <button type="submit" name="add_to_cart">Add to Cart</button>
+        </form>
+        <?php
+
+        return ob_get_clean();    
+    }
+
+    public function buyNowShortcode($atts)
+    {
+        $atts = shortcode_atts(array(
+            'product_id' => '',
+        ), $atts, 'buy_now');
+
+        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['buy_now'])) {
+            $product_id = $_POST['product_id'];
+            
+            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_buy_now_' . esc_attr($atts['product_id']))) {
+                if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
+                    $_SESSION['invoiceninja_cart'] = [];
+                }
+
+                if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
+                    $_SESSION['invoiceninja_cart'][$product_id]++;
+                } else {
+                    $_SESSION['invoiceninja_cart'][$product_id] = 1;
+                }
+            }
+
+            $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
+            wp_safe_redirect($current_url);
+        }
+    
+        ob_start();
+        
+        ?>
+        <form method="post" action="">
+            <?php wp_nonce_field('invoiceninja_buy_now_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
+            <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
+            <button type="submit" name="buy_now">Buy Now</button>
         </form>
         <?php
 

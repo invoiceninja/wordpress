@@ -17,10 +17,10 @@
     <?php settings_fields( 'invoiceninja_settings' ); ?>
 
     <div class="tab-content">
-        <div id="tab-credentials" class="tab-pane">
+        <div id="tab-credentials" class="tab-pane active">
             <?php do_settings_sections( 'invoiceninja_credentials' ); ?>
         </div>
-        <div id="tab-options" class="tab-pane active">
+        <div id="tab-options" class="tab-pane">
             <?php do_settings_sections( 'invoiceninja_options' ); ?>
         </div>            
         <div id="tab-localization" class="tab-pane">
