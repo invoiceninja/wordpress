@@ -44,9 +44,7 @@ class PostApi
                 $str .= count($cart) . ' items in cart';
             }
 
-            $str .= '<button type="submit" name="checkout">View Details</button>';
-
-            $str .= '[checkout]';
+            $str .= '[checkout details="true"]';
            
             $content = $str . '</div></div>' . $content;
         }
@@ -210,6 +208,10 @@ class PostApi
 
     public function checkoutShortcode($atts)
     {
+        $atts = shortcode_atts(array(
+            'details' => false,
+        ), $atts, 'add_to_cart');
+
         if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['checkout'] ) ) {
             if ( wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_checkout' ) ) {
                 echo 'checkout';exit;
@@ -221,6 +223,7 @@ class PostApi
         ?>
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
+            <?php echo $atts['details'] ? '<button name="">View Details</button>' : '' ?>
             <button type="submit" name="checkout">Checkout</button>
         </form>
         <?php
