@@ -111,7 +111,7 @@ class ProductController extends BaseController
                     'meta_query'     => array(
                         array(
                             'key'     => '_wp_attached_file',
-                            'value'   => get_post_meta( $post_id, 'id' ),
+                            'value'   => get_post_meta( $post_id, 'product_id' ),
                             'compare' => 'LIKE',
                         ),
                     ),
@@ -138,7 +138,7 @@ class ProductController extends BaseController
                 'post_status' => 'publish', // publish, draft, pending, private, trash
                 'post_type' => 'invoiceninja_product',
                 'meta_input' => [
-                    'id' => esc_attr( $product->id ),
+                    'product_id' => esc_attr( $product->id ),
                     'price' => esc_attr( $product->price ),
                     'quantity' => esc_attr( $product->quantity ),
                     'max_quantity' => esc_attr( $product->max_quantity ),
@@ -228,23 +228,23 @@ class ProductController extends BaseController
                 }
 
                 $template = str_replace( [
+                    '$product_id',
                     '$page_url',
                     '$product',
                     '$description',
                     '$price',
                     '$image',
-                    '$id',
                     '$custom1',
                     '$custom2',
                     '$custom3',
                     '$custom4',
                 ], [
+                    get_post_meta( $post_id, 'product_id', true ),
                     get_permalink(),
                     get_the_title(),
                     get_the_content(),
                     $price,
                     $image,
-                    get_post_meta( $post_id, 'id', true ),
                     get_post_meta( $post_id, 'custom_value1', true ),
                     get_post_meta( $post_id, 'custom_value2', true ),
                     get_post_meta( $post_id, 'custom_value3', true ),

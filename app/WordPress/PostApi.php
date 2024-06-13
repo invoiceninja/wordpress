@@ -25,7 +25,7 @@ class PostApi
     public function addDynamicContent($content)
     {
         if ( is_singular( 'invoiceninja_product' ) ) {
-            $productId = get_post_meta( get_the_ID(), 'id', true );
+            $productId = get_post_meta( get_the_ID(), 'product_id', true );
             $content = '[add_to_cart id="' . $productId . '"]' . $content;
         }
 
@@ -200,13 +200,13 @@ class PostApi
     public function addToCartShortcode($atts)
     {
         $atts = shortcode_atts(array(
-            'id' => '',
+            'product_id' => '',
         ), $atts, 'add_to_cart');
 
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['add_to_cart'])) {
             $product_id = $_POST['product_id'];
             
-            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['id']))) {
+            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_add_to_cart_' . esc_attr($atts['product_id']))) {
                 if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
                     $_SESSION['invoiceninja_cart'] = [];
                 }
@@ -223,8 +223,8 @@ class PostApi
         
         ?>
         <form method="post" action="">
-            <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['id']), 'invoiceninja_nonce'); ?>
-            <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['id']); ?>">
+            <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
+            <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
             <button type="submit" name="add_to_cart">Add to Cart</button>
         </form>
         <?php
