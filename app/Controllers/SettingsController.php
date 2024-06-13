@@ -167,6 +167,14 @@ class SettingsController extends BaseController
             'option_name' => 'invoiceninja_api_token',
          ],
          [
+            'option_group' => 'invoiceninja_options',
+            'option_name' => 'invoiceninja_sync_clients',
+         ],
+         [
+            'option_group' => 'invoiceninja_options',
+            'option_name' => 'invoiceninja_sync_products',
+         ],
+         [
             'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_products_label',
          ],
@@ -202,7 +210,13 @@ class SettingsController extends BaseController
             'id' => 'invoiceninja_admin_index',
             'title' => '',
             'callback' => function() {},
-            'page' => 'invoiceninja_configuration',            
+            'page' => 'invoiceninja_credentials',            
+         ],
+         [
+            'id' => 'invoiceninja_admin_index',
+            'title' => '',
+            'callback' => function() {},
+            'page' => 'invoiceninja_options',
          ],
          [
             'id' => 'invoiceninja_admin_index',
@@ -249,7 +263,7 @@ class SettingsController extends BaseController
                echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . '/>';
                echo '<p class="description">Tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
             },
-            'page' => 'invoiceninja_configuration',
+            'page' => 'invoiceninja_credentials',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_api_token',
@@ -266,13 +280,61 @@ class SettingsController extends BaseController
                echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url" placeholder="https://invoicing.co"/>'; 
                echo '<p class="description">Leave this field blank if you\'re using the hosted platform</p>'; 
             },
-            'page' => 'invoiceninja_configuration',
+            'page' => 'invoiceninja_credentials',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_api_url',
                //'class' => '',
             ]
          ],
+         [
+            'id' => 'invoiceninja_sync_clients',
+            'title' => 'Sync Clients',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_sync_clients' ) );
+               echo '<label for="invoiceninja_sync_clients"><input type="checkbox" ' . ($value ? 'CHECKED' : '') . ' value="1" id="invoiceninja_sync_clients" name="invoiceninja_sync_clients"/> Automatically create Invoice Ninja clients from users in WordPress</label>'; 
+            },
+            'page' => 'invoiceninja_options',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_sync_clients',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_sync_products',
+            'title' => 'Sync Products',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_sync_products' ) );
+               echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . ($value ? 'CHECKED' : '') . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically create WordPress pages from products in Invoice Ninja</label>'; 
+            },
+            'page' => 'invoiceninja_options',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_sync_products',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_online_purchases',
+            'title' => 'Online Purchases',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_sync_products' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
+               echo '<p class="description">Singular label to use for individual products</p>'; 
+            },
+            'page' => 'invoiceninja_options',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_online_purchases',
+               //'class' => '',
+            ]
+         ],
+
+
          [
             'id' => 'invoiceninja_product_label',
             'title' => 'Product Label',

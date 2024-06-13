@@ -6,29 +6,33 @@
     <input autocomplete="new-password" name="hidden" type="text" style="display:none;"/>
 
     <ul class="nav nav-tabs">
-        <li class="active"><a href="#tab-1">Configuration</a></li>
-        <li><a href="#tab-2">Localization</a></li>
-        <li><a href="#tab-3">Templates</a></li>
-        <li><a href="#tab-4">Custom CSS</a></li>
-        <li><a href="#tab-5">About</a></li>
+        <li class="active"><a href="#tab-credentials">Credentials</a></li>
+        <li><a href="#tab-options">Options</a></li>
+        <li><a href="#tab-localization">Localization</a></li>
+        <li><a href="#tab-templates">Templates</a></li>
+        <li><a href="#tab-custom-css">Custom CSS</a></li>
+        <li><a href="#tab-about">About</a></li>
     </ul>
 
     <?php settings_fields( 'invoiceninja_settings' ); ?>
 
     <div class="tab-content">
-        <div id="tab-1" class="tab-pane active">
-            <?php do_settings_sections( 'invoiceninja_configuration' ); ?>
+        <div id="tab-credentials" class="tab-pane">
+            <?php do_settings_sections( 'invoiceninja_credentials' ); ?>
         </div>
-        <div id="tab-2" class="tab-pane">
+        <div id="tab-options" class="tab-pane active">
+            <?php do_settings_sections( 'invoiceninja_options' ); ?>
+        </div>            
+        <div id="tab-localization" class="tab-pane">
             <?php do_settings_sections( 'invoiceninja_localization' ); ?>
         </div>            
-        <div id="tab-3" class="tab-pane">
+        <div id="tab-templates" class="tab-pane">
             <?php do_settings_sections( 'invoiceninja_templates' ); ?>
         </div>            
-        <div id="tab-4" class="tab-pane">
+        <div id="tab-custom-css" class="tab-pane">
             <?php do_settings_sections( 'invoiceninja_custom_css' ); ?>
         </div>            
-        <div id="tab-5" class="tab-pane">
+        <div id="tab-about" class="tab-pane">
             <p>
                 Thank you for installing the <a href="https://invoiceninja.com" target="_blank">Invoice Ninja</a> plugin for WordPress!
             </p>
