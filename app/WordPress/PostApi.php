@@ -26,7 +26,7 @@ class PostApi
     {
         if ( is_singular( 'invoiceninja_product' ) ) {
             $productId = get_post_meta( get_the_ID(), 'product_id', true );
-            $content = '[add_to_cart id="' . $productId . '"]' . $content;
+            $content = '[add_to_cart product_id="' . $productId . '"]' . $content;
         }
 
         if ( isset( $_SESSION['invoiceninja_cart'] ) && ! empty( $_SESSION['invoiceninja_cart'] ) ) {
