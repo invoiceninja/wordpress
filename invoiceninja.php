@@ -34,16 +34,17 @@ function deactivate_invoiceninja_plugin()
 }
 register_deactivation_hook( __FILE__, 'deactivate_invoiceninja_plugin' );
 
-define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<a href="$post_url" class="wp-invoiceninja">
-  <h3>$title</h3>
+define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<a href="$page_url" class="wp-invoiceninja">
+  <h3>$product</h3>
   <div class="divider"></div>
-  <h5 title="$content" class="truncated">$content</h5>
+  <h5 title="$description" class="truncated">$description</h5>
   <h5><b>$price</b></h5>
+  [add_to_cart id="$id"]
   $image
 </a>' );
 
 define( 'INVOICENINJA_DEFAULT_IMAGE_TEMPLATE', '<figure class="wp-block-post-featured-image">
-  <img src="$image_url" alt="$title" decoding="async"/>
+  <img src="$image_url" alt="$product" decoding="async"/>
 </figure>' );
 
 if ( class_exists( 'App\\Init') )

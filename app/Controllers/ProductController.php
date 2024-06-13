@@ -228,11 +228,12 @@ class ProductController extends BaseController
                 }
 
                 $template = str_replace( [
-                    '$post_url',
-                    '$title',
-                    '$content',
+                    '$page_url',
+                    '$product',
+                    '$description',
                     '$price',
                     '$image',
+                    '$id',
                     '$custom1',
                     '$custom2',
                     '$custom3',
@@ -243,6 +244,7 @@ class ProductController extends BaseController
                     get_the_content(),
                     $price,
                     $image,
+                    get_post_meta( $post_id, 'id', true ),
                     get_post_meta( $post_id, 'custom_value1', true ),
                     get_post_meta( $post_id, 'custom_value2', true ),
                     get_post_meta( $post_id, 'custom_value3', true ),
