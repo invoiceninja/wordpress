@@ -49,9 +49,9 @@ class PostApi
 
             $str .= '<table style="displayx:none">
                      <form method="POST" action="" id="invoiceninja_cart">
-                     <input type="text" id="cart_action" name="cart_action" value=""/>
-                     <input type="text" id="product_id" name="product_id"/>
-                     <input type="text" id="quantity" name="quantity"/>';
+                     <input type="hidden" id="cart_action" name="cart_action" value=""/>
+                     <input type="hidden" id="product_id" name="product_id"/>
+                     <input type="hidden" id="quantity" name="quantity"/>';
             $str .= wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce');
             
             foreach ( $_SESSION['invoiceninja_cart'] as $product_id => $quantity ) {
