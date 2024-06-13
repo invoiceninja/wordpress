@@ -47,18 +47,19 @@ class PostApi
 
             $str .= '[checkout details="true"]</div>';
 
-            $str .= '<div style="displayx:none">';
+            $str .= '<table style="displayx:none">';
             
             foreach ( $_SESSION['invoiceninja_cart'] as $product_id => $quantity ) {
+
                 $args = [
                     'post_type' => 'invoiceninja_product',
-                    'meta_query'     => array(
-                        array(
-                            'key'     => 'product_id',
-                            'value'   => $product_id,
+                    'meta_query' => [
+                        [
+                            'key' => 'product_id',
+                            'value' => $product_id,
                             'compare' => 'EQUAL',
-                        ),
-                    ),
+                        ],
+                    ],
                 ];
                 
                 $query = new \WP_Query( $args );
@@ -66,19 +67,27 @@ class PostApi
                 if ( $query->have_posts() ) {
                     $query->the_post();
                     $post_id = get_the_ID();
+                    $title = get_the_title();
                     $price = get_post_meta( $post_id, 'price', true );
                     
+                    $str .= '<tr><td>';
+
                     $image_url = '';
                     if ( has_post_thumbnail( $post_id ) ) {
                         $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
                         $str .= '<img src="' . $image_url . '"/>';
                     }
                     
-                    $str .= $product . ' ' . $price . '<br/>';
+                    $str .= '</td>
+                        <td>' . $title . '<br/>' . $price . '</td>
+                        <td></td>
+                        <td></td>';
+
+                    $str .= '</tr>';
                 }
             }
 
-            $str .= '</div>';
+            $str .= '</table>';
                        
             $content = $str . '</div>' . $content;
         }

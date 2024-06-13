@@ -14,5 +14,22 @@
 .invoiceninja-cart img
 {
     height: 60px;
+    width: 50px;
     object-fit: cover;
+    float: left;
+    padding-right: 10px;
+}
+
+.invoiceninja-cart table {
+    border-collapse: collapse;
+    width: 100%;
+}
+
+.invoiceninja-cart table tr {
+    border-bottom: 1px solid #ccc;
+}
+
+.invoiceninja-cart table th, table td {
+    padding: 10px;
+    text-align: left;
 }
