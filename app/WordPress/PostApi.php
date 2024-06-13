@@ -49,9 +49,16 @@ class PostApi
 
             $str .= '<div style="displayx:none">';
             
-            foreach ( $_SESSION['invoiceninja_cart'] as $product => $quantity ) {
+            foreach ( $_SESSION['invoiceninja_cart'] as $product_id => $quantity ) {
                 $args = [
-                    'post_type' => 'invoiceninja_product',                    
+                    'post_type' => 'invoiceninja_product',
+                    'meta_query'     => array(
+                        array(
+                            'key'     => 'product_id',
+                            'value'   => $product_id,
+                            'compare' => 'EQUAL',
+                        ),
+                    ),
                 ];
                 
                 $query = new \WP_Query( $args );
@@ -64,6 +71,7 @@ class PostApi
                     $image_url = '';
                     if ( has_post_thumbnail( $post_id ) ) {
                         $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
+                        $str .= '<img src="' . $image_url . '"/>';
                     }
                     
                     $str .= $product . ' ' . $price . '<br/>';

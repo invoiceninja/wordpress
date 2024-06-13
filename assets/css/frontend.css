@@ -10,3 +10,9 @@
 {
     float: right; 
 }
+
+.invoiceninja-cart img
+{
+    height: 60px;
+    object-fit: cover;
+}
