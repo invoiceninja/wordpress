@@ -342,7 +342,14 @@ class PostApi
                     $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
                     wp_safe_redirect($current_url);
                 } else if ($action == 'checkout') {
-                    $url = InvoiceApi::create($_SESSION['invoiceninja_cart']);
+                    if ( $invoice = InvoiceApi::create( $_SESSION['invoiceninja_cart'] ) ) {
+                        $invoice = json_decode( $invoice );
+                        
+                        unset( $_SESSION['invoiceninja_cart'] );
+                        
+                        wp_redirect($invoice->invitations[0]->link);
+                    }
+                    
                     exit;
                 }
             }

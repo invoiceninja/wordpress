@@ -64,7 +64,9 @@ class InvoiceApi extends BaseApi
 
         $response = self::sendRequest( 'invoices', 'POST', $invoice );
 
-        echo $response; exit;
+        if ( $response ) {
+            $response = json_encode( json_decode( $response )->data );
+        }
 
         return $response;
     }
