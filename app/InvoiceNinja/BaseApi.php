@@ -22,6 +22,51 @@ class BaseApi
             $url .= '/api/v1/';
         }
 
+        $url = 'https://staging.invoicing.co/api/v1/' . $route;
+
+        $args = array(
+            'timeout' => '60',
+            'headers' => array(
+                'Content-Type' => 'application/json',
+                'X-API-TOKEN' => $key,
+            ),
+            'body' => $data ? json_encode($data) : null,
+            'method' => $method,
+        );
+
+        $response = wp_remote_request($url, $args);
+
+        if (is_wp_error($response)) {
+            if ( is_admin() && function_exists( 'add_settings_error' ) ) {
+                add_settings_error(
+                    'invoiceninja',
+                    'api_request',
+                    $e->getMessage(),
+                    'error'
+                );
+            } else {
+                echo 'Error: ' . $e->getMessage();
+                exit;
+            }
+
+            return null;
+        } else {
+            $response_code = wp_remote_retrieve_response_code($response);
+
+            if ($response_code === 200) {
+                                
+                $body = wp_remote_retrieve_body( $response );
+
+                //echo $body;exit;
+
+                return $body;
+
+            } else {
+                
+            }
+        }
+
+        /*
         $opts = [
             "http" => [
                 'header' => "Content-type: application/x-www-form-urlencoded\r\nX-API-" . ( self::isUsingToken() ? 'TOKEN' : 'COMPANY-KEY' ) . ": $key\r\n",
@@ -58,8 +103,9 @@ class BaseApi
         }
 
         restore_error_handler();
+        */
 
-        return $response;
+        return null;
     }
 
     public static function isUsingToken()

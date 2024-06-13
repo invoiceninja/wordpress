@@ -10,11 +10,10 @@ class InvoiceApi extends BaseApi
 {
     public static function create($cart)
     {
-        $cart = [
-            'client_id' => 'J0dNxm2aLO',
-        ];
+        $invoice = new \stdClass;
+        $invoice->client_id = 'J0dNxm2aLO';
 
-        $response = self::sendRequest( 'invoices', 'POST', $cart );
+        $response = self::sendRequest( 'invoices', 'POST', $invoice );
 
         echo $response; exit;
 
