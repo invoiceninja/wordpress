@@ -292,6 +292,16 @@ class PostApi
             $product_id = $_POST['product_id'];
             
             if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_buy_now_' . esc_attr($atts['product_id']))) {
+
+                if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
+                    $invoice = json_decode( $invoice );
+                                        
+                    wp_redirect($invoice->invitations[0]->link);
+
+                    exit;
+                }                    
+
+
                 if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
                     $_SESSION['invoiceninja_cart'] = [];
                 }
@@ -350,7 +360,7 @@ class PostApi
                         wp_redirect($invoice->invitations[0]->link);
 
                         exit;
-                    }                    
+                    }
                 }
             }
         }            
