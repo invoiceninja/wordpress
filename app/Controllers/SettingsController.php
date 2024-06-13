@@ -267,7 +267,7 @@ class SettingsController extends BaseController
             { 
                $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
                echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . '/>';
-               echo '<p class="description">Tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
+               echo '<p class="description">API tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
             },
             'page' => 'invoiceninja_credentials',
             'section' => 'invoiceninja_admin_index',
