@@ -44,11 +44,8 @@ class PostApi
                 $str .= count($cart) . ' items in cart';
             }
 
-            $str .= '<form method="post" action="" style="float:right; padding-top: 3px;">' 
-                    . wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce')
-                    . '<button type="submit" name="checkout">Checkout</button>
-                    </form>';
-            
+            $str .= '[checkout]';
+           
             $content = $str . '</div></div>' . $content;
         }
         
@@ -193,8 +190,6 @@ class PostApi
                 } else {
                     $_SESSION['invoiceninja_cart'][$product] = 1;
                 }
-
-                //echo 'CART: ' . json_encode($_SESSION['invoiceninja_cart']);
             }
         }
     
@@ -205,6 +200,26 @@ class PostApi
             <?php wp_nonce_field('invoiceninja_add_to_cart_' . esc_attr($atts['product']), 'invoiceninja_nonce'); ?>
             <input type="hidden" name="product" value="<?php echo esc_attr($atts['product']); ?>">
             <button type="submit" name="add_to_cart">Add to Cart</button>
+        </form>
+        <?php
+
+        return ob_get_clean();    
+    }
+
+    public function checkoutShortcode($atts)
+    {
+        if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['checkout'] ) ) {
+            if ( wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_checkout' ) ) {
+                echo 'checkout';exit;
+            }
+        }
+    
+        ob_start();
+        
+        ?>
+        <form method="post" action="">
+            <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
+            <button type="submit" name="checkout">Checkout</button>
         </form>
         <?php
 

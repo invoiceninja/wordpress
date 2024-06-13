@@ -2,5 +2,11 @@
 {
     padding: 4px 10px 4px 10px; 
     border-radius: 5px; 
-    color: white; 
+    color: white;
+    box-shadow: 2px 2px 5px rgba(0, 0, 0, 0.3);
+}
+
+.invoiceninja-cart form
+{
+    float: right; 
 }
