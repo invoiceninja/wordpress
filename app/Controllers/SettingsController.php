@@ -177,6 +177,10 @@ class SettingsController extends BaseController
             'option_sanitize' => 'intval',
          ],
          [
+            'option_group' => 'invoiceninja_options',
+            'option_name' => 'invoiceninja_online_purchases',
+         ],
+         [
             'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_products_label',
          ],
@@ -324,9 +328,8 @@ class SettingsController extends BaseController
             'title' => 'Online Purchases',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option( 'invoiceninja_sync_products' ) );
-               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
-               echo '<p class="description">Singular label to use for individual products</p>'; 
+               $value = get_option( 'invoiceninja_online_purchases' );
+               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_online_purchases"/>';
             },
             'page' => 'invoiceninja_options',
             'section' => 'invoiceninja_admin_index',
@@ -335,8 +338,6 @@ class SettingsController extends BaseController
                //'class' => '',
             ]
          ],
-
-
          [
             'id' => 'invoiceninja_product_label',
             'title' => 'Product Label',
