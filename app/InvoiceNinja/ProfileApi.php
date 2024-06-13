@@ -16,6 +16,10 @@ class ProfileApi extends BaseApi
             return false;
         }
 
+        if ( $response ) {
+            $response = json_encode( json_decode( $response )->data );
+        }
+
         if (self::isUsingToken()) {
             $response = json_encode( json_decode( $response )[0] );
         }
