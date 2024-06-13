@@ -101,28 +101,28 @@ class ProductController extends BaseController
             while ( $query->have_posts() ) {
                 $query->the_post();
                 $post_id = get_the_ID();
-                wp_delete_post( $post_id, true );
+                $product_id = get_post_meta( $post_id, 'product_id', true );
 
-                $args = array(
-                    'post_type'      => 'attachment',
-                    'post_status'    => 'inherit',
-                    'posts_per_page' => 1,
-                    'fields'         => 'ids',
-                    'meta_query'     => array(
-                        array(
-                            'key'     => '_wp_attached_file',
-                            'value'   => get_post_meta( $post_id, 'product_id' ),
-                            'compare' => 'LIKE',
-                        ),
-                    ),
-                );
+                if ( $product_id ) {
+                    $args = array(
+                        'post_type'      => 'attachment',
+                        'post_status'    => 'inherit',
+                        'posts_per_page' => 1,
+                        'fields'         => 'ids',
+                        's'              => $product_id,
+                    );
 
-                $attachments = get_posts( $args );
-                if ( $attachments ) {
-                    $attachment_id = $attachments[0];                    
-                    $result = wp_delete_attachment( $attachment_id, true );
+                    $attachments = get_posts( $args );
+
+                    if ( $attachments ) {
+                        $attachment_id = $attachments[0];                    
+                        $result = wp_delete_attachment( $attachment_id, true );
+                    }
                 }
+
+                wp_delete_post( $post_id, true );
             }
+
             wp_reset_postdata();
         }
 

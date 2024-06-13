@@ -35,13 +35,7 @@ class ProfileApi extends BaseApi
                     'post_status'    => 'inherit',
                     'posts_per_page' => 1,
                     'fields'         => 'ids',
-                    'meta_query'     => array(
-                        array(
-                            'key'     => '_wp_attached_file',
-                            'value'   => 'invoiceninja_plugin',
-                            'compare' => 'LIKE',
-                        ),
-                    ),
+                    's'              => 'invoiceninja_plugin',
                 );
 
                 $attachments = get_posts( $args );
