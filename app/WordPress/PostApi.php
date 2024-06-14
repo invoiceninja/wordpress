@@ -332,7 +332,7 @@ class PostApi
                 </form>
                 <?php
             } else {
-                echo '<p>Out of stock</p>';
+                echo '<div>Out of stock</div>';
             }
         }
 
