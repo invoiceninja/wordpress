@@ -181,6 +181,10 @@ class SettingsController extends BaseController
          ],
          [
             'option_group' => 'invoiceninja_settings',
+            'option_name' => 'invoiceninja_match_found',
+         ],
+         [
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_sync_products',
             'option_sanitize' => 'intval',
          ],
@@ -322,6 +326,27 @@ class SettingsController extends BaseController
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_sync_clients',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_match_found',
+            'title' => 'If Match is Found',
+            'callback' => function() 
+            { 
+               global $wp_roles;
+
+               $value = get_option( 'invoiceninja_match_found' );
+               
+               echo '<select name="invoiceninja_match_found">
+                        <option value="skip" ' . ($value == 'skip' ? 'SELECTED' : '') . '>Skip</option>
+                        <option value="update" ' . ($value == 'update' ? 'SELECTED' : '') . '>Update</option>
+                     </select>';
+            },
+            'page' => 'invoiceninja_clients',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_included_roles',
                //'class' => '',
             ]
          ],

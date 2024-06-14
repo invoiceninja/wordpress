@@ -110,8 +110,10 @@ class ClientApi extends BaseApi
         }
 
         if ( $client = self::find( $user->user_email ) ) {
-            $client = json_decode( $client );
-            $client = self::update( $client->id, $user );
+            if ( get_option( 'invoiceninja_match_found' ) == 'update' ) {
+                $client = json_decode( $client );
+                $client = self::update( $client->id, $user );
+            }
         } else {
             $client = self::create( $user );
         }
