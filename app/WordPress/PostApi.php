@@ -307,7 +307,7 @@ class PostApi
                         }
                         if ($profile->track_inventory) {
                             $max = min( $max, $in_stock_quantity );
-                        }                        
+                        }
                         $_SESSION['invoiceninja_cart'][$product_id] = min( $max, $_SESSION['invoiceninja_cart'][$product_id] );                        
                     } else {
                         $_SESSION['invoiceninja_cart'][$product_id] = 1;
@@ -331,7 +331,7 @@ class PostApi
                 </form>
                 <?php
             } else {
-                echo 'Out of stock';
+                echo '<p>Out of stock</p>';
             }
         }
 
