@@ -254,6 +254,7 @@ class PostApi
     {
         $is_single = get_option('invoiceninja_online_purchases') == 'single';
         $is_multiple = get_option('invoiceninja_online_purchases') == 'multiple';
+        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
 
         $atts = shortcode_atts(array(
             'product_id' => '',
@@ -288,13 +289,41 @@ class PostApi
         ob_start();
  
         if ( $is_single || $is_multiple ) {
-            ?>
-            <form method="post" action="">
-                <?php wp_nonce_field('invoiceninja_purchase_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
-                <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
-                <button type="submit" name="purchase"><?php echo ($is_single ? 'Buy Now' : 'Add to Cart') ?></button>
-            </form>
-            <?php
+            $in_stock = true;
+
+            if ( $profile->track_inventory ) {
+                $args = [
+                    'post_type' => 'invoiceninja_product',
+                    'meta_query' => [
+                        [
+                            'key' => 'product_id',
+                            'value' => $atts['product_id'],
+                            'compare' => 'EQUAL',
+                        ],
+                    ],
+                ];
+                
+                $query = new \WP_Query( $args );
+                
+                if ( $query->have_posts() ) {
+                    $query->the_post();
+                    $post_id = get_the_ID();
+                    $in_stock_quantity = get_post_meta( $post_id, 'in_stock_quantity', true );
+                    $in_stock = $in_stock_quantity > 0;
+                }    
+            }
+
+            if ( $in_stock ) {
+                ?>
+                <form method="post" action="">
+                    <?php wp_nonce_field('invoiceninja_purchase_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
+                    <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
+                    <button type="submit" name="purchase"><?php echo ($is_single ? 'Buy Now' : 'Add to Cart') ?></button>
+                </form>
+                <?php
+            } else {
+                echo 'Out of stock';
+            }
         }
 
         return ob_get_clean();    
