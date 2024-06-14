@@ -279,6 +279,7 @@ class PostApi
             if ( $query->have_posts() ) {
                 $query->the_post();
                 $post_id = get_the_ID();
+                $max_quantity = get_post_meta( $post_id, 'max_quantity', true );
                 $in_stock_quantity = get_post_meta( $post_id, 'in_stock_quantity', true );
                 $in_stock = $in_stock_quantity > 0;
             }    
