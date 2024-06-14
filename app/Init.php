@@ -13,6 +13,7 @@ final class Init
         return [
             Controllers\SettingsController::class,
             Controllers\ProductController::class,
+            Controllers\ClientController::class,
             Controllers\WidgetController::class,
         ];
     }

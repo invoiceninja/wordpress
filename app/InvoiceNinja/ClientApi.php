@@ -90,12 +90,17 @@ class ClientApi extends BaseApi
         $users = get_users($args);
 
         foreach ( $users as $user ) {
-            if ( $client = self::find( $user->user_email ) ) {
-                $client = json_decode( $client );
-                $client = self::update( $client->id, $user );
-            } else {
-                $client = self::create( $user );
-            }
+            self::exportUser($user);
+        }
+    }
+
+    public static function exportUser($user)
+    {
+        if ( $client = self::find( $user->user_email ) ) {
+            $client = json_decode( $client );
+            $client = self::update( $client->id, $user );
+        } else {
+            $client = self::create( $user );
         }
     }
 }
