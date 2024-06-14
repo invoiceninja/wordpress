@@ -17,9 +17,9 @@ class ProductApi extends BaseApi
         //echo $response; exit;
 
         if ( $response ) {
-            $response = json_encode( json_decode( $response )->data );
+            return json_decode( $response )->data;
         }
 
-        return $response;
+        return null;
     }
 }

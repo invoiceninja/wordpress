@@ -17,12 +17,9 @@ class InvoiceApi extends BaseApi
         if ( ! $client = ClientApi::find( $user->user_email ) ) {            
             $client = ClientApi::create( $data, $user );
         }
-
-        $client = json_decode( $client );
-        $client_id = $client->id;
-
+        
         $invoice = [
-            'client_id' => $client_id,
+            'client_id' => $client->id,
             'line_items' => [],
         ];
 
@@ -73,9 +70,9 @@ class InvoiceApi extends BaseApi
         $response = self::sendRequest( 'invoices?mark_sent=true', 'POST', $invoice );
 
         if ( $response ) {
-            $response = json_encode( json_decode( $response )->data );
+            return json_decode( $response )->data;
         }
 
-        return $response;
+        return null;
     }
 }

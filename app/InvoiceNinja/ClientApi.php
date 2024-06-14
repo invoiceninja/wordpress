@@ -13,10 +13,10 @@ class ClientApi extends BaseApi
         $response = self::sendRequest( "clients?per_page=100&status=active" );
 
         if ( $response ) {
-            $response = json_encode( json_decode( $response )->data );
+            return json_decode( $response )->data;
         }
 
-        return $response;
+        return null;
     }
 
     public static function find($email)
@@ -30,10 +30,10 @@ class ClientApi extends BaseApi
                 return null;
             }
 
-            $response = json_encode( $response[0] );
+            return $response[0];
         }
         
-        return $response;
+        return null;
     }    
 
     public static function convertUser( $user )
@@ -63,10 +63,10 @@ class ClientApi extends BaseApi
         $response = self::sendRequest( 'clients', 'POST', $data );
 
         if ( $response ) {
-            $response = json_encode( json_decode( $response )->data );
+            return json_decode( $response )->data;
         }
 
-        return $response;
+        return null;
     }        
 
     public static function update( $client_id, $user )
@@ -75,10 +75,10 @@ class ClientApi extends BaseApi
         $response = self::sendRequest( 'clients/' . $client_id, 'PUT', $data );
 
         if ( $response ) {
-            $response = json_encode( json_decode( $response )->data );
+            return json_decode( $response )->data;
         }
 
-        return $response;
+        return null;
     }        
 
     public static function export()
@@ -113,7 +113,6 @@ class ClientApi extends BaseApi
 
         if ( $client = self::find( $user->user_email ) ) {
             if ( get_option( 'invoiceninja_match_found' ) == 'update' ) {
-                $client = json_decode( $client );
                 $client = self::update( $client->id, $user );
             }
         } else {

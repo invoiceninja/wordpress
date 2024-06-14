@@ -50,8 +50,9 @@ class SettingsApi
     {
         if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') {
             $profile = ProfileApi::load();
-            update_option('invoiceninja_profile', ProfileApi::load());
-            if ( ! $profile ) {
+            if ( $profile ) {
+                update_option('invoiceninja_profile', json_encode( $profile ) );                
+            } else {
                 update_option('invoiceninja_api_token', '');
             }
         } else if ($option_name === 'invoiceninja_product_label' 
@@ -193,7 +194,7 @@ class SettingsApi
     
             if ( $profile = ProfileApi::load() ) {
 
-                update_option('invoiceninja_profile', $profile);
+                update_option( 'invoiceninja_profile', json_encode( $profile ) );
 
                 add_settings_error(
                     'invoiceninja',

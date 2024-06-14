@@ -142,7 +142,8 @@ class SettingsController extends BaseController
 
    public static function loadProfile()
    {
-      update_option('invoiceninja_profile', ProfileApi::load());
+      $profile = ProfileApi::load();
+      update_option( 'invoiceninja_profile', json_encode( $profile ) );
    }
 
    public function renderPage()

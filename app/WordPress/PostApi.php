@@ -256,10 +256,7 @@ class PostApi
             if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_purchase_' . esc_attr($atts['product_id']))) {
                 if ($is_single) {
                     if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
-                        $invoice = json_decode( $invoice );
-                                            
-                        wp_redirect($invoice->invitations[0]->link);
-    
+                        wp_redirect($invoice->invitations[0]->link);    
                         exit;
                     }                                            
                 } else {
@@ -313,12 +310,8 @@ class PostApi
                     wp_safe_redirect($current_url);
                 } else if ($action == 'checkout') {
                     if ( $invoice = InvoiceApi::create( $_SESSION['invoiceninja_cart'] ) ) {
-                        $invoice = json_decode( $invoice );
-                        
                         unset( $_SESSION['invoiceninja_cart'] );
-                        
                         wp_redirect($invoice->invitations[0]->link);
-
                         exit;
                     }
                 }

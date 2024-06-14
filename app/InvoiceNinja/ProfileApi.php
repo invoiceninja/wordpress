@@ -17,18 +17,16 @@ class ProfileApi extends BaseApi
         }
 
         if ( $response ) {
-            $response = json_encode( json_decode( $response )->data );
+            $response = json_decode( $response )->data;
         }
 
         if (self::isUsingToken()) {
-            $response = json_encode( json_decode( $response )[0] );
+            $response = $response[0];
         }
 
         //echo $response; exit;
 
-        $data = json_decode( $response );
-
-        if ( $logo_url = $data->settings->company_logo ) {
+        if ( $logo_url = $response->settings->company_logo ) {
             if ( $image_data = @file_get_contents( $logo_url ) ) {
                 $args = array(
                     'post_type'      => 'attachment',

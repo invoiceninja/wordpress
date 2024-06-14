@@ -127,7 +127,6 @@ class ProductController extends BaseController
         }
 
         $products = ProductApi::load();
-        $products = json_decode( $products );
 
         foreach ($products as $product) 
         {             
