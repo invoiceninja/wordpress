@@ -380,11 +380,12 @@ class SettingsController extends BaseController
          ],
          [
             'id' => 'invoiceninja_sync_products',
-            'title' => 'Sync Products',
+            'title' => 'Sync ' . $products_label,
             'callback' => function() 
             { 
                $value = get_option( 'invoiceninja_sync_products' );
-               echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically import products from Invoice Ninja</label>'; 
+               $products_label = get_option( 'invoiceninja_products_label' );
+               echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically import ' . strtolower( $products_label ) . ' from Invoice Ninja</label>'; 
             },
             'page' => 'invoiceninja_products',
             'section' => 'invoiceninja_admin_index',

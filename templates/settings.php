@@ -8,7 +8,7 @@
     <ul class="nav nav-tabs">
         <li class="active"><a href="#tab-credentials">Credentials</a></li>
         <li><a href="#tab-clients">Clients</a></li>
-        <li><a href="#tab-products">Products</a></li>
+        <li><a href="#tab-products"><?php echo get_option( 'invoiceninja_products_label') ?></a></li>
         <li><a href="#tab-localization">Localization</a></li>
         <li><a href="#tab-templates">Templates</a></li>
         <li><a href="#tab-custom-css">Custom CSS</a></li>
