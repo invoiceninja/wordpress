@@ -97,7 +97,7 @@ class ClientApi extends BaseApi
     public static function exportUser($user)
     {
         $matches_roles = false;
-        $included_roles = get_option( 'invoiceninja_filter_roles', [] );
+        $included_roles = get_option( 'invoiceninja_included_roles', [] );
 
         foreach ( $included_roles as $role ) {
             if (in_array($role, $user->roles)) {

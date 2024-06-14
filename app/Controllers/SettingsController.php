@@ -177,7 +177,7 @@ class SettingsController extends BaseController
          ],
          [
             'option_group' => 'invoiceninja_settings',
-            'option_name' => 'invoiceninja_filter_roles',
+            'option_name' => 'invoiceninja_included_roles',
          ],
          [
             'option_group' => 'invoiceninja_settings',
@@ -320,15 +320,15 @@ class SettingsController extends BaseController
             ]
          ],
          [
-            'id' => 'invoiceninja_filter_roles',
-            'title' => 'Filter Roles',
+            'id' => 'invoiceninja_included_roles',
+            'title' => 'Included Roles',
             'callback' => function() 
             { 
                global $wp_roles;
 
-               $value = get_option( 'invoiceninja_filter_roles', [] );
+               $value = get_option( 'invoiceninja_included_roles', [] );
                
-               echo '<select name="invoiceninja_filter_roles[]" multiple size="5">';
+               echo '<select name="invoiceninja_included_roles[]" multiple size="5">';
 
                $roles = $wp_roles->roles;
 
@@ -343,7 +343,7 @@ class SettingsController extends BaseController
             'page' => 'invoiceninja_options',
             'section' => 'invoiceninja_admin_index',
             'args' => [
-               'label_for' => 'invoiceninja_filter_roles',
+               'label_for' => 'invoiceninja_included_roles',
                //'class' => '',
             ]
          ],
