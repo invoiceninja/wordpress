@@ -18,8 +18,11 @@ class ClientController extends BaseController
 
     public static function export($user_id)
     {
-        $user = get_userdata($user_id);
+        if ( get_option( 'invoiceninja_sync_clients' ) ) 
+        {
+            $user = get_userdata($user_id);
 
-        ClientApi::exportUser($user);
+            ClientApi::exportUser($user);
+        }
     }
 }
