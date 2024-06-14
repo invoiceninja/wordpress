@@ -177,6 +177,10 @@ class SettingsController extends BaseController
          ],
          [
             'option_group' => 'invoiceninja_settings',
+            'option_name' => 'invoiceninja_filter_roles',
+         ],
+         [
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_sync_products',
             'option_sanitize' => 'intval',
          ],
@@ -312,6 +316,34 @@ class SettingsController extends BaseController
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_sync_clients',
+               //'class' => '',
+            ]
+         ],
+         [
+            'id' => 'invoiceninja_filter_roles',
+            'title' => 'Filter Roles',
+            'callback' => function() 
+            { 
+               global $wp_roles;
+
+               $value = get_option( 'invoiceninja_filter_roles', [] );
+               
+               echo '<select name="invoiceninja_filter_roles[]" multiple size="5">';
+
+               $roles = $wp_roles->roles;
+
+               foreach ($roles as $role_key => $role) {
+                  $selected = in_array( $role_key, $value ) ? 'selected="selected"' : '';
+                  echo '<option value="' . $role_key . '" ' . $selected . '>' . $role['name'] . '</option>';
+               }           
+
+               echo '</select>';
+               echo '<p class="description">Ctrl + click to select multiple</p>'; 
+            },
+            'page' => 'invoiceninja_options',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_filter_roles',
                //'class' => '',
             ]
          ],
