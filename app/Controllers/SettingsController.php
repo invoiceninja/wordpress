@@ -230,7 +230,13 @@ class SettingsController extends BaseController
             'id' => 'invoiceninja_admin_index',
             'title' => '',
             'callback' => function() {},
-            'page' => 'invoiceninja_options',
+            'page' => 'invoiceninja_clients',
+         ],
+         [
+            'id' => 'invoiceninja_admin_index',
+            'title' => '',
+            'callback' => function() {},
+            'page' => 'invoiceninja_products',
          ],
          [
             'id' => 'invoiceninja_admin_index',
@@ -312,7 +318,7 @@ class SettingsController extends BaseController
                $value = get_option( 'invoiceninja_sync_clients' );
                echo '<label for="invoiceninja_sync_clients"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_clients" name="invoiceninja_sync_clients"/> Automatically export clients to Invoice Ninja</label>'; 
             },
-            'page' => 'invoiceninja_options',
+            'page' => 'invoiceninja_clients',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_sync_clients',
@@ -340,7 +346,7 @@ class SettingsController extends BaseController
                echo '</select>';
                echo '<p class="description">Ctrl + click to select multiple</p>'; 
             },
-            'page' => 'invoiceninja_options',
+            'page' => 'invoiceninja_clients',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_included_roles',
@@ -355,7 +361,7 @@ class SettingsController extends BaseController
                $value = get_option( 'invoiceninja_sync_products' );
                echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically import products from Invoice Ninja</label>'; 
             },
-            'page' => 'invoiceninja_options',
+            'page' => 'invoiceninja_products',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_sync_products',
@@ -375,7 +381,7 @@ class SettingsController extends BaseController
                   <option value="multiple" ' . ( $value == 'multiple' ? 'SELECTED' : '' ) . '>Multiple [Add to Cart]</option>
                </select>';
             },
-            'page' => 'invoiceninja_options',
+            'page' => 'invoiceninja_products',
             'section' => 'invoiceninja_admin_index',
             'args' => [
                'label_for' => 'invoiceninja_online_purchases',

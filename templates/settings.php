@@ -7,7 +7,8 @@
 
     <ul class="nav nav-tabs">
         <li class="active"><a href="#tab-credentials">Credentials</a></li>
-        <li><a href="#tab-options">Options</a></li>
+        <li><a href="#tab-clients">Clients</a></li>
+        <li><a href="#tab-products">Products</a></li>
         <li><a href="#tab-localization">Localization</a></li>
         <li><a href="#tab-templates">Templates</a></li>
         <li><a href="#tab-custom-css">Custom CSS</a></li>
@@ -20,8 +21,11 @@
         <div id="tab-credentials" class="tab-pane">
             <?php do_settings_sections( 'invoiceninja_credentials' ); ?>
         </div>
-        <div id="tab-options" class="tab-pane active">
-            <?php do_settings_sections( 'invoiceninja_options' ); ?>
+        <div id="tab-clients" class="tab-pane active">
+            <?php do_settings_sections( 'invoiceninja_clients' ); ?>
+        </div>            
+        <div id="tab-products" class="tab-pane">
+            <?php do_settings_sections( 'invoiceninja_products' ); ?>
         </div>            
         <div id="tab-localization" class="tab-pane">
             <?php do_settings_sections( 'invoiceninja_localization' ); ?>
