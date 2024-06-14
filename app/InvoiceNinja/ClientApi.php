@@ -99,9 +99,11 @@ class ClientApi extends BaseApi
         $matches_roles = false;
         $included_roles = get_option( 'invoiceninja_included_roles', [] );
 
-        foreach ( $included_roles as $role ) {
-            if (in_array($role, $user->roles)) {
-                $matches_roles = true;
+        if ( $included_roles ) {
+            foreach ( $included_roles as $role ) {
+                if (in_array($role, $user->roles)) {
+                    $matches_roles = true;
+                }
             }
         }
 

@@ -66,7 +66,12 @@
         <form method="post" action="" style="float: left; margin-right: 12px">
             <input type="hidden" name="invoiceninja_action" value="export_clients">
             <?php wp_nonce_field('invoiceninja_export_clients', 'invoiceninja_nonce'); ?>
-            <input type="submit" class="button button-primary" value="Export Clients">
+            <input type="submit" class="button button-primary" value="Export Clients" 
+            <?php
+                if ( ! get_option( 'invoiceninja_included_roles' ) ) {
+                    echo 'onclick="alert(\'No roles are included on the clients tab\'); return false;"';
+                }
+            ?>>
         </form>
         
         <form method="post" action="">
