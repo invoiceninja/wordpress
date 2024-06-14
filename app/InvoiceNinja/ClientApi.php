@@ -96,6 +96,19 @@ class ClientApi extends BaseApi
 
     public static function exportUser($user)
     {
+        $matches_roles = false;
+        $included_roles = get_option( 'invoiceninja_filter_roles', [] );
+
+        foreach ( $included_roles as $role ) {
+            if (in_array($role, $user->roles)) {
+                $matches_roles = true;
+            }
+        }
+
+        if ( ! $matches_roles) {
+            return;
+        }
+
         if ( $client = self::find( $user->user_email ) ) {
             $client = json_decode( $client );
             $client = self::update( $client->id, $user );
