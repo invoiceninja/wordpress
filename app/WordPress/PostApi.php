@@ -260,6 +260,30 @@ class PostApi
             'product_id' => '',
         ), $atts, 'purchase');
 
+        $in_stock = true;
+
+        if ( $profile->track_inventory ) {
+            $args = [
+                'post_type' => 'invoiceninja_product',
+                'meta_query' => [
+                    [
+                        'key' => 'product_id',
+                        'value' => $atts['product_id'],
+                        'compare' => 'EQUAL',
+                    ],
+                ],
+            ];
+            
+            $query = new \WP_Query( $args );
+            
+            if ( $query->have_posts() ) {
+                $query->the_post();
+                $post_id = get_the_ID();
+                $in_stock_quantity = get_post_meta( $post_id, 'in_stock_quantity', true );
+                $in_stock = $in_stock_quantity > 0;
+            }    
+        }
+
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase'])) {
             $product_id = $_POST['product_id'];
             
@@ -276,6 +300,15 @@ class PostApi
 
                     if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
                         $_SESSION['invoiceninja_cart'][$product_id]++;
+
+                        $max = 99;
+                        if ($max_quantity > 0) {
+                            $max = min( $max, $max_quantity );
+                        }
+                        if ($profile->track_inventory) {
+                            $max = min( $max, $in_stock_quantity );
+                        }                        
+                        $_SESSION['invoiceninja_cart'][$product_id] = min( $max, $_SESSION['invoiceninja_cart'][$product_id] );                        
                     } else {
                         $_SESSION['invoiceninja_cart'][$product_id] = 1;
                     }
@@ -287,32 +320,8 @@ class PostApi
         }
     
         ob_start();
- 
+        
         if ( $is_single || $is_multiple ) {
-            $in_stock = true;
-
-            if ( $profile->track_inventory ) {
-                $args = [
-                    'post_type' => 'invoiceninja_product',
-                    'meta_query' => [
-                        [
-                            'key' => 'product_id',
-                            'value' => $atts['product_id'],
-                            'compare' => 'EQUAL',
-                        ],
-                    ],
-                ];
-                
-                $query = new \WP_Query( $args );
-                
-                if ( $query->have_posts() ) {
-                    $query->the_post();
-                    $post_id = get_the_ID();
-                    $in_stock_quantity = get_post_meta( $post_id, 'in_stock_quantity', true );
-                    $in_stock = $in_stock_quantity > 0;
-                }    
-            }
-
             if ( $in_stock ) {
                 ?>
                 <form method="post" action="">
