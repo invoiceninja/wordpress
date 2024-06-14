@@ -213,10 +213,7 @@ class SettingsApi
     
             ProductController::loadProducts();
 
-            $products_label = get_option( 'invoiceninja_products_label' );
-            if ( ! $products_label ) {
-               $products_label = 'Products';
-            }
+            $products_label = get_option( 'invoiceninja_products_label', 'Products' );
 
             add_settings_error(
                 'invoiceninja',

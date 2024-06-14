@@ -30,15 +30,8 @@ class SettingsController extends BaseController
             'menu_slug' => 'invoiceninja',
             'callback' => function() 
             {
-               $product_label = get_option( 'invoiceninja_product_label' );
-               if ( ! $product_label ) {
-                  $product_label = 'Product';
-               }
-            
-               $products_label = get_option( 'invoiceninja_products_label' );
-               if ( ! $products_label ) {
-                  $products_label = 'Products';
-               }
+               $product_label = get_option( 'invoiceninja_product_label', 'Product' );
+               $products_label = get_option( 'invoiceninja_products_label', 'Products' );
 
                $company = '';
 
@@ -268,15 +261,8 @@ class SettingsController extends BaseController
 
    public function setFields()
    {
-      $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
-      if ( ! $product_label ) {
-         $product_label = 'Product';
-      }
-
-      $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
-      if ( ! $products_label ) {
-         $products_label = 'Products';
-      }
+      $product_label = esc_attr( get_option( 'invoiceninja_product_label', 'Product' ) );
+      $products_label = esc_attr( get_option( 'invoiceninja_products_label', 'Products' ) );
 
       $args = [
          [
@@ -420,8 +406,8 @@ class SettingsController extends BaseController
             'title' => 'Product Label',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option( 'invoiceninja_product_label' ) );
-               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_product_label" placeholder="Product"/>'; 
+               $value = esc_attr( get_option( 'invoiceninja_product_label', 'Product' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_product_label" required/>'; 
                echo '<p class="description">Singular label to use for individual products</p>'; 
             },
             'page' => 'invoiceninja_localization',
@@ -436,8 +422,8 @@ class SettingsController extends BaseController
             'title' => 'Products Label',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option( 'invoiceninja_products_label' ) );
-               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_products_label" placeholder="Products"/>'; 
+               $value = esc_attr( get_option( 'invoiceninja_products_label', 'Products' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_products_label" required/>'; 
                echo '<p class="description">Plural label to use for multiple products</p>'; 
             },
             'page' => 'invoiceninja_localization',
@@ -457,15 +443,8 @@ class SettingsController extends BaseController
                   $value = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
                }
 
-               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
-               if ( ! $products_label ) {
-                  $products_label = 'Products';
-               }
-
-               $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
-               if ( ! $product_label ) {
-                  $product_label = 'Product';
-               }
+               $products_label = esc_attr( get_option( 'invoiceninja_products_label', 'Products' ) );
+               $product_label = esc_attr( get_option( 'invoiceninja_product_label', 'Product' ) );
          
                echo '<div><textarea class="code" style="width:100%" rows="8" id="invoiceninja_product_template" name="invoiceninja_product_template">' . $value . '</textarea></div>';
                echo '<p style="float:right;">
@@ -491,15 +470,8 @@ class SettingsController extends BaseController
                   $value = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
                }
 
-               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
-               if ( ! $products_label ) {
-                  $products_label = 'Products';
-               }
-
-               $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
-               if ( ! $product_label ) {
-                  $product_label = 'Product';
-               }
+               $products_label = esc_attr( get_option( 'invoiceninja_products_label', 'Products' ) );
+               $product_label = esc_attr( get_option( 'invoiceninja_product_label', 'Product' ) );
 
                echo '<div><textarea class="code" style="width:100%" rows="6" id="invoiceninja_image_template" name="invoiceninja_image_template">' . $value . '</textarea></div>';
                echo '<p style="float:right;">
@@ -521,11 +493,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_product_css' ) );
-
-               $product_label = esc_attr( get_option( 'invoiceninja_product_label' ) );
-               if ( ! $product_label ) {
-                  $product_label = 'Product';
-               }
+               $product_label = esc_attr( get_option( 'invoiceninja_product_label', 'Product' ) );
 
                echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_product_css">' . $value . '</textarea>'; 
                echo '<p class="description">CSS to include on the individual ' . strtolower( $product_label ) . ' page</p>'; 
@@ -543,11 +511,7 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = esc_attr( get_option( 'invoiceninja_products_css' ) );
-
-               $products_label = esc_attr( get_option( 'invoiceninja_products_label' ) );
-               if ( ! $products_label ) {
-                  $products_label = 'Products';
-               }
+               $products_label = esc_attr( get_option( 'invoiceninja_products_label', 'Products' ) );
 
                echo '<textarea class="code" style="width:100%" rows="6" name="invoiceninja_products_css">' . $value . '</textarea>'; 
                echo '<p class="description">CSS to include on the ' . strtolower( $products_label ) . ' list page</p>'; 
