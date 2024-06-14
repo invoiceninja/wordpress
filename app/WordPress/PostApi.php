@@ -26,6 +26,8 @@ class PostApi
 
     public function addDynamicContent($content)
     {
+        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+
         if ( is_singular( 'invoiceninja_product' ) ) {
             $post_id = get_the_ID();
             $product_id = get_post_meta( $post_id, 'product_id', true );
@@ -42,10 +44,11 @@ class PostApi
         if ( isset( $_SESSION['invoiceninja_cart'] ) && ! empty( $_SESSION['invoiceninja_cart'] ) ) {
             $cart = $_SESSION['invoiceninja_cart'];
             $color = '#0000EE';
-            $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+
             if ($profile->settings->primary_color) {
                 $color = $profile->settings->primary_color;
             }    
+
             $str = '<div class="invoiceninja-cart">
                     <div class="cart-header" style="background-color: ' . $color . ';">';
 
@@ -86,7 +89,9 @@ class PostApi
                     $url = get_permalink();
                     $product = get_the_title();
                     $price = get_post_meta( $post_id, 'price', true );
-                    
+                    $max_quantity = get_post_meta( $post_id, 'max_quantity', true );
+                    $in_stock_quantity = get_post_meta( $post_id, 'in_stock_quantity', true );
+
                     $str .= '<tr><td style="width: 0px">';
 
                     $image_url = '';
@@ -99,7 +104,15 @@ class PostApi
                         <td style="width: 30%"><a href="' . $url . '">' . $product . '</a><br/>' . $price . '</td>
                         <td><select onchange="in_update_cart(\'' . $product_id . '\', this.value)">';
                         
-                    for ($i=1; $i<100; $i++) {
+                    
+                    $max = 99;
+                    if ($max_quantity > 0) {
+                        $max = min( $max, $max_quantity );
+                    }
+                    if ($profile->track_inventory) {
+                        $max = min( $max, $in_stock_quantity );
+                    }
+                    for ($i=1; $i<=$max; $i++) {
                         $str .= '<option value="' . $i . '"' . ($quantity == $i ? 'SELECTED' : '') . '>' . $i . '</option>';
                     }
 
