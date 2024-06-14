@@ -331,7 +331,7 @@ class SettingsController extends BaseController
          ],
          [
             'id' => 'invoiceninja_match_found',
-            'title' => 'If Match is Found',
+            'title' => 'If Match Is Found',
             'callback' => function() 
             { 
                global $wp_roles;
