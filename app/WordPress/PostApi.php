@@ -7,6 +7,7 @@
 namespace App\WordPress;
 
 use \App\InvoiceNinja\InvoiceApi;
+use \App\InvoiceNinja\ClientApi;
 
 class PostApi
 {
@@ -385,11 +386,24 @@ class PostApi
         return ob_get_clean();    
     }
 
-    public function clientPortalShortcode()
+    public function clientPortalShortcode($atts)
     {
+        $atts = shortcode_atts(array(
+            'label' => 'Client Portal',
+        ), $atts, 'client_portal');
+
         if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['client_portal'] ) ) {
             if ( wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_client_portal' ) ) {
+                $user = wp_get_current_user();
+                $client = ClientApi::find( $user->user_email );
 
+                foreach ( $client->contacts as $contact ) {
+                    if ( $contact->email == $user->user_email ) {
+                        $url = get_option( 'invoiceninja_api_url ') . '/client/key_login/' . $contact->contact_key;
+                        wp_redirect($url);
+                        exit;
+                    }
+                }
             }
         }            
 
@@ -398,7 +412,7 @@ class PostApi
         ?>
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_client_portal', 'invoiceninja_nonce'); ?>
-            <button type="submit" name="client_portal">Checkout</button>
+            <button type="submit" name="client_portal"><?php echo $atts['label'] ?></button>
         </form>
         <?php
 
