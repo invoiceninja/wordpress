@@ -33,3 +33,7 @@
     padding: 10px;
     text-align: left;
 }
+
+.invoiceninja-cart button {
+    margin-top: 3px;
+}

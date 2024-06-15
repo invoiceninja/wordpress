@@ -82,6 +82,7 @@ class PostApi
 
         add_shortcode('purchase', [ $this, 'purchaseShortcode' ] );
         add_shortcode('checkout', [ $this, 'checkoutShortcode' ] );
+        add_shortcode('client_portal', [ $this, 'clientPortalShortcode' ] );
     }
 
     public function addDynamicContent($content)
@@ -92,11 +93,11 @@ class PostApi
             $post_id = get_the_ID();
             $product_id = get_post_meta( $post_id, 'product_id', true );
             $price = get_post_meta( $post_id, 'price', true );
-            $online_purcases = get_option( 'invoiceninja_online_purchases' );
+            $online_purchases = get_option( 'invoiceninja_online_purchases' );
 
             $price = '<p>' . $price . '</p>';
 
-            if ( $online_purcases == 'single' || $online_purcases == 'multiple' ) {
+            if ( $online_purchases == 'single' || $online_purchases == 'multiple' ) {
                 $content = $price . '[purchase product_id="' . $product_id . '"]' . $content;
             }
         }
@@ -372,7 +373,27 @@ class PostApi
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
             <input type="hidden" name="cart_action" value="checkout"/>
-            <button type="submit" name="checkout" style="margin-top:3px">Checkout</button>
+            <button type="submit" name="checkout">Checkout</button>
+        </form>
+        <?php
+
+        return ob_get_clean();    
+    }
+
+    public function clientPortalShortcode()
+    {
+        if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['client_portal'] ) ) {
+            if ( wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_client_portal' ) ) {
+
+            }
+        }            
+
+        ob_start();
+        
+        ?>
+        <form method="post" action="">
+            <?php wp_nonce_field('invoiceninja_client_portal', 'invoiceninja_nonce'); ?>
+            <button type="submit" name="client_portal">Checkout</button>
         </form>
         <?php
 
