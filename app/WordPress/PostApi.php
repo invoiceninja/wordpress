@@ -24,6 +24,66 @@ class PostApi
         add_filter( 'the_content', [ $this, 'addDynamicContent' ] );
     }
 
+    public function init()
+    {
+        if ( ! session_id() ) {
+            session_start();
+        }
+
+        foreach ($this->post_types as $type)
+        {            
+            $product_label = get_option( 'invoiceninja_product_label', 'Product' );
+            $slug = strtolower( $product_label );
+
+            $query_args = array(
+                'post_type' => 'invoiceninja_product',
+                'posts_per_page' => 5,
+                'order_by' => 'title', // date, menu_order
+                'order' => 'ASC',
+            );
+            $query = new \WP_Query($query_args);
+                
+            register_post_type(
+                $type['id'], [
+                    'labels' => [
+                        'name' => $type['name'],
+                        'singular_name' => $type['singular_name'],
+                    ],
+                    'hierarchical' => true,
+                    'show_in_menu' => $query->have_posts(),
+                    'public' => true,
+                    'has_archive' => true,
+                    'menu_icon' => 'dashicons-products',
+                    'show_in_rest' => true,
+                    'rewrite' => [ 'slug' => sanitize_title( $slug ) ],
+                    /*
+                    'capabilities' => [
+                        'edit_post' => 'edit_post',
+                        'read_post' => 'read_post',
+                        'delete_post' => 'delete_post',
+                        'edit_posts' => 'edit_posts',
+                        'edit_others_posts' => 'edit_others_posts',
+                        'publish_posts' => 'publish_posts',
+                        'read_private_posts' => 'read_private_posts',
+                        'delete_posts' => 'delete_posts',
+                        'delete_private_posts' => 'delete_private_posts',
+                        'delete_published_posts' => 'delete_published_posts',
+                        'delete_others_posts' => 'delete_others_posts',
+                        'edit_private_posts' => 'edit_private_posts',
+                        'edit_published_posts' => 'edit_published_posts',
+                        'create_posts' => 'create_posts', 
+                    ],
+                    */
+                ],
+            );       
+        }
+
+        flush_rewrite_rules();
+
+        add_shortcode('purchase', [ $this, 'purchaseShortcode' ] );
+        add_shortcode('checkout', [ $this, 'checkoutShortcode' ] );
+    }
+
     public function addDynamicContent($content)
     {
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
@@ -188,66 +248,6 @@ class PostApi
         $this->post_types = $types;
 
         return $this;
-    }
-
-    public function init()
-    {
-        if ( ! session_id() ) {
-            session_start();
-        }
-
-        foreach ($this->post_types as $type)
-        {            
-            $product_label = get_option( 'invoiceninja_product_label', 'Product' );
-            $slug = strtolower( $product_label );
-
-            $query_args = array(
-                'post_type' => 'invoiceninja_product',
-                'posts_per_page' => 5,
-                'order_by' => 'title', // date, menu_order
-                'order' => 'ASC',
-            );
-            $query = new \WP_Query($query_args);
-                
-            register_post_type(
-                $type['id'], [
-                    'labels' => [
-                        'name' => $type['name'],
-                        'singular_name' => $type['singular_name'],
-                    ],
-                    'hierarchical' => true,
-                    'show_in_menu' => $query->have_posts(),
-                    'public' => true,
-                    'has_archive' => true,
-                    'menu_icon' => 'dashicons-products',
-                    'show_in_rest' => true,
-                    'rewrite' => [ 'slug' => sanitize_title( $slug ) ],
-                    /*
-                    'capabilities' => [
-                        'edit_post' => 'edit_post',
-                        'read_post' => 'read_post',
-                        'delete_post' => 'delete_post',
-                        'edit_posts' => 'edit_posts',
-                        'edit_others_posts' => 'edit_others_posts',
-                        'publish_posts' => 'publish_posts',
-                        'read_private_posts' => 'read_private_posts',
-                        'delete_posts' => 'delete_posts',
-                        'delete_private_posts' => 'delete_private_posts',
-                        'delete_published_posts' => 'delete_published_posts',
-                        'delete_others_posts' => 'delete_others_posts',
-                        'edit_private_posts' => 'edit_private_posts',
-                        'edit_published_posts' => 'edit_published_posts',
-                        'create_posts' => 'create_posts', 
-                    ],
-                    */
-                ],
-            );       
-        }
-
-        flush_rewrite_rules();
-
-        add_shortcode('purchase', [ $this, 'purchaseShortcode' ] );
-        add_shortcode('checkout', [ $this, 'checkoutShortcode' ] );
     }
 
     public function purchaseShortcode($atts)
