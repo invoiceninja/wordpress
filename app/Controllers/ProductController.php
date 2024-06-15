@@ -96,7 +96,7 @@ class ProductController extends BaseController
                 $post_id = get_the_ID();
                 $product_id = get_post_meta( $post_id, 'product_id', true );
 
-                if ( $product_id ) {
+                if ( $product_id && is_string( $product_id ) ) {
                     $args = array(
                         'post_type'      => 'attachment',
                         'post_status'    => 'inherit',
