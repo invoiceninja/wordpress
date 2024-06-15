@@ -400,7 +400,11 @@ class PostApi
 
                 foreach ( $client->contacts as $contact ) {
                     if ( $contact->email == $user->user_email ) {
-                        $url = get_option( 'invoiceninja_api_url ') . '/client/key_login/' . $contact->contact_key;
+                        $url = get_option( 'invoiceninja_api_url ');
+                        $url = rtrim( $url, '/' );
+                        $url = rtrim( $url, 'api/v1' );
+                        $url = rtrim( $url, '/' );                        
+                        $url .= '/client/key_login/' . $contact->contact_key;
                         if ($atts['sso'] == 'true') {
                             $url .= '?client_hash=' . $client->client_hash;
                         }

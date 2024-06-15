@@ -15,13 +15,8 @@ class BaseApi
 
         if ( empty( $url ) ) {
             $url = 'https://invoicing.co/api/v1/';
-        } else {
-            $url = rtrim( $url, '/' );
-            $url = rtrim( $url, 'api/v1' );
-            $url = rtrim( $url, '/' );
-            $url .= '/api/v1/';
         }
-
+        
         $url = 'https://staging.invoicing.co/api/v1/' . $route;
 
         $args = array(
