@@ -37,15 +37,16 @@ class BaseApi
         $response = wp_remote_request($url, $args);
 
         if (is_wp_error($response)) {
+
             if ( is_admin() && function_exists( 'add_settings_error' ) ) {
                 add_settings_error(
                     'invoiceninja',
                     'api_request',
-                    $e->getMessage(),
+                    $response->get_error_message(),
                     'error'
                 );
             } else {
-                echo 'Error: ' . $e->getMessage();
+                echo 'Error: ' . $response->get_error_message();
                 exit;
             }
 
@@ -53,14 +54,22 @@ class BaseApi
         } else {
             $response_code = wp_remote_retrieve_response_code($response);
 
-            if ($response_code === 200) {
-                                
+            if ($response_code === 200) {                                    
                 $body = wp_remote_retrieve_body( $response );
 
                 return $body;
-
             } else {
-                // todo                
+                if ( is_admin() && function_exists( 'add_settings_error' ) ) {
+                    add_settings_error(
+                        'invoiceninja',
+                        'api_request',
+                        json_decode($response['body'])->message,
+                        'error'
+                    );
+                } else {
+                    echo 'Error: ' . json_decode($response['body'])->message;
+                    exit;
+                }
             }
         }
 
