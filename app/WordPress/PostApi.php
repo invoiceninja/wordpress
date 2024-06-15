@@ -87,6 +87,12 @@ class PostApi
 
     public function addDynamicContent($content)
     {
+        // Fix for "Updating failed. The response is not a valid JSON response." when editing posts
+        if ( is_admin() || ( defined( 'DOING_AJAX' ) && DOING_AJAX ) || ( defined( 'REST_REQUEST' ) && REST_REQUEST ) ) 
+        {
+            return $content;
+        }
+
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
 
         if ( is_singular( 'invoiceninja_product' ) ) {
@@ -120,14 +126,13 @@ class PostApi
             }
 
             $str .= '[checkout]</div>';
-
             $str .= '<table>
                      <form method="POST" action="" id="invoiceninja_cart">
                      <input type="hidden" id="cart_action" name="cart_action" value=""/>
                      <input type="hidden" id="product_id" name="product_id"/>
                      <input type="hidden" id="quantity" name="quantity"/>';
-            $str .= wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce');
-            
+            $str .= wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce');                
+
             foreach ( $_SESSION['invoiceninja_cart'] as $product_id => $quantity ) {
 
                 $args = [
