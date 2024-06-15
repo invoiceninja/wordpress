@@ -192,7 +192,7 @@ class SettingsApi
             if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_refresh_company') ) {
                 wp_die('Security check failed');
             }
-    
+
             if ( $profile = ProfileApi::load() ) {
 
                 update_option( 'invoiceninja_profile', json_encode( $profile ) );
