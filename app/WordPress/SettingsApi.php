@@ -53,6 +53,7 @@ class SettingsApi
             if ( $profile ) {
                 update_option('invoiceninja_profile', json_encode( $profile ) );                
             } else {
+                update_option('invoiceninja_profile', '');
                 update_option('invoiceninja_api_token', '');
             }
         } else if ($option_name === 'invoiceninja_product_label' 
