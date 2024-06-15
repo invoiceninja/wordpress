@@ -22,7 +22,7 @@ class BaseApi
             $url .= '/api/v1/';
         }
 
-        $url = 'https://staging.invoicing.co/api/v1/' . $route;
+        $url .= $route;
 
         $args = array(
             'timeout' => '60',
