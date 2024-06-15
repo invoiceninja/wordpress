@@ -390,6 +390,7 @@ class PostApi
     {
         $atts = shortcode_atts(array(
             'label' => 'Client Portal',
+            'sso' => 'false',
         ), $atts, 'client_portal');
 
         if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['client_portal'] ) ) {
@@ -400,6 +401,9 @@ class PostApi
                 foreach ( $client->contacts as $contact ) {
                     if ( $contact->email == $user->user_email ) {
                         $url = get_option( 'invoiceninja_api_url ') . '/client/key_login/' . $contact->contact_key;
+                        if ($atts['sso'] == 'true') {
+                            $url .= '?client_hash=' . $client->client_hash;
+                        }
                         wp_redirect($url);
                         exit;
                     }
