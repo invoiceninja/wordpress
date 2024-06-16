@@ -298,5 +298,7 @@ class ProductController extends BaseController
         if ( ! is_wp_error( $page_id ) ) {
             update_option( 'invoiceninja_product_page_id', $page_id );
         }
+
+        return count( $products );
     }
 }

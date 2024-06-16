@@ -200,7 +200,7 @@ class SettingsApi
                 add_settings_error(
                     'invoiceninja',
                     'imported_products',
-                    'Successfully refreshed company!',
+                    'Successfully refreshed company',
                     'success'
                 );
             }
@@ -212,14 +212,17 @@ class SettingsApi
                 wp_die('Security check failed');
             }
     
-            ProductController::loadProducts();
+            $count = ProductController::loadProducts();
 
             $products_label = get_option( 'invoiceninja_products_label', 'Products' );
-
+            $messageOne = 'Successfully imported 1 product';
+            $messageMany = 'Successfully imported :count products';
+            $messageMany = str_replace( ':count', $count, $messageMany );
+            
             add_settings_error(
                 'invoiceninja',
                 'imported_products',
-                'Successfully imported ' . strtolower( $products_label ) . '!',
+                $count == 1 ? $messageOne : $messageMany,
                 'success'
             );
         }    
@@ -230,12 +233,16 @@ class SettingsApi
                 wp_die('Security check failed');
             }
     
-            ClientApi::export();
+            $count = ClientApi::export();
+            $messageOne = 'Successfully exported 1 client';
+            $messageMany = 'Successfully exported :count clients';
+            $messageMany = str_replace( ':count', $count, $messageMany );
+
 
             add_settings_error(
                 'invoiceninja',
                 'exported_clients',
-                'Successfully exported clients!',
+                $count == 1 ? $messageOne : $messageMany,                
                 'success'
             );
         }    

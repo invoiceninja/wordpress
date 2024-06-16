@@ -87,11 +87,16 @@ class ClientApi extends BaseApi
             //'role' => '',
         ];
     
+        $count = 0;
         $users = get_users($args);
 
         foreach ( $users as $user ) {
-            self::exportUser($user);
+            if ( $client = self::exportUser($user) ) {
+                $count++;
+            }
         }
+
+        return $count;
     }
 
     public static function exportUser($user)
@@ -108,7 +113,7 @@ class ClientApi extends BaseApi
         }
 
         if ( ! $matches_roles) {
-            return;
+            return false;
         }
 
         if ( $client = self::find( $user->user_email ) ) {
@@ -118,5 +123,7 @@ class ClientApi extends BaseApi
         } else {
             $client = self::create( $user );
         }
+
+        return $client;
     }
 }
