@@ -10,7 +10,7 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 * Custom widget
 
 <p align="center">
-    <img src="https://github.com/invoiceninja/wordpress/assets/images/screenshot.png" alt="Screenshot"/>
+    <img src="https://github.com/invoiceninja/wordpress/blob/main/assets/images/screenshot.png?raw=true" alt="Screenshot"/>
 </p>
 
 ## Credits
