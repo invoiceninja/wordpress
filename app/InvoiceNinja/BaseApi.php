@@ -31,8 +31,9 @@ class BaseApi
         $args = array(
             'timeout' => '60',
             'headers' => array(
-                'Content-Type' => 'application/json',
                 'X-API-TOKEN' => $key,
+                'X-CLIENT-PLATFORM': 'WordPress',
+                'Content-Type' => 'application/json',
             ),
             'body' => $data ? json_encode($data) : null,
             'method' => $method,
