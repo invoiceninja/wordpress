@@ -120,11 +120,15 @@ class PostApi
             $str = '<div class="invoiceninja-cart">
                     <div class="cart-header" style="background-color: ' . $color . ';">';
 
+            /*
             if ( count($cart) == 1 ) {
                 $str .= '1 item in cart';
             } else {
                 $str .= count($cart) . ' items in cart';
             }
+            */
+
+            $str .= '&nbsp;';
 
             $str .= '[checkout]</div>';
             $str .= '<table>
