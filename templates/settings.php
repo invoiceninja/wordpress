@@ -41,7 +41,10 @@
                 Thank you for installing the <a href="https://invoiceninja.com" target="_blank">Invoice Ninja</a> plugin for WordPress!
             </p>
             <p>
-                Please <a href="https://github.com/invoiceninja/wordpress/issues" target="_blank">create an issue</a> on GitHub to suggest a feature you'd like to see added.
+                For details about the plugin's options please refer to the <a href="https://github.com/invoiceninja/wordpress/?tab=readme-ov-file#invoice-ninja--wordpress-plugin" target="_blank">GitHub readme</a>.
+            </p>
+            <p>
+                Feel free to <a href="https://github.com/invoiceninja/wordpress/issues" target="_blank">create an issue</a> on GitHub to suggest a feature you'd like to see added.
             <p>
         </div>            
     </div>
