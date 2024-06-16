@@ -168,7 +168,7 @@ class PostApi
                     }
                     
                     $str .= '</td>
-                        <td style="width: 30%"><a href="' . $url . '">' . $product . '</a><br/>' . $price . '</td>
+                        <td style="width: 30%"><a href="' . $url . '">' . $product . '</a><br/>' . \App\Utils\Formatting::formatMoney( $price ) . '</td>
                         <td><select onchange="in_update_cart(\'' . $product_id . '\', this.value)">';
                         
                     
