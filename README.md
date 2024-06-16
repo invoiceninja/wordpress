@@ -1,4 +1,4 @@
-# WordPress Plugin for Invoice Ninja
+# Invoice Ninja | WordPress Plugin
 
 ## Features
 * Import products from Invoice Ninja as custom pages in WordPress.
