@@ -9,6 +9,10 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 * Shopping cart
 * Custom widget
 
+<p align="center">
+    <img src="https://github.com/invoiceninja/wordpress/assets/images/screenshot.png" alt="Screenshot"/>
+</p>
+
 ## Credits
 * [Hillel Coren](https://hillel.dev)
 * [Oliver Flueckiger](https://www.oliver-flueckiger.ch)
