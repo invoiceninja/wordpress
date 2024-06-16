@@ -42,7 +42,15 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 ### Custom CSS
 - **Product Page**: Add custom CSS to style individual product pages. This gives you the flexibility to match the product pages with your site’s overall design.
 - **Products Page**: Add custom CSS to style the product listing page, ensuring a cohesive look across all product-related content on your site.
-    
+
+## Shortcodes
+
+- **[purchase product_id=""]**: This code converts to either an 'Add to Cart' or 'Buy Now' depending on the Online Purchases setting.
+- **[client_portal label="" sso=""]**: This code converts to a button to enable your customers to access their client portal. If SSO is set to true they won't need to enter their password.
+
+> [!WARNING]  
+> WARNING: Only use the [client_portal] shortcode if your customers are confirming their email addresses. Without this confirmation, a malicious user could create a fake account and gain unauthorized access to data in Invoice Ninja.
+
 ## Credits
 * [Hillel Coren](https://hillel.dev)
 * [Oliver Flueckiger](https://www.oliver-flueckiger.ch)
