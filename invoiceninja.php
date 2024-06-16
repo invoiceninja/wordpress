@@ -35,9 +35,9 @@ function deactivate_invoiceninja_plugin()
 register_deactivation_hook( __FILE__, 'deactivate_invoiceninja_plugin' );
 
 define( 'INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE', '<a href="$page_url" class="wp-invoiceninja">
-  <h3>$product</h3>
+  <h3 class="truncated">$product</h3>
   <div class="divider"></div>
-  <h5 title="$description" class="truncated">$description</h5>
+  <h5 class="truncated">$description</h5>
   <h5><b>$price</b></h5>
   [purchase product_id="$product_id"]
   $image
