@@ -32,7 +32,7 @@ class BaseApi
             'timeout' => '60',
             'headers' => array(
                 'X-API-TOKEN' => $key,
-                'X-CLIENT-PLATFORM': 'WordPress',
+                'X-CLIENT-PLATFORM' => 'WordPress',
                 'Content-Type' => 'application/json',
             ),
             'body' => $data ? json_encode($data) : null,
