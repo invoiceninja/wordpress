@@ -68,7 +68,7 @@ class BaseApi
                     add_settings_error(
                         'invoiceninja',
                         'api_request',
-                        json_decode($response['body'])->message,
+                        json_decode($response['body'])->message,                        
                         'error'
                     );
                 } else {

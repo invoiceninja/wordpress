@@ -69,10 +69,22 @@ class ClientApi extends BaseApi
         return null;
     }        
 
-    public static function update( $client_id, $user )
+    public static function update( $client, $user )
     {
         $data = self::convertUser( $user );
-        $response = self::sendRequest( 'clients/' . $client_id, 'PUT', $data );
+
+        $user_contact = $data['contacts'][0];
+
+        // Match up the existing contact ids
+        foreach ( $client->contacts as $contact ) {
+            if ($contact->email == $user_contact['email']) {
+                $data['contacts'][0]['id'] = $contact->id;
+            } else {
+                $data['contacts'][] = (array) $contact;
+            }
+        }
+
+        $response = self::sendRequest( 'clients/' . $client->id, 'PUT', $data );
 
         if ( $response ) {
             return json_decode( $response )->data;
@@ -118,7 +130,7 @@ class ClientApi extends BaseApi
 
         if ( $client = self::find( $user->user_email ) ) {
             if ( get_option( 'invoiceninja_match_found' ) == 'update' ) {
-                $client = self::update( $client->id, $user );
+                $client = self::update( $client, $user );
             }
         } else {
             $client = self::create( $user );
