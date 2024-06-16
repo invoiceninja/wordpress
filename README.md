@@ -45,8 +45,8 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 
 ## Shortcodes
 
-- **[purchase product_id=""]**: This code converts to either an 'Add to Cart' or 'Buy Now' depending on the Online Purchases setting.
-- **[client_portal label="" sso=""]**: This code converts to a button to enable your customers to access their client portal. If SSO is set to true they won't need to enter their password.
+- **[purchase product_id=""]**: This shortcode will display either an 'Add to Cart' button or a 'Buy Now' button, depending on the Online Purchases setting.
+- **[client_portal label="" sso=""]**: This shortcode generates a button that allows your customers to access their client portal. If the SSO (Single Sign-On) parameter is set to true, they won't need to enter their password.
 
 > [!WARNING]  
 > WARNING: Only use the [client_portal] shortcode if your customers are confirming their email addresses. Without this confirmation, a malicious user could create a fake account and gain unauthorized access to data in Invoice Ninja.
