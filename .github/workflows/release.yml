@@ -21,7 +21,18 @@ jobs:
       run: composer install --no-dev --optimize-autoloader
 
     - name: Zip project
-      run: zip -r invoiceninja.zip . -x '*.git*' 'vendor/*'
+      run: zip -r wordpress-plugin.zip . -x '*.git*'
+
+    - name: Upload app archive to workflow
+      uses: actions/upload-artifact@v3
+      with:
+        name: WordPress-Plugin
+        path: wordpress-plugin.zip
+
+    - name: Download artifacts
+      uses: actions/download-artifact@v3
+      with:
+        path: artifacts
 
     - name: Create Release
       uses: marvinpinto/action-automatic-releases@v1.2.1
@@ -30,17 +41,9 @@ jobs:
         draft: false
         prerelease: false
         title: "Latest Release"
-        automatic_release_tag: "v0.1.1"
-
-    - name: Upload Release Asset
-      uses: actions/upload-release-asset@v1
-      env:
-        GITHUB_TOKEN: ${{ secrets.commit_secret }}
-      with:
-        upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./invoiceninja.zip
-        asset_name: invoiceninja.zip
-        asset_content_type: application/zip
+        automatic_release_tag: "v0.1.2"
+        files: |
+            ${{ github.workspace }}/artifacts/WordPress-Plugin
 
 #    - name: Submit to WordPress Plugin Store
 #      env:
