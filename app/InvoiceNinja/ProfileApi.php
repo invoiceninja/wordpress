@@ -58,7 +58,27 @@ class ProfileApi extends BaseApi
                     ], 
                     $upload['file']
                 );
-    }
+            }
+        }
+
+        if ( $static_response = self::sendRequest( 'statics' ) ) {
+            $static_response = json_decode( $static_response );
+
+            $currency_map = [];
+            foreach ( $static_response->currencies as $currency ) {
+                $currency_map[$currency->id] = $currency;
+            }
+            update_option( 'invoiceninja_currencies', json_encode( $currency_map) );
+
+            $country_map = [];
+            foreach ( $static_response->countries as $country ) {
+                $obj = new \stdClass;
+                $obj->swap_currency_symbol = $country->swap_currency_symbol;
+                $obj->thousand_separator = $country->thousand_separator;
+                $obj->decimal_separator = $country->decimal_separator;
+                $country_map[$country->id] = $obj;
+            }
+            update_option( 'invoiceninja_countries', json_encode( $country_map) );
         }
 
         return $response;
