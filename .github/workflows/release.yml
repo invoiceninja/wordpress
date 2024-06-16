@@ -30,7 +30,7 @@ jobs:
         draft: false
         prerelease: false
         title: "Latest Release"
-        automatic_release_tag: "v0.1.0"
+        automatic_release_tag: "v0.1.1"
 
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
