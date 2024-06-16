@@ -21,7 +21,7 @@ jobs:
       run: composer install --no-dev --optimize-autoloader
 
     - name: Zip project
-      run: zip -r plugin-name.zip . -x '*.git*' 'vendor/*'
+      run: zip -r invoiceninja.zip . -x '*.git*' 'vendor/*'
 
     - name: Create Release
       uses: marvinpinto/action-automatic-releases@v1.2.1
@@ -35,11 +35,11 @@ jobs:
     - name: Upload Release Asset
       uses: actions/upload-release-asset@v1
       env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_TOKEN: ${{ secrets.commit_secret }}
       with:
         upload_url: ${{ steps.create_release.outputs.upload_url }}
-        asset_path: ./plugin-name.zip
-        asset_name: plugin-name.zip
+        asset_path: ./invoiceninja.zip
+        asset_name: invoiceninja.zip
         asset_content_type: application/zip
 
 #    - name: Submit to WordPress Plugin Store
