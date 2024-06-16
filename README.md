@@ -3,17 +3,11 @@
 WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninja)
 
 ## Features
-* **Import Products**: Import products from Invoice Ninja as custom pages in WordPress.
-* **Export Users**: Export WordPress users as clients in Invoice Ninja.
-* **Single Sign-On**: (SSO): Enable SSO for the Client Portal.
-* **Shopping Cart**: Integrated shopping cart functionality.
-* **Custom Widget**: Add a custom widget to your WordPress site
-
-* Import products from Invoice Ninja as pages in WordPress
-* Export users from WordPress as clients in Invoice Ninja
-* Single sign-on (SSO) for the Client Portal
-* Integrated shopping cart functionality
-* Custom widget
+* Import products from Invoice Ninja as custom pages in WordPress.
+* Export WordPress users as clients in Invoice Ninja.
+* Enable Single sign-on (SSO) for the Client Portal.
+* Integrated shopping cart functionality.
+* Add a custom widget to your WordPress site.
 
 <p align="center">
     <img src="https://github.com/invoiceninja/wordpress/blob/main/assets/images/screenshot.png?raw=true" alt="Screenshot"/>
@@ -23,7 +17,7 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 
 ### Credentials
 - Token: Enter your Invoice Ninja v5 API token here to authenticate and connect your WordPress site with Invoice Ninja. Using https ensures secure data transfer between the two platforms.
-- URL: Provide the URL where your Invoice Ninja instance is accessible. This allows the plugin to communicate with your Invoice Ninja setup effectively.
+- URL: Provide the URL where your Invoice Ninja instance is accessible. 
 
 ### Clients
 - Sync Clients: Enable this option to automatically export WordPress users as clients in Invoice Ninja when they are created or updated. This ensures your client database is always up to date without manual intervention.
@@ -36,14 +30,14 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 
 ### Localization
 - Product Label: Singular label to use for individual products.
-- Products Label: Products Label: Customize the plural label used for multiple products. This label will appear wherever multiple products are listed.
+- Products Label: Customize the plural label used for multiple products. This label will appear wherever multiple products are listed.
 
 > [!NOTE]  
 > Note: Additional fields will be displayed if Online Purchases and/or Inventory Tracking are enabled, providing more detailed configuration options.
 
 ### Templates
-- Product Template: Define the HTML template used to generate custom product pages in WordPress. This allows you to maintain a consistent and professional look for all product pages.
-- Image Template: If your products in Invoice Ninja have an Image URL set, the images will be imported and displayed alongside the product information in WordPress, enhancing the visual appeal of your product pages.k
+- Product Template: Define the HTML template used to generate the product list page. 
+- Image Template: If your products in Invoice Ninja have an Image URL set, the images will be imported and displayed alongside the product information in WordPress.
 
 ### Custom CSS
 - Product Page: Add custom CSS to style individual product pages. This gives you the flexibility to match the product pages with your site’s overall design.
