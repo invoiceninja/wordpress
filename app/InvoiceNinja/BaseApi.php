@@ -13,6 +13,10 @@ class BaseApi
         $key = esc_attr( get_option( 'invoiceninja_api_token' ) );
         $url = esc_attr( get_option( 'invoiceninja_api_url' ) );
 
+        if ( ! $key || ! $url ) {
+            return null;
+        }
+
         if ( empty( $url ) ) {
             $url = 'https://invoicing.co/api/v1/';
         } else {
