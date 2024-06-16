@@ -339,11 +339,13 @@ class PostApi
                 <form method="post" action="">
                     <?php wp_nonce_field('invoiceninja_purchase_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
                     <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
-                    <button type="submit" name="purchase"><?php echo ($is_single ? 'Buy Now' : 'Add to Cart') ?></button>
+                    <button type="submit" name="purchase"><?php echo ($is_single ? 
+                        get_option( 'invoiceninja_buy_now_label', 'Buy Now' ) : 
+                        get_option( 'invoiceninja_add_to_cart_label', 'Add to Cart' )) ?></button>
                 </form>
                 <?php
             } else {
-                echo '<div>Out of stock</div>';
+                echo '<div>' . get_option( 'invoiceninja_out_of_stock_label', 'Out of Stock' ) . '</div>';
             }
         }
 
@@ -383,7 +385,7 @@ class PostApi
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
             <input type="hidden" name="cart_action" value="checkout"/>
-            <button type="submit" name="checkout">Checkout</button>
+            <button type="submit" name="checkout"><?php echo get_option( 'invoiceninja_checkout_label', 'Checkout' ); ?></button>
         </form>
         <?php
 
