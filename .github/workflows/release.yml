@@ -20,7 +20,7 @@ jobs:
       run: composer install --no-dev --optimize-autoloader
 
     - name: Zip project
-      run: zip -r wordpress-plugin.zip . -x '*.git*' assets/images/screenshot.png
+      run: zip -r wordpress-plugin.zip . -x '*.git*' assets/images/screenshot.png bump_version.sh
 
     - name: Upload app archive to workflow
       uses: actions/upload-artifact@v3
@@ -40,7 +40,7 @@ jobs:
         draft: false
         prerelease: false
         title: "Latest Release"
-        automatic_release_tag: "v0.1.5"
+        automatic_release_tag: "v0.1.6"
         files: |
             ${{ github.workspace }}/artifacts/WordPress-Plugin
 
