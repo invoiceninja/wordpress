@@ -9,6 +9,14 @@ window.addEventListener( 'load', function() {
     function switchTab( event ) {
         event.preventDefault();
 
+        var clickedTab = event.currentTarget;        
+        var anchor = event.target;
+        var activePaneId = anchor.getAttribute( 'href' );
+
+        if (!clickedTab || !activePaneId) {
+            return;
+        }
+
         var active = document.querySelector( 'ul.nav-tabs li.active' );
         if (active) {
             active.classList.remove( 'active' );
@@ -19,16 +27,8 @@ window.addEventListener( 'load', function() {
             active.classList.remove( 'active' );
         }
 
-        var clickedTab = event.currentTarget;        
-        if (clickedTab) {
-            clickedTab.classList.add( 'active' );
-        }
-
-        var anchor = event.target;
-        var activePaneId = anchor.getAttribute( 'href' );
         var activePane = document.querySelector( activePaneId );
-        if (activePane) {
-            activePane.classList.add( 'active' );
-        }
+        activePane.classList.add( 'active' );
+        clickedTab.classList.add( 'active' );
     }
 });
