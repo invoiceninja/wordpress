@@ -122,7 +122,48 @@ class SettingsController extends BaseController
 
       add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'addLink' ] );  
       add_filter( 'pre_update_option_invoiceninja_api_token', [ $this, 'filterToken' ], 10, 2 );
+
+      add_filter( 'pre_update_option_invoiceninja_buy_now_label', [ $this, 'filterBuyNowLabel' ], 10, 2 );
+      add_filter( 'pre_update_option_invoiceninja_add_to_cart_label', [ $this, 'filterAddToCartLabel' ], 10, 2 );
+      add_filter( 'pre_update_option_invoiceninja_checkout_label', [ $this, 'filterCheckoutLabel' ], 10, 2 );
+      add_filter( 'pre_update_option_invoiceninja_out_of_stock_label', [ $this, 'filterOutOfStockLabel' ], 10, 2 );
    }    
+
+   public function filterBuyNowLabel( $new_value, $old_value )
+   {
+      if ( ! $new_value ) {
+         return 'Buy Now';
+      }
+
+      return $new_value;
+   }
+
+   public function filterAddToCartLabel( $new_value, $old_value )
+   {
+      if ( ! $new_value ) {
+         return 'Add to Cart';
+      }
+
+      return $new_value;      
+   }
+
+   public function filterCheckoutLabel( $new_value, $old_value )
+   {
+      if ( ! $new_value ) {
+         return 'Checkout';
+      }
+
+      return $new_value;
+   }
+
+   public function filterOutOfStockLabel( $new_value, $old_value )
+   {
+      if ( ! $new_value ) {
+         return 'Out of Stock';
+      }
+
+      return $new_value;      
+   }
 
    public function filterToken( $new_value, $old_value )
    {
@@ -196,6 +237,22 @@ class SettingsController extends BaseController
          ],
          [
             'option_group' => 'invoiceninja_settings',
+            'option_name' => 'invoiceninja_buy_now_label',
+         ],
+         [
+            'option_group' => 'invoiceninja_settings',
+            'option_name' => 'invoiceninja_add_to_cart_label',
+         ],
+         [
+            'option_group' => 'invoiceninja_settings',
+            'option_name' => 'invoiceninja_checkout_label',
+         ],
+         [
+            'option_group' => 'invoiceninja_settings',
+            'option_name' => 'invoiceninja_out_of_stock_label',
+         ],
+         [
+            'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_product_template',
          ],
          [
@@ -261,6 +318,7 @@ class SettingsController extends BaseController
 
    public function setFields()
    {
+      $profile = json_decode( get_option( 'invoiceninja_profile' ) );
       $product_label = esc_attr( get_option( 'invoiceninja_product_label', 'Product' ) );
       $products_label = esc_attr( get_option( 'invoiceninja_products_label', 'Products' ) );
 
@@ -432,7 +490,83 @@ class SettingsController extends BaseController
                'label_for' => 'invoiceninja_products_label',
                //'class' => '',
             ]
-         ],
+         ]
+      ];
+
+      if ( get_option( 'invoiceninja_online_purchases') == 'multiple' ) {
+         $args[] = [
+            'id' => 'invoiceninja_add_to_cart_label',
+            'title' => 'Add to Cart Label',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_add_to_cart_label', 'Add to Cart' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_add_to_cart_label" required/>'; 
+            },
+            'page' => 'invoiceninja_localization',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_add_to_cart_label',
+               //'class' => '',
+            ]
+         ];
+      }
+
+      if ( get_option( 'invoiceninja_online_purchases') == 'single' ) {
+         $args[] = [
+            'id' => 'invoiceninja_buy_now_label',
+            'title' => 'Buy Now Label',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_buy_now_label', 'Buy Now' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_buy_now_label" required/>'; 
+            },
+            'page' => 'invoiceninja_localization',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_buy_now_label',
+               //'class' => '',
+            ]
+         ];
+      }
+
+      if ( get_option( 'invoiceninja_online_purchases') == 'multiple' ) {
+         $args[] = [
+            'id' => 'invoiceninja_checkout_label',
+            'title' => 'Checkout Label',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_checkout_label', 'Checkout' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_checkout_label" required/>'; 
+            },
+            'page' => 'invoiceninja_localization',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_checkout_label',
+               //'class' => '',
+            ]
+         ];
+      }
+
+      if ( ( get_option( 'invoiceninja_online_purchases') == 'multiple' 
+               || get_option( 'invoiceninja_online_purchases') == 'single' ) && $profile->track_inventory) {
+         $args[] = [
+            'id' => 'invoiceninja_out_of_stock_label',
+            'title' => 'Out of Stock Label',
+            'callback' => function() 
+            { 
+               $value = esc_attr( get_option( 'invoiceninja_out_of_stock_label', 'Out of Stock' ) );
+               echo '<input type="text" class="regular-text" value="' . $value . '" name="invoiceninja_out_of_stock_label" required/>'; 
+            },
+            'page' => 'invoiceninja_localization',
+            'section' => 'invoiceninja_admin_index',
+            'args' => [
+               'label_for' => 'invoiceninja_out_of_stock_label',
+               //'class' => '',
+            ]
+         ];
+      }
+
+      $args[] = 
          [
             'id' => 'invoiceninja_product_template',
             'title' => $product_label . ' Template',
@@ -459,8 +593,9 @@ class SettingsController extends BaseController
                'label_for' => 'invoiceninja_product_template',
                //'class' => '',
             ]
-         ],
-         [
+         ]; 
+
+      $args[] = [
             'id' => 'invoiceninja_image_template',
             'title' => 'Image Template',
             'callback' => function() 
@@ -486,8 +621,9 @@ class SettingsController extends BaseController
                'label_for' => 'invoiceninja_image_template',
                //'class' => '',
             ]
-         ],
-         [
+         ];
+
+      $args[] = [
             'id' => 'invoiceninja_product_css',
             'title' => $product_label . ' Page',
             'callback' => function() 
@@ -504,8 +640,9 @@ class SettingsController extends BaseController
                'label_for' => 'invoiceninja_product_css',
                //'class' => '',
             ]
-         ],
-         [
+         ];
+
+      $args[] = [
             'id' => 'invoiceninja_products_css',
             'title' => $products_label . ' Page',
             'callback' => function() 
@@ -522,8 +659,8 @@ class SettingsController extends BaseController
                'label_for' => 'invoiceninja_products_css',
                //'class' => '',
             ]
-         ],
-      ];
+         ];
+      
 
       $this->settings->setFields( $args );
    }
