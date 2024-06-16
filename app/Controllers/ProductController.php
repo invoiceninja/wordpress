@@ -243,7 +243,7 @@ class ProductController extends BaseController
                     get_permalink(),
                     get_the_title(),
                     get_the_content(),
-                    $price,
+                    \App\Utils\Formatting::formatMoney( $price ),
                     $image,
                     get_post_meta( $post_id, 'custom_value1', true ),
                     get_post_meta( $post_id, 'custom_value2', true ),

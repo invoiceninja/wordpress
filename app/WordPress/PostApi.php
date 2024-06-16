@@ -102,7 +102,7 @@ class PostApi
             $price = get_post_meta( $post_id, 'price', true );
             $online_purchases = get_option( 'invoiceninja_online_purchases' );
 
-            $price = '<p>' . $price . '</p>';
+            $price = '<p>' . \App\Utils\Formatting::formatMoney( $price ) . '</p>';
 
             if ( $online_purchases == 'single' || $online_purchases == 'multiple' ) {
                 $content = $price . '[purchase product_id="' . $product_id . '"]' . $content;
