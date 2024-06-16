@@ -17,7 +17,7 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 
 ### Credentials
 - **Token**: Enter your Invoice Ninja v5 API token here to authenticate and connect your WordPress site with Invoice Ninja. Using https ensures secure data transfer between the two platforms.
-- **URL**: Provide the URL where your Invoice Ninja instance is accessible. 
+- **URL**: Provide the URL where your Invoice Ninja instance is accessible. If the URL is blank the plugin will connect to the hosted Invoice Ninja platform at invoicing.co.
 
 ### Clients
 - **Sync Clients**: Enable this option to automatically export WordPress users as clients in Invoice Ninja when they are created or updated. This ensures your client database is always up to date without manual intervention.
