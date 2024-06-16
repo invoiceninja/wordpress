@@ -24,6 +24,15 @@ jobs:
       run: zip -r plugin-name.zip . -x '*.git*' 'vendor/*'
 
     - name: Create Release
+      uses: marvinpinto/action-automatic-releases@v1.2.1
+      with:
+        repo_token: "${{ secrets.commit_secret }}"
+        draft: false
+        prerelease: false
+        title: "Latest Release"
+        automatic_release_tag: "v0.1.0"
+
+    - name: Create Release
       id: create_release
       uses: actions/create-release@v1
       env:
