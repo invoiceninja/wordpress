@@ -14,8 +14,8 @@ jobs:
     - name: Set up PHP
       uses: shivammathur/setup-php@v2
       with:
-        php-version: '7.4'  # Specify the PHP version you need
-        extensions: mbstring, intl, zip
+        php-version: '8.2'
+        #extensions: mbstring, intl, zip
 
     - name: Install Composer dependencies
       run: composer install --no-dev --optimize-autoloader
@@ -44,12 +44,12 @@ jobs:
         asset_name: plugin-name.zip
         asset_content_type: application/zip
 
-    - name: Submit to WordPress Plugin Store
-      env:
-        WORDPRESS_USERNAME: ${{ secrets.WORDPRESS_USERNAME }}
-        WORDPRESS_PASSWORD: ${{ secrets.WORDPRESS_PASSWORD }}
-      run: |
-        curl -u $WORDPRESS_USERNAME:$WORDPRESS_PASSWORD \
-        -F 'plugin_name=plugin-name' \
-        -F 'zip_file=@plugin-name.zip' \
-        https://api.wordpress.org/plugins/add
+#    - name: Submit to WordPress Plugin Store
+#      env:
+#        WORDPRESS_USERNAME: ${{ secrets.WORDPRESS_USERNAME }}
+#        WORDPRESS_PASSWORD: ${{ secrets.WORDPRESS_PASSWORD }}
+#      run: |
+#        curl -u $WORDPRESS_USERNAME:$WORDPRESS_PASSWORD \
+#        -F 'plugin_name=plugin-name' \
+#        -F 'zip_file=@plugin-name.zip' \
+#        https://api.wordpress.org/plugins/add
