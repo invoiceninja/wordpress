@@ -6,7 +6,7 @@ WordPress plugin for [Invoice Ninja](https://github.com/invoiceninja/invoiceninj
 * Import products from Invoice Ninja as pages in WordPress
 * Export users from WordPress as clients in Invoice Ninja
 * Single sign-on (SSO) for the Client Portal
-* Shopping Cart
+* Shopping cart
 * Custom widget
 
 ## Credits
