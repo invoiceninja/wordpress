@@ -74,7 +74,7 @@ class ProductWidget extends WP_Widget
             echo esc_attr( $before_widget );
         
             // Display the widget
-            echo esc_attr( '<div class="widget-text wp_widget_plugin_box">' );
+            echo '<div class="widget-text wp_widget_plugin_box">';
             
             // Display widget title if defined
             if ( $title ) {
@@ -89,7 +89,7 @@ class ProductWidget extends WP_Widget
             }
 
             echo esc_attr( '</ul>' );
-            echo esc_attr( '</div>' );
+            echo '</div>';
 
             wp_reset_postdata();    
         }
@@ -112,7 +112,7 @@ class ProductWidget extends WP_Widget
 
         <?php // Widget Title ?>
         <p>
-            <label for="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>"><?php _e( 'Widget Title', 'text_domain' ); ?></label>
+            <label for="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>"><?php esc_attr_e( 'Widget Title', 'text_domain' ); ?></label>
             <input class="widefat" id="<?php echo esc_attr( $this->get_field_id( 'title' ) ); ?>" name="<?php echo esc_attr( $this->get_field_name( 'title' ) ); ?>" type="text" value="<?php echo esc_attr( $title ); ?>" />
         </p>
         
