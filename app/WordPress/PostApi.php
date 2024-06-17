@@ -201,7 +201,7 @@ class PostApi
             $content = $str . '</div>' . $content;
         }
         
-        //$content = json_encode( $_SESSION['invoiceninja_cart'] ) . $content;
+        //$content = wp_json_encode( $_SESSION['invoiceninja_cart'] ) . $content;
 
         return $content;
     }
@@ -211,21 +211,21 @@ class PostApi
         global $post;
 
         if ( $post->post_type == 'invoiceninja_product' ) {
-            wp_enqueue_style( 'product-styles', plugins_url( '/../../assets/css/product.css?t=' . time(), __FILE__ ) );
+            wp_enqueue_style( 'product-styles', plugins_url( '/../../assets/css/product.css', __FILE__ ), [], time() );
             
             add_action( 'wp_head', [ $this, 'printInlineProductScript' ] );
         }
 
         if ( get_the_ID() == get_option( 'invoiceninja_product_page_id' ) ) {
-            wp_enqueue_style( 'products-styles', plugins_url( '/../../assets/css/products.css?t=' . time(), __FILE__ ) );
+            wp_enqueue_style( 'products-styles', plugins_url( '/../../assets/css/products.css', __FILE__ ), [], time() );
 
             add_action( 'wp_head', [ $this, 'printInlineProductsScript' ] );
         }
 
         if ( ! is_admin() ) {
-            wp_enqueue_style( 'frontend-styles', plugins_url( '/../../assets/css/frontend.css?t=' . time(), __FILE__ ) );
+            wp_enqueue_style( 'frontend-styles', plugins_url( '/../../assets/css/frontend.css', __FILE__ ), [], time() );
 
-            wp_enqueue_script( 'frontend-scripts', plugins_url( '/../../assets/js/frontend.js?t=' . time(), __FILE__ ) );
+            wp_enqueue_script( 'frontend-scripts', plugins_url( '/../../assets/js/frontend.js', __FILE__ ), [], time() );
         }
     }
 

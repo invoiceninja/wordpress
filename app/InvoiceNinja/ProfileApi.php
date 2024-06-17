@@ -78,7 +78,7 @@ class ProfileApi extends BaseApi
                 $obj->decimal_separator = $country->decimal_separator;
                 $country_map[$country->id] = $obj;
             }
-            update_option( 'invoiceninja_countries', json_encode( $country_map) );
+            update_option( 'invoiceninja_countries', wp_json_encode( $country_map) );
         }
 
         return $response;

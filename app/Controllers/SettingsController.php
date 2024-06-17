@@ -86,7 +86,7 @@ class SettingsController extends BaseController
                require_once "$this->plugin_path/templates/settings.php";
             },
             //'icon_url' => 'dashicons-store',
-            'icon_url' => 'data:image/svg+xml;base64,' . base64_encode( wp_remote_get( $logo_url ) ),
+            'icon_url' => 'data:image/svg+xml;base64,' . base64_encode( file_get_contents( $logo_url ) ),
             'position' => 110,
          ],
       ];

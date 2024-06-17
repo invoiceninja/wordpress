@@ -83,7 +83,7 @@ class BaseApi
             "http" => [
                 'header' => "Content-type: application/x-www-form-urlencoded\r\nX-API-" . ( self::isUsingToken() ? 'TOKEN' : 'COMPANY-KEY' ) . ": $key\r\n",
                 'method'  => $method,
-                'content' => json_encode( $data ),
+                'content' => wp_json_encode( $data ),
             ]
         ];
 
