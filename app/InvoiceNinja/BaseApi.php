@@ -35,7 +35,7 @@ class BaseApi
                 'X-CLIENT-PLATFORM' => 'WordPress',
                 'Content-Type' => 'application/json',
             ),
-            'body' => $data ? json_encode($data) : null,
+            'body' => $data ? wp_json_encode($data) : null,
             'method' => $method,
         );
 

@@ -297,38 +297,39 @@ class PostApi
         }
 
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase'])) {
-            $product_id = $_POST['product_id'];
-            
-            if ($product_id && wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_purchase_' . esc_attr($atts['product_id']))) {
-                if ($is_single) {
-                    if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
-                        wp_redirect($invoice->invitations[0]->link);    
-                        exit;
-                    }                                            
-                } else {
-                    if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
-                        $_SESSION['invoiceninja_cart'] = [];
-                    }
-
-                    if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
-                        $_SESSION['invoiceninja_cart'][$product_id]++;
-
-                        $max = 99;
-                        if ($max_quantity > 0) {
-                            $max = min( $max, $max_quantity );
-                        }
-                        if ($profile->track_inventory) {
-                            $max = min( $max, $in_stock_quantity );
-                        }
-                        $_SESSION['invoiceninja_cart'][$product_id] = min( $max, $_SESSION['invoiceninja_cart'][$product_id] );                        
+            if (wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_purchase_' . esc_attr($atts['product_id']))) {
+                $product_id = $_POST['product_id'];                
+                if ($product_id) {
+                    if ($is_single) {
+                        if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
+                            wp_redirect($invoice->invitations[0]->link);    
+                            exit;
+                        }                                            
                     } else {
-                        $_SESSION['invoiceninja_cart'][$product_id] = 1;
+                        if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
+                            $_SESSION['invoiceninja_cart'] = [];
+                        }
+
+                        if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
+                            $_SESSION['invoiceninja_cart'][$product_id]++;
+
+                            $max = 99;
+                            if ($max_quantity > 0) {
+                                $max = min( $max, $max_quantity );
+                            }
+                            if ($profile->track_inventory) {
+                                $max = min( $max, $in_stock_quantity );
+                            }
+                            $_SESSION['invoiceninja_cart'][$product_id] = min( $max, $_SESSION['invoiceninja_cart'][$product_id] );                        
+                        } else {
+                            $_SESSION['invoiceninja_cart'][$product_id] = 1;
+                        }
                     }
                 }
-            }
 
-            $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
-            wp_safe_redirect($current_url);
+                $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
+                wp_safe_redirect($current_url);
+            }
         }
     
         ob_start();

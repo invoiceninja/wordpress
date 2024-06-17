@@ -27,7 +27,7 @@ class ProfileApi extends BaseApi
         //echo $response; exit;
 
         if ( $logo_url = $response->settings->company_logo ) {
-            if ( $image_data = @file_get_contents( $logo_url ) ) {
+            if ( $image_data = @wp_remote_get( $logo_url ) ) {
                 $args = array(
                     'post_type'      => 'attachment',
                     'post_status'    => 'inherit',
@@ -62,13 +62,13 @@ class ProfileApi extends BaseApi
         }
 
         if ( $static_response = self::sendRequest( 'statics' ) ) {
-            $static_response = json_decode( $static_response );
+            $static_response = wp_json_decode( $static_response );
 
             $currency_map = [];
             foreach ( $static_response->currencies as $currency ) {
                 $currency_map[$currency->id] = $currency;
             }
-            update_option( 'invoiceninja_currencies', json_encode( $currency_map) );
+            update_option( 'invoiceninja_currencies', wp_json_encode( $currency_map) );
 
             $country_map = [];
             foreach ( $static_response->countries as $country ) {

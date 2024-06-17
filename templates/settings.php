@@ -8,7 +8,7 @@
     <ul class="nav nav-tabs">
         <li class="active"><a href="#tab-credentials">Credentials</a></li>
         <li><a href="#tab-clients">Clients</a></li>
-        <li><a href="#tab-products"><?php echo get_option( 'invoiceninja_products_label') ?></a></li>
+        <li><a href="#tab-products"><?php echo esc_attr( get_option( 'invoiceninja_products_label') ) ?></a></li>
         <li><a href="#tab-localization">Localization</a></li>
         <li><a href="#tab-templates">Templates</a></li>
         <li><a href="#tab-custom-css">Custom CSS</a></li>
@@ -57,7 +57,7 @@
 
     <?php if ($company) { ?>
         <div class="card connection-info">
-            <?php echo $company ?>
+            <?php echo esc_attr( $company ) ?>
         </div>
 
         <form method="post" action="" style="float: left; margin-right: 12px">
@@ -80,7 +80,7 @@
         <form method="post" action="">
             <input type="hidden" name="invoiceninja_action" value="import_products">
             <?php wp_nonce_field('invoiceninja_import_products', 'invoiceninja_nonce'); ?>
-            <input type="submit" class="button button-primary" value="Import <?php echo $products_label; ?>">
+            <input type="submit" class="button button-primary" value="Import <?php echo esc_attr( $products_label ); ?>">
         </form>
 
     <?php } ?>

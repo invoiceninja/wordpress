@@ -86,7 +86,7 @@ class SettingsController extends BaseController
                require_once "$this->plugin_path/templates/settings.php";
             },
             //'icon_url' => 'dashicons-store',
-            'icon_url' => 'data:image/svg+xml;base64,' . base64_encode( file_get_contents( $logo_url ) ),
+            'icon_url' => 'data:image/svg+xml;base64,' . base64_encode( wp_remote_get( $logo_url ) ),
             'position' => 110,
          ],
       ];
@@ -177,7 +177,7 @@ class SettingsController extends BaseController
    public static function loadProfile()
    {
       $profile = ProfileApi::load();
-      update_option( 'invoiceninja_profile', json_encode( $profile ) );
+      update_option( 'invoiceninja_profile', wp_json_encode( $profile ) );
    }
 
    public function renderPage()
@@ -583,7 +583,7 @@ class SettingsController extends BaseController
                echo '<div><textarea class="code" style="width:100%" rows="8" id="invoiceninja_product_template" name="invoiceninja_product_template">' . esc_attr( $value ) . '</textarea></div>';
                echo '<p style="float:right;">
                         <a href="#" onclick=\'alert("$product\n$product_id\n$page_url\n$description\n$price\n$image\n$custom1\n$custom2\n$custom3\n$custom4\n")\'>Variables</a> | 
-                        <a href="#" onclick=\'document.querySelector("#invoiceninja_product_template").value = ' . json_encode( INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE ) . ';return false;\'>Reset</a>
+                        <a href="#" onclick=\'document.querySelector("#invoiceninja_product_template").value = ' . wp_json_encode( INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE ) . ';return false;\'>Reset</a>
                      </p>';
                echo '<p class="description" style="float:left;">HTML template for each ' . esc_attr( strtolower( $product_label ) ) . ' on the ' . esc_attr( strtolower( $products_label ) ) . ' page</p>';
             },
@@ -611,7 +611,7 @@ class SettingsController extends BaseController
                echo '<div><textarea class="code" style="width:100%" rows="6" id="invoiceninja_image_template" name="invoiceninja_image_template">' . esc_attr( $value ) . '</textarea></div>';
                echo '<p style="float:right;">
                         <a href="#" onclick=\'alert("$image_url\n$product")\'>Variables</a> | 
-                        <a href="#" onclick=\'document.querySelector("#invoiceninja_image_template").value = ' . json_encode( INVOICENINJA_DEFAULT_IMAGE_TEMPLATE ) . ';return false;\'>Reset</a>
+                        <a href="#" onclick=\'document.querySelector("#invoiceninja_image_template").value = ' . wp_json_encode( INVOICENINJA_DEFAULT_IMAGE_TEMPLATE ) . ';return false;\'>Reset</a>
                      </p>';
                echo '<p class="description">HTML template for each image on the ' . esc_attr( strtolower( $products_label ) ) . ' page</p>';
             },

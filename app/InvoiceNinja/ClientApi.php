@@ -53,7 +53,7 @@ class ClientApi extends BaseApi
             'city' => $user->billing_city,
             'state' => $user->billing_state,
             'postal_code' => $user->billing_postcode,
-            'private_notes' => 'Synced from WordPress (' . site_url() . ') on ' . date('j F Y H:i'),
+            'private_notes' => 'Synced from WordPress (' . site_url() . ') on ' . gmdate('j F Y H:i'),
         ];
     }
 
