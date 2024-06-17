@@ -21,6 +21,7 @@ class SettingsController extends BaseController
    public function register()
    {
       $logo_url = plugins_url( '/../../assets/images/logo.svg', __FILE__ );
+      $logo_response = wp_remote_get( $logo_url );
 
       $pages = [
          [
@@ -86,7 +87,7 @@ class SettingsController extends BaseController
                require_once "$this->plugin_path/templates/settings.php";
             },
             //'icon_url' => 'dashicons-store',
-            'icon_url' => 'data:image/svg+xml;base64,' . base64_encode( file_get_contents( $logo_url ) ),
+            'icon_url' => 'data:image/svg+xml;base64,' . base64_encode( wp_remote_retrieve_body( $logo_response ) ),
             'position' => 110,
          ],
       ];
