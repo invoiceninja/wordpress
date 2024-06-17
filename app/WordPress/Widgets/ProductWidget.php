@@ -95,7 +95,7 @@ class ProductWidget extends WP_Widget
         }
 
         // WordPress core after_widget hook (always include )
-        echo esc_attr( $after_widget );
+        echo $after_widget;
     }
 
     public function form( $instance ) 
