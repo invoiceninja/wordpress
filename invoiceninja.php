@@ -4,14 +4,14 @@
  * Plugin Name:        Invoice Ninja
  * Plugin URI:         https://github.com/invoiceninja/wordpress
  * Description:        WordPress plugin for Invoice Ninja
- * Version:            0.1.6
+ * Version:            1.0.0
  * Author:             Inovice Ninja
  * Author URI:         https://invoiceninja.com
  * GitHub Plugin URI:  https://github.com/invoiceninja/wordpress
  * Primary Branch:     main
  *
- * License:            AAL License
- * License URI:        https://opensource.org/license/attribution-php
+ * License:            GPLv2 or later
+ * License URI:        https://www.gnu.org/licenses/gpl-2.0.html
  */
 
 // Security check

@@ -40,7 +40,7 @@ jobs:
         draft: false
         prerelease: false
         title: "Latest Release"
-        automatic_release_tag: "v0.1.6"
+        automatic_release_tag: "v1.0.0"
         files: |
             ${{ github.workspace }}/artifacts/WordPress-Plugin
 
