@@ -51,7 +51,7 @@ class BaseApi
                     'error'
                 );
             } else {
-                echo 'Error: ' . $response->get_error_message();
+                echo 'Error: ' . esc_attr( $response->get_error_message() );
                 exit;
             }
 
@@ -72,7 +72,7 @@ class BaseApi
                         'error'
                     );
                 } else {
-                    echo 'Error: ' . json_decode($response['body'])->message;
+                    echo 'Error: ' . esc_attr('' json_decode($response['body'])->message );
                     exit;
                 }
             }

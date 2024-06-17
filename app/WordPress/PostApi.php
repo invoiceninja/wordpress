@@ -238,7 +238,7 @@ class PostApi
         }
 
         echo '<style type="text/css">
-            ' . get_option( 'invoiceninja_products_css' ) . '
+            ' . esc_attr( get_option( 'invoiceninja_products_css' ) ). '
 
             a:hover div.divider
             {
@@ -250,7 +250,7 @@ class PostApi
     public function printInlineProductScript()
     {
         echo '<style type="text/css">
-            ' . get_option( 'invoiceninja_product_css' ) . '
+            ' . esc_attr( get_option( 'invoiceninja_product_css' ) ) . '
         </style>';        
     }
 
@@ -340,12 +340,12 @@ class PostApi
                     <?php wp_nonce_field('invoiceninja_purchase_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
                     <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
                     <button type="submit" name="purchase"><?php echo ($is_single ? 
-                        get_option( 'invoiceninja_buy_now_label', 'Buy Now' ) : 
-                        get_option( 'invoiceninja_add_to_cart_label', 'Add to Cart' )) ?></button>
+                        esc_attr( get_option( 'invoiceninja_buy_now_label', 'Buy Now' ) ) : 
+                        esc_attr( get_option( 'invoiceninja_add_to_cart_label', 'Add to Cart' ) ) ) ?></button>
                 </form>
                 <?php
             } else {
-                echo '<div>' . get_option( 'invoiceninja_out_of_stock_label', 'Out of Stock' ) . '</div>';
+                echo '<div>' . esc_attr( get_option( 'invoiceninja_out_of_stock_label', 'Out of Stock' ) ) . '</div>';
             }
         }
 
@@ -385,7 +385,7 @@ class PostApi
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
             <input type="hidden" name="cart_action" value="checkout"/>
-            <button type="submit" name="checkout"><?php echo get_option( 'invoiceninja_checkout_label', 'Checkout' ); ?></button>
+            <button type="submit" name="checkout"><?php echo esc_attr( get_option( 'invoiceninja_checkout_label', 'Checkout' ) ); ?></button>
         </form>
         <?php
 
@@ -426,7 +426,7 @@ class PostApi
         ?>
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_client_portal', 'invoiceninja_nonce'); ?>
-            <button type="submit" name="client_portal"><?php echo $atts['label'] ?></button>
+            <button type="submit" name="client_portal"><?php echo esc_attr( $atts['label'] ) ?></button>
         </form>
         <?php
 
