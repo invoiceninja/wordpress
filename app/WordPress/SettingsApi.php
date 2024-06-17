@@ -43,7 +43,7 @@ class SettingsApi
     public function enqueueStyles()
     {        
         wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/settings.css', __FILE__ ), [], time() );
-        wp_enqueue_script( 'custom-script', plugins_url( '/../../assets/js/settings.js', __FILE__ ), [], time() );        
+        wp_enqueue_script( 'custom-script', plugins_url( '/../../assets/js/settings.js', __FILE__ ), [], time(), false );        
     }
 
     function optionUpdated($option_name, $old_value, $new_value) 

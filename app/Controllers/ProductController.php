@@ -159,7 +159,7 @@ class ProductController extends BaseController
                 $filename = $product->id . '.' . $file_extension;
                 
                 if (filter_var($product->product_image, FILTER_VALIDATE_URL) 
-                    && $image_data = @wp_remote_get( $product->product_image ) ) 
+                    && $image_data = @file_get_contents( $product->product_image ) ) 
                 {                
                     $upload = wp_upload_bits( $filename, null, $image_data );
 
