@@ -225,7 +225,7 @@ class PostApi
         if ( ! is_admin() ) {
             wp_enqueue_style( 'frontend-styles', plugins_url( '/../../assets/css/frontend.css', __FILE__ ), [], time() );
 
-            wp_enqueue_script( 'frontend-scripts', plugins_url( '/../../assets/js/frontend.js', __FILE__ ), [], time() );
+            wp_enqueue_script( 'frontend-scripts', plugins_url( '/../../assets/js/frontend.js', __FILE__ ), [], time(), false );
         }
     }
 
