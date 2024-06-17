@@ -20,7 +20,7 @@ jobs:
       run: composer install --no-dev --optimize-autoloader
 
     - name: Zip project
-      run: zip -r wordpress-plugin.zip . -x '*.git*' assets/images/screenshot.png bump_version.sh
+      run: zip -r wordpress-plugin.zip . -x '*.git*' assets/images/screenshot.png bump_version.sh .gitignore
 
     - name: Upload app archive to workflow
       uses: actions/upload-artifact@v3
