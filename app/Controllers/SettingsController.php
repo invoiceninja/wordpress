@@ -328,11 +328,11 @@ class SettingsController extends BaseController
             'title' => 'Token',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option( 'invoiceninja_api_token' ) );
+               $value = get_option( 'invoiceninja_api_token' );
                if ( $value ) {
                   $value = substr( $value, 0, 10) . '******************';
                }
-               echo '<input type="text" class="regular-text code" value="' . $value . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . ' required/>';
+               echo '<input type="text" class="regular-text code" value="' . esc_attr( $value ) . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . ' required/>';
                echo '<p class="description">API tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
             },
             'page' => 'invoiceninja_credentials',
@@ -348,8 +348,8 @@ class SettingsController extends BaseController
             'title' => 'URL',
             'callback' => function() 
             { 
-               $value = esc_attr( get_option( 'invoiceninja_api_url' ) );
-               echo '<input type="url" class="regular-text code" value="' . $value . '" name="invoiceninja_api_url" placeholder="https://invoicing.co"/>'; 
+               $value = get_option( 'invoiceninja_api_url' );
+               echo '<input type="url" class="regular-text code" value="' . esc_attr( $value ) . '" name="invoiceninja_api_url" placeholder="https://invoicing.co"/>'; 
                echo '<p class="description">Leave this field blank if you\'re using the hosted platform</p>'; 
             },
             'page' => 'invoiceninja_credentials',
