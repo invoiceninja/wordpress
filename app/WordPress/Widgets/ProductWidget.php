@@ -71,31 +71,31 @@ class ProductWidget extends WP_Widget
             $title = isset( $instance['title'] ) ? apply_filters( 'widget_title', $instance['title'] ) : '';
         
             // WordPress core before_widget hook (always include )
-            echo $before_widget;
+            echo esc_attr( $before_widget );
         
             // Display the widget
-            echo '<div class="widget-text wp_widget_plugin_box">';
+            echo esc_attr( '<div class="widget-text wp_widget_plugin_box">' );
             
             // Display widget title if defined
             if ( $title ) {
-                echo $before_title . $title . $after_title;
+                echo esc_attr( $before_title . $title . $after_title );
             }    
 
-            echo '<ul>';
+            echo esc_attr( '<ul>' );
 
             while ($query->have_posts()) {
                 $query->the_post();
-                echo '<li><a href="' . get_permalink() . '">' . get_the_title() . '</a></li>';
+                echo esc_attr( '<li><a href="' . get_permalink() . '">' . get_the_title() . '</a></li>' );
             }
 
-            echo '</ul>';
-            echo '</div>';
+            echo esc_attr( '</ul>' );
+            echo esc_attr( '</div>' );
 
             wp_reset_postdata();    
         }
 
         // WordPress core after_widget hook (always include )
-        echo $after_widget;    
+        echo esc_attr( $after_widget );
     }
 
     public function form( $instance ) 
