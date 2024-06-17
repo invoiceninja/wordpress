@@ -2,7 +2,7 @@
 
 ## Features
 * Import products from Invoice Ninja as custom pages in WordPress.
-* Export WordPress users as clients in Invoice Ninja.
+* Export WordPress/WooCommerce users as clients in Invoice Ninja.
 * Enable Single sign-on (SSO) for the Client Portal.
 * Integrated shopping cart functionality.
 * Add a custom widget to your WordPress site.

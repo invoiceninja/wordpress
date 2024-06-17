@@ -410,7 +410,7 @@ class SettingsController extends BaseController
 
                foreach ($roles as $role_key => $role) {
                   $selected = in_array( $role_key, $value ) ? 'selected="selected"' : '';
-                  echo '<option value="' . $role_key . '" ' . $selected . '>' . $role['name'] . '</option>';
+                  echo '<option value="' . esc_attr( $role_key ) . '" ' . esc_attr( $selected ) . '>' . esc_attr( $role['name'] ). '</option>';
                }           
 
                echo '</select>';
@@ -430,7 +430,7 @@ class SettingsController extends BaseController
             { 
                $value = get_option( 'invoiceninja_sync_products' );
                $products_label = get_option( 'invoiceninja_products_label' );
-               echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically import ' . strtolower( $products_label ) . ' from Invoice Ninja</label>'; 
+               echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked(1, $value, false) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically import ' . esc_attr( strtolower( $products_label ) ) . ' from Invoice Ninja</label>'; 
             },
             'page' => 'invoiceninja_products',
             'section' => 'invoiceninja_admin_index',
