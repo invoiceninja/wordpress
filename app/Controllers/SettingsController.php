@@ -34,7 +34,10 @@ class SettingsController extends BaseController
                $product_label = get_option( 'invoiceninja_product_label', 'Product' );
                $products_label = get_option( 'invoiceninja_products_label', 'Products' );
 
-               $company = '';
+               $logo_url = '';
+               $website_url = '';
+               $total_count = '';
+               $has_page = false;
 
                if ($profile = json_decode( get_option( 'invoiceninja_profile' ) )) {
                   $settings = $profile->settings;
@@ -51,13 +54,10 @@ class SettingsController extends BaseController
                   if ( $attachments ) {
                      $attachment_id = $attachments[0];                    
                      $logo_url = wp_get_attachment_url($attachment_id);
-                     $company .= '<img src="' . $logo_url . '" height="80" style="float: left;padding-right: 16px;"/>';
                   }
- 
-                  $company .= '<h1 class="title" style="padding-top: 0px">' . esc_attr( $settings->name ) . '</h1>';
-                  
+                   
                   if ( $settings->website ) {
-                     $company .= '<a href="' . esc_attr( $settings->website ) . '" target="_blank">' . esc_attr( $settings->website ) . '</a>';
+                     $website_url = $settings->website;
                   }
 
                   $args = [
@@ -68,20 +68,12 @@ class SettingsController extends BaseController
                   $statuses = get_post_statuses();
                   $query = new \WP_Query($args);
                   $total_count = $query->found_posts;
-                  $company .= '<div style="padding-top: 8px">' . $total_count . ' ' . ( $total_count == 1 ? $product_label : $products_label );
-                  $has_page = false;
 
                   if ( $page_id = get_option( 'invoiceninja_product_page_id' ) ) {
                      if ( $page = get_post( $page_id ) ) {
                         $has_page = $page->post_status != 'trash';
                      }
                   }
-
-                  if ( $has_page && $total_count > 0 ) {
-                     $company .= ' • <a href="/' . strtolower( $products_label ) . '" target="_blank">View Page</a> [' . $statuses[$page->post_status] . ']';
-                  }
-
-                  $company .= '</div>';
                }
 
                require_once "$this->plugin_path/templates/settings.php";

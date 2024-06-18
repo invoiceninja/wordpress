@@ -55,9 +55,21 @@
     
     </form>
 
-    <?php if ($company) { ?>
+    <?php if ($profile) { ?>
         <div class="card connection-info">
-            <?php echo $company; ?>
+            <?php if ( $logo_url ) { ?>
+                <img src="<?php echo esc_url( $logo_url ) ?>" height="80" style="float: left;padding-right: 16px;"/>
+            <?php } ?>
+            <h1 class="title" style="padding-top: 0px"><?php echo esc_attr( $settings->name ); ?></h1>
+            <?php if ( $website_url ) { ?>
+                <a href="<?php echo esc_url( $website_url ) ?>" target="_blank"><?php echo esc_url( $settings->website ); ?></a>
+            <?php } ?>
+            <div style="padding-top: 8px">
+                <?php echo esc_attr( $total_count ) . ' ' . ( $total_count == 1 ? $product_label : $products_label ); ?>
+                <?php if ( $has_page && $total_count > 0 ) { ?>
+                    • <a href="/<?php echo esc_attr( strtolower( $products_label ) ); ?>" target="_blank">View Page</a> [<?php echo esc_attr( $statuses[$page->post_status] ); ?>]
+                <?php } ?>
+            </div>
         </div>
 
         <form method="post" action="" style="float: left; margin-right: 12px">
