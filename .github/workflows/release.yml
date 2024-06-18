@@ -26,7 +26,7 @@ jobs:
       uses: actions/upload-artifact@v3
       with:
         name: InvoiceNinja-WordPress
-        path: InvoiceNinja-WordPress.zip
+        path: invoiceninja-wordpress.zip
 
     - name: Download artifacts
       uses: actions/download-artifact@v3
@@ -40,7 +40,7 @@ jobs:
         draft: false
         prerelease: false
         title: "Latest Release"
-        automatic_release_tag: "v1.0.2"
+        automatic_release_tag: "v1.0.3"
         files: |
             ${{ github.workspace }}/artifacts/InvoiceNinja-WordPress
 
