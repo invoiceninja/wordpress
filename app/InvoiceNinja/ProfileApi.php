@@ -47,7 +47,7 @@ class ProfileApi extends BaseApi
                 $allowed_mime_types = wp_get_mime_types();
                 $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
                 $filename = 'invoiceninja_plugin.' . $file_extension;                                                
-                $upload = wp_upload_bits( $filename, null, $image_data );                
+                $upload = wp_upload_bits( $filename, null, wp_remote_retrieve_body( $image_data ) );                
 
                 $attachment_id = wp_insert_attachment( 
                     [
@@ -62,7 +62,7 @@ class ProfileApi extends BaseApi
         }
 
         if ( $static_response = self::sendRequest( 'statics' ) ) {
-            $static_response = wp_json_decode( $static_response );
+            $static_response = json_decode( $static_response );
 
             $currency_map = [];
             foreach ( $static_response->currencies as $currency ) {

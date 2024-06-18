@@ -57,7 +57,7 @@
 
     <?php if ($company) { ?>
         <div class="card connection-info">
-            <?php echo esc_attr( $company ) ?>
+            <?php echo $company; ?>
         </div>
 
         <form method="post" action="" style="float: left; margin-right: 12px">
