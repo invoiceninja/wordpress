@@ -163,7 +163,7 @@ class ProductController extends BaseController
 
                 if (filter_var($product->product_image, FILTER_VALIDATE_URL) 
                     && $image_data ) 
-                {                
+                {
                     $upload = wp_upload_bits( $filename, null, $image_data );
 
                     if ( ! $upload['error'] ) {
