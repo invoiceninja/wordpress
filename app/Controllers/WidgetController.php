@@ -6,7 +6,7 @@
 
 namespace App\Controllers;
 
-use \App\Wordpress\Widgets\ProductWidget;
+use \App\WordPress\Widgets\ProductWidget;
 
 class WidgetController extends BaseController
 {
