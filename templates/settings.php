@@ -65,7 +65,7 @@
                 <a href="<?php echo esc_url( $website_url ) ?>" target="_blank"><?php echo esc_url( $settings->website ); ?></a>
             <?php } ?>
             <div style="padding-top: 8px">
-                <?php echo esc_attr( $total_count ) . ' ' . ( $total_count == 1 ? $product_label : $products_label ); ?>
+                <?php echo esc_attr( $total_count ) . ' ' . esc_attr( $total_count == 1 ? $product_label : $products_label ); ?>
                 <?php if ( $has_page && $total_count > 0 ) { ?>
                     • <a href="/<?php echo esc_attr( strtolower( $products_label ) ); ?>" target="_blank">View Page</a> [<?php echo esc_attr( $statuses[$page->post_status] ); ?>]
                 <?php } ?>
