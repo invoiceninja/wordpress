@@ -20,13 +20,13 @@ jobs:
       run: composer install --no-dev --optimize-autoloader
 
     - name: Zip project
-      run: zip -r wordpress-plugin.zip . -x '*.git*' assets/images/screenshot.png bump_version.sh .gitignore
+      run: zip -r invoiceninja-wordpress.zip . -x '*.git*' assets/images/screenshot.png bump_version.sh .gitignore
 
     - name: Upload app archive to workflow
       uses: actions/upload-artifact@v3
       with:
-        name: WordPress-Plugin
-        path: wordpress-plugin.zip
+        name: InvoiceNinja-WordPress
+        path: InvoiceNinja-WordPress.zip
 
     - name: Download artifacts
       uses: actions/download-artifact@v3
@@ -40,9 +40,9 @@ jobs:
         draft: false
         prerelease: false
         title: "Latest Release"
-        automatic_release_tag: "v1.0.1"
+        automatic_release_tag: "v1.0.2"
         files: |
-            ${{ github.workspace }}/artifacts/WordPress-Plugin
+            ${{ github.workspace }}/artifacts/InvoiceNinja-WordPress
 
 #    - name: Submit to WordPress Plugin Store
 #      env:
