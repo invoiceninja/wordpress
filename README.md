@@ -10,7 +10,6 @@ WordPress plugin for Invoice Ninja
 * Export WordPress/WooCommerce customers as clients in Invoice Ninja.
 * Enable Single sign-on (SSO) for the Client Portal.
 * Integrated shopping cart functionality.
-* Add a custom widget to your WordPress site.
 
 <p align="center">
     <img src="https://github.com/invoiceninja/wordpress/blob/main/assets/images/screenshot.png?raw=true" alt="Screenshot"/>

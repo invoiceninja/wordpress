@@ -4,6 +4,7 @@
  * @package Invoice Ninja
  */
 
+ /*
 namespace App\WordPress\Widgets;
 
 use WP_Widget;
@@ -128,3 +129,4 @@ class ProductWidget extends WP_Widget
         return $instance;
     }
 }
+*/

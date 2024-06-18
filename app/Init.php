@@ -14,7 +14,7 @@ final class Init
             Controllers\SettingsController::class,
             Controllers\ProductController::class,
             Controllers\ClientController::class,
-            Controllers\WidgetController::class,
+            //Controllers\WidgetController::class,
         ];
     }
 
