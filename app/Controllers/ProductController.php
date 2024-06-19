@@ -161,9 +161,10 @@ class ProductController extends BaseController
                 $image_response = wp_remote_get( $product->product_image );
                 $image_data = wp_remote_retrieve_body( $image_response );
 
-                if (filter_var($product->product_image, FILTER_VALIDATE_URL) 
-                    && $image_data ) 
-                {
+                //$image_data = @file_get_contents( $product->product_image );
+
+                if ( filter_var($product->product_image, FILTER_VALIDATE_URL) && $image_data ) 
+                {                
                     $upload = wp_upload_bits( $filename, null, $image_data );
 
                     if ( ! $upload['error'] ) {
