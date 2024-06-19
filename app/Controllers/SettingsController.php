@@ -11,6 +11,8 @@ use \App\InvoiceNinja\ProfileApi;
 
 class SettingsController extends BaseController
 {
+   private $settings;
+
    public function __construct()
    {
       parent::__construct();

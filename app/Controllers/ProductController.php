@@ -11,6 +11,8 @@ use \App\InvoiceNinja\ProductApi;
 
 class ProductController extends BaseController
 {
+    private $posts;
+
     public function __construct()
     {
         parent::__construct();
