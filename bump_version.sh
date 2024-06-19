@@ -8,3 +8,4 @@ echo "Bump version... $current_version => $new_version"
 
 sed -i -e "s/* Version:            1.0.$current_version/* Version:            1.0.$new_version/g" ./invoiceninja.php
 sed -i -e "s/automatic_release_tag: \"v1.0.$current_version/automatic_release_tag: \"v1.0.$new_version/g" .github/workflows/release.yml
+sed -i -e "s/Stable tag: 1.0.$current_version/Stable tag: 1.0.$new_version/g" ./README.md
