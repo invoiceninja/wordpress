@@ -398,7 +398,11 @@ class SettingsController extends BaseController
                global $wp_roles;
 
                $value = get_option( 'invoiceninja_included_roles', [] );
-               
+
+               if ( ! is_array( $value ) ) {
+                  $value = [];
+               }
+
                echo '<select name="invoiceninja_included_roles[]" multiple size="5">';
 
                $roles = $wp_roles->roles;
