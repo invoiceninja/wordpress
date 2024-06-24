@@ -160,9 +160,15 @@ class ProductController extends BaseController
                 $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
                 $filename = $product->id . '.' . $file_extension;
                 
-                //$image_response = wp_remote_get( $product->product_image );
-                //$image_data = wp_remote_retrieve_body( $image_response );
-
+                // This code results in '429: Too Many Requests"
+                /*
+                $image_response = wp_remote_get( $product->product_image );
+                if ( ! $image_data = wp_remote_retrieve_body( $image_response ) ) {
+                    echo 'Error: ' . json_encode( $image_response );
+                    exit;
+                }
+                */
+                
                 $image_data = @file_get_contents( $product->product_image );
 
                 if ( filter_var($product->product_image, FILTER_VALIDATE_URL) && $image_data ) 
