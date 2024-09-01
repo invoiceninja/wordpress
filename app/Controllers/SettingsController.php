@@ -27,7 +27,7 @@ class SettingsController extends BaseController
 
       $pages = [
          [
-            'page_title' => 'Inovice Ninja',
+            'page_title' => 'Invoice Ninja',
             'menu_title' => 'Invoice Ninja',
             'capability' => 'manage_options',
             'menu_slug' => 'invoiceninja',
@@ -98,7 +98,7 @@ class SettingsController extends BaseController
       $subpages = [
          [
             'parent_slug' => 'invoiceninja',
-            'page_title' => 'Inovice Ninja 1',
+            'page_title' => 'Invoice Ninja 1',
             'menu_title' => 'Invoice Ninja 1',
             'capability' => 'manage_options',
             'menu_slug' => 'invoiceninja-1',
