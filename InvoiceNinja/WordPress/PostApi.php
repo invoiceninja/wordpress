@@ -284,9 +284,9 @@ class PostApi
             }    
         }
 
-        if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase'])) {
+        if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase']) ) {
             if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_purchase_' . esc_attr( $atts['product_id'] ) ) ) {
-                $product_id = sanitize_text_field( $_POST['product_id'] );
+                $product_id = isset($_POST['product_id']) ? sanitize_text_field( $_POST['product_id'] ) : false;
                 if ($product_id) {
                     if ($is_single) {
                         if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
@@ -343,7 +343,7 @@ class PostApi
 
     public function checkoutShortcode()
     {
-        if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['cart_action'] ) ) {
+        if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['cart_action'] ) ) {
             if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_checkout' ) ) {
                 $action = sanitize_text_field( $_POST['cart_action'] );
                 if ($action == 'update') {
@@ -388,8 +388,8 @@ class PostApi
             'sso' => 'false',
         ), $atts, 'client_portal');
 
-        if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['client_portal'] ) ) {
-            if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_client_portal' ) ) {
+        if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['client_portal'] ) ) {
+            if ( isset($_POST['invoiceninja_nonce']) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_client_portal' ) ) {
                 $user = wp_get_current_user();
                 $client = ClientApi::find( $user->user_email );
 
