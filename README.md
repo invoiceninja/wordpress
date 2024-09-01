@@ -6,6 +6,11 @@ WordPress plugin for Invoice Ninja
 * Stable tag: 1.0.8
 * Tested up to: 6.6.1
 
+The plugin can be used to connect to either the hosted platform API at [invoicing.co](https://invoicing.co) or to a selfhost installation of the app.
+
+* [Terms of Service](https://invoiceninja.com/terms/)
+* [Privacy Policy](https://invoiceninja.com/privacy-policy/)
+
 ## Features
 * Import products from Invoice Ninja as custom pages in WordPress.
 * Export WordPress/WooCommerce customers as clients in Invoice Ninja.
