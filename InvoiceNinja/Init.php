@@ -4,7 +4,7 @@
  * @package Invoice Ninja
  */
 
-namespace App;
+namespace InvoiceNinja;
 
 final class Init
 {

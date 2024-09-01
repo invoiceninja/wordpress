@@ -4,9 +4,9 @@
  * @package Invoice Ninja
  */
 
-namespace App\Controllers;
+namespace InvoiceNinja\Controllers;
 
-use \App\Api\ClientApi;
+use \InvoiceNinja\Api\ClientApi;
 
 class ClientController extends BaseController
 {

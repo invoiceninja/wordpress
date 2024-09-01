@@ -4,7 +4,7 @@
  * @package Invoice Ninja
  */
 
-namespace App\Controllers;
+namespace InvoiceNinja\Controllers;
 
 class BaseController
 {

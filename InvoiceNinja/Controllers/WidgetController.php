@@ -4,9 +4,9 @@
  * @package Invoice Ninja
  */
 
-namespace App\Controllers;
+namespace InvoiceNinja\Controllers;
 
-use \App\WordPress\Widgets\ProductWidget;
+use \InvoiceNinja\WordPress\Widgets\ProductWidget;
 
 class WidgetController extends BaseController
 {

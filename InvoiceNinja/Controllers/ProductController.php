@@ -4,10 +4,10 @@
  * @package Invoice Ninja
  */
 
-namespace App\Controllers;
+namespace InvoiceNinja\Controllers;
 
-use \App\WordPress\PostApi;
-use \App\Api\ProductApi;
+use \InvoiceNinja\WordPress\PostApi;
+use \InvoiceNinja\Api\ProductApi;
 
 class ProductController extends BaseController
 {
@@ -255,7 +255,7 @@ class ProductController extends BaseController
                     get_permalink(),
                     get_the_title(),
                     get_the_content(),
-                    \App\Utils\Formatting::formatMoney( $price ),
+                    \InvoiceNinja\Utils\Formatting::formatMoney( $price ),
                     $image,
                     get_post_meta( $post_id, 'custom_value1', true ),
                     get_post_meta( $post_id, 'custom_value2', true ),

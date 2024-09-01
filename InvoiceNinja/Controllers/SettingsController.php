@@ -4,10 +4,10 @@
  * @package Invoice Ninja
  */
 
-namespace App\Controllers;
+namespace InvoiceNinja\Controllers;
 
-use \App\WordPress\SettingsApi;
-use \App\Api\ProfileApi;
+use \InvoiceNinja\WordPress\SettingsApi;
+use \InvoiceNinja\Api\ProfileApi;
 
 class SettingsController extends BaseController
 {

@@ -47,7 +47,7 @@ define( 'INVOICENINJA_DEFAULT_IMAGE_TEMPLATE', '<figure class="wp-block-post-fea
   <img src="$image_url" alt="$product" decoding="async"/>
 </figure>' );
 
-if ( class_exists( 'App\\Init') )
+if ( class_exists( 'InvoiceNinja\\Init') )
 {
-   App\Init::start();
+   InvoiceNinja\Init::start();
 }

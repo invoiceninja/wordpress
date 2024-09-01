@@ -4,12 +4,12 @@
  * @package Invoice Ninja
  */
 
-namespace App\WordPress;
+namespace InvoiceNinja\WordPress;
 
-use \App\Controllers\ProductController;
-use \App\Api\ProfileApi;
-use \App\Api\ProductApi;
-use \App\Api\ClientApi;
+use \InvoiceNinja\Controllers\ProductController;
+use \InvoiceNinja\Api\ProfileApi;
+use \InvoiceNinja\Api\ProductApi;
+use \InvoiceNinja\Api\ClientApi;
 
 class SettingsApi
 {

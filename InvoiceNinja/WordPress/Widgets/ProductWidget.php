@@ -5,7 +5,7 @@
  */
 
  /*
-namespace App\WordPress\Widgets;
+namespace InvoiceNinja\WordPress\Widgets;
 
 use WP_Widget;
 

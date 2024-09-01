@@ -4,7 +4,7 @@
  * @package Invoice Ninja
  */
 
-namespace App\Utils;
+namespace InvoiceNinja\Utils;
 
 class Formatting
 {
