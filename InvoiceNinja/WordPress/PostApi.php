@@ -174,8 +174,7 @@ class PostApi
                     $str .= '</td>
                         <td style="width: 30%"><a href="' . esc_url( $url ) . '">' . $product . '</a><br/>' . \InvoiceNinja\Utils\Formatting::formatMoney( $price ) . '</td>
                         <td><select onchange="in_update_cart(\'' . $product_id . '\', this.value)">';
-                        
-                    
+
                     $max = 99;
                     if ($max_quantity > 0) {
                         $max = min( $max, $max_quantity );
