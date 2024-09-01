@@ -287,7 +287,7 @@ class PostApi
 
         if ($_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase'])) {
             if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_purchase_' . esc_attr( $atts['product_id'] ) ) ) {
-                $product_id = $_POST['product_id'];                
+                $product_id = sanitize_text_field( $_POST['product_id'] );
                 if ($product_id) {
                     if ($is_single) {
                         if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
@@ -346,10 +346,10 @@ class PostApi
     {
         if ( $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['cart_action'] ) ) {
             if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_checkout' ) ) {
-                $action = $_POST['cart_action'];
+                $action = sanitize_text_field( $_POST['cart_action'] );
                 if ($action == 'update') {
-                    $product_id = $_POST['product_id'];
-                    $quantity = $_POST['quantity'];
+                    $product_id = sanitize_text_field( $_POST['product_id'] );
+                    $quantity = sanitize_text_field( $_POST['quantity'] );
 
                     if ( $quantity == 0 ) {
                         unset( $_SESSION['invoiceninja_cart'][$product_id] );
