@@ -13,7 +13,7 @@ class BaseApi
         $key = esc_attr( get_option( 'invoiceninja_api_token' ) );
         $url = esc_attr( get_option( 'invoiceninja_api_url' ) );
 
-        if ( ! $key || ! $url ) {
+        if ( ! $key ) {
             return null;
         }
 
