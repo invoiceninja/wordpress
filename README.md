@@ -1,10 +1,10 @@
 # Invoice Ninja
 
+WordPress plugin for Invoice Ninja
+
 * License: GPLv2 or later
 * Stable tag: 1.0.8
 * Tested up to: 6.6.1
-
-WordPress plugin for Invoice Ninja
 
 ## Features
 * Import products from Invoice Ninja as custom pages in WordPress.
