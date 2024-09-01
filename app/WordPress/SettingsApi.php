@@ -189,7 +189,7 @@ class SettingsApi
 
         if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'refresh_company') 
         {
-            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_refresh_company') ) {
+            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_refresh_company') ) {
                 wp_die('Security check failed');
             }
 
@@ -208,7 +208,7 @@ class SettingsApi
         
         if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'import_products') 
         {
-            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_import_products') ) {
+            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_import_products') ) {
                 wp_die('Security check failed');
             }
     
@@ -229,7 +229,7 @@ class SettingsApi
  
         if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'export_clients') 
         {
-            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce($_POST['invoiceninja_nonce'], 'invoiceninja_export_clients') ) {
+            if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_export_clients') ) {
                 wp_die('Security check failed');
             }
     
