@@ -285,8 +285,8 @@ class PostApi
         }
 
         if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase']) ) {
-            if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_purchase_' . esc_attr( $atts['product_id'] ) ) ) {
-                $product_id = isset($_POST['product_id']) ? sanitize_text_field( $_POST['product_id'] ) : false;
+            if ( isset($_POST['invoiceninja_nonce']) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_purchase_' . esc_attr( $atts['product_id'] ) ) ) {
+                $product_id = isset($_POST['product_id']) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : false;
                 if ($product_id) {
                     if ($is_single) {
                         if ( $invoice = InvoiceApi::create( [$product_id => 1] ) ) {
