@@ -299,7 +299,7 @@ class PostApi
                         }
 
                         if (isset($_SESSION['invoiceninja_cart'][$product_id])) {
-                            $_SESSION['invoiceninja_cart'][$product_id]++;
+                            $_SESSION['invoiceninja_cart'][$product_id] = sanitize_text_field($_SESSION['invoiceninja_cart'][$product_id]) + 1;
 
                             $max = 99;
                             if ($max_quantity > 0) {
@@ -308,14 +308,14 @@ class PostApi
                             if ($profile->track_inventory) {
                                 $max = min( $max, $in_stock_quantity );
                             }
-                            $_SESSION['invoiceninja_cart'][$product_id] = min( $max, $_SESSION['invoiceninja_cart'][$product_id] );                        
+                            $_SESSION['invoiceninja_cart'][$product_id] = min( $max, sanitize_text_field( $_SESSION['invoiceninja_cart'][$product_id] ) );                        
                         } else {
                             $_SESSION['invoiceninja_cart'][$product_id] = 1;
                         }
                     }
                 }
 
-                $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
+                $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://" . sanitize_text_field( $_SERVER['HTTP_HOST'] ) . sanitize_text_field( $_SERVER['REQUEST_URI'] );
                 wp_safe_redirect($current_url);
             }
         }
