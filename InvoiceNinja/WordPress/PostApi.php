@@ -168,11 +168,11 @@ class PostApi
                     $image_url = '';
                     if ( has_post_thumbnail( $post_id ) ) {
                         $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
-                        $str .= '<img src="' . $image_url . '"/>';
+                        $str .= '<img src="' . esc_url( $image_url ) . '"/>';
                     }
                     
                     $str .= '</td>
-                        <td style="width: 30%"><a href="' . $url . '">' . $product . '</a><br/>' . \InvoiceNinja\Utils\Formatting::formatMoney( $price ) . '</td>
+                        <td style="width: 30%"><a href="' . esc_url( $url ) . '">' . $product . '</a><br/>' . \InvoiceNinja\Utils\Formatting::formatMoney( $price ) . '</td>
                         <td><select onchange="in_update_cart(\'' . $product_id . '\', this.value)">';
                         
                     
