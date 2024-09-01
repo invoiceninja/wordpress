@@ -212,14 +212,28 @@ class PostApi
 
         if ( $post->post_type == 'invoiceninja_product' ) {
             wp_enqueue_style( 'product-styles', plugins_url( '/../../assets/css/product.css', __FILE__ ), [], time() );
-            
-            add_action( 'wp_head', [ $this, 'printInlineProductScript' ] );
+                    
+            $custom_css = esc_attr( get_option( 'invoiceninja_product_css' ) );
+
+            wp_add_inline_style( 'product-styles', $custom_css );
         }
 
         if ( get_the_ID() == get_option( 'invoiceninja_product_page_id' ) ) {
             wp_enqueue_style( 'products-styles', plugins_url( '/../../assets/css/products.css', __FILE__ ), [], time() );
 
-            add_action( 'wp_head', [ $this, 'printInlineProductsScript' ] );
+            $color = '#0000EE';
+            $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+            if ( $profile->settings->primary_color ) {
+                $color = $profile->settings->primary_color;
+            }
+    
+            $custom_css = esc_attr( get_option( 'invoiceninja_products_css' ) ) . '
+                a:hover div.divider {
+                    border-color: ' . esc_attr( $color ) . ';
+                }
+            ';
+    
+            wp_add_inline_style( 'products-styles', $custom_css );
         }
 
         if ( ! is_admin() ) {
@@ -227,31 +241,6 @@ class PostApi
 
             wp_enqueue_script( 'frontend-scripts', plugins_url( '/../../assets/js/frontend.js', __FILE__ ), [], time(), false );
         }
-    }
-
-    public function printInlineProductsScript()
-    {
-        $color = '#0000EE';
-        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
-        if ($profile->settings->primary_color) {
-            $color = $profile->settings->primary_color;
-        }
-
-        echo '<style type="text/css">
-            ' . esc_attr( get_option( 'invoiceninja_products_css' ) ). '
-
-            a:hover div.divider
-            {
-                border-color: ' . esc_attr( $color ) . '
-            }
-        </style>';        
-    }
-
-    public function printInlineProductScript()
-    {
-        echo '<style type="text/css">
-            ' . esc_attr( get_option( 'invoiceninja_product_css' ) ) . '
-        </style>';        
     }
 
     public function setPostTypes($types)
