@@ -6,8 +6,8 @@
 
 namespace App\WordPress;
 
-use \App\InvoiceNinja\InvoiceApi;
-use \App\InvoiceNinja\ClientApi;
+use \App\Api\InvoiceApi;
+use \App\Api\ClientApi;
 
 class PostApi
 {

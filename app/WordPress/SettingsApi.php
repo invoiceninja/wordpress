@@ -7,9 +7,9 @@
 namespace App\WordPress;
 
 use \App\Controllers\ProductController;
-use \App\InvoiceNinja\ProfileApi;
-use \App\InvoiceNinja\ProductApi;
-use \App\InvoiceNinja\ClientApi;
+use \App\Api\ProfileApi;
+use \App\Api\ProductApi;
+use \App\Api\ClientApi;
 
 class SettingsApi
 {

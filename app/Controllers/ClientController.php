@@ -6,7 +6,7 @@
 
 namespace App\Controllers;
 
-use \App\InvoiceNinja\ClientApi;
+use \App\Api\ClientApi;
 
 class ClientController extends BaseController
 {

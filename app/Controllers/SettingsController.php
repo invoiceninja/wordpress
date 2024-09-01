@@ -7,7 +7,7 @@
 namespace App\Controllers;
 
 use \App\WordPress\SettingsApi;
-use \App\InvoiceNinja\ProfileApi;
+use \App\Api\ProfileApi;
 
 class SettingsController extends BaseController
 {

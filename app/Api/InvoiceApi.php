@@ -4,9 +4,9 @@
  * @package Invoice Ninja
  */
 
-namespace App\InvoiceNinja;
+namespace App\Api;
 
-use \App\InvoiceNinja\ClientApi;
+use \App\Api\ClientApi;
 
 class InvoiceApi extends BaseApi
 {

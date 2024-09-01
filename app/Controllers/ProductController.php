@@ -7,7 +7,7 @@
 namespace App\Controllers;
 
 use \App\WordPress\PostApi;
-use \App\InvoiceNinja\ProductApi;
+use \App\Api\ProductApi;
 
 class ProductController extends BaseController
 {

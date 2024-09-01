@@ -4,7 +4,7 @@
  * @package Invoice Ninja
  */
 
-namespace App\InvoiceNinja;
+namespace App\Api;
 
 class ProfileApi extends BaseApi
 {
