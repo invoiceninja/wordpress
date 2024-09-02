@@ -1,10 +1,12 @@
 # Invoice Ninja
 
+Tested up to: 6.6.1
+Stable tag: 1.0.8
+License: GPLv2 or later
+
 WordPress plugin for Invoice Ninja
 
-* License: GPLv2 or later
-* Stable tag: 1.0.8
-* Tested up to: 6.6.1
+## Description
 
 The plugin can be used to connect to either the hosted platform API at [invoicing.co](https://invoicing.co) or to a selfhost installation of the app.
 
