@@ -314,9 +314,11 @@ class PostApi
                         }
                     }
                 }
-
-                $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://" . sanitize_text_field( $_SERVER['HTTP_HOST'] ) . sanitize_text_field( $_SERVER['REQUEST_URI'] );
-                wp_safe_redirect($current_url);
+                
+                if (isset($_SERVER['HTTP_HOST']) && isset($_SERVER['REQUEST_URI'])) {
+                    $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://" . sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) . sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+                    wp_safe_redirect($current_url);
+                }
             }
         }
     
@@ -344,11 +346,11 @@ class PostApi
     public function checkoutShortcode()
     {
         if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['cart_action'] ) ) {
-            if ( wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_checkout' ) ) {
-                $action = sanitize_text_field( $_POST['cart_action'] );
+            if ( isset($_POST['invoiceninja_nonce']) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_checkout' ) ) {
+                $action = sanitize_text_field( wp_unslash( $_POST['cart_action'] ) );
                 if ($action == 'update') {
-                    $product_id = sanitize_text_field( $_POST['product_id'] );
-                    $quantity = sanitize_text_field( $_POST['quantity'] );
+                    $product_id = isset( $_POST['product_id'] ) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : false;
+                    $quantity = isset( $_POST['quantity'] ) ? sanitize_text_field( wp_unslash( $_POST['quantity'] ) ) : false;
 
                     if ( $quantity == 0 ) {
                         unset( $_SESSION['invoiceninja_cart'][$product_id] );
