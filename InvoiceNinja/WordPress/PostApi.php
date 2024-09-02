@@ -358,10 +358,12 @@ class PostApi
                         $_SESSION['invoiceninja_cart'][$product_id] = $quantity;
                     }
 
-                    $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://$_SERVER[HTTP_HOST]$_SERVER[REQUEST_URI]";
-                    wp_safe_redirect($current_url);
+                    if (isset($_SERVER['HTTP_HOST']) && isset($_SERVER['REQUEST_URI'])) {
+                        $current_url = (isset($_SERVER['HTTPS']) ? "https" : "http") . "://" . sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) . sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+                        wp_safe_redirect($current_url);
+                    }
                 } else if ($action == 'checkout') {
-                    if ( $invoice = InvoiceApi::create( $_SESSION['invoiceninja_cart'] ) ) {
+                    if ( isset( $_SESSION['invoiceninja_cart'] ) && $invoice = InvoiceApi::create( $_SESSION['invoiceninja_cart'] ) ) {
                         unset( $_SESSION['invoiceninja_cart'] );
                         wp_redirect($invoice->invitations[0]->link);
                         exit;
