@@ -1,3 +1,5 @@
+<?php if ( ! defined( 'ABSPATH' ) ) exit; ?>
+
 <div class="wrap">
     <h1>Invoice Ninja</h1>
     <?php settings_errors(); ?>
