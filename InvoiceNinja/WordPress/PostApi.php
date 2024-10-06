@@ -81,9 +81,9 @@ class PostApi
 
         flush_rewrite_rules();
 
-        add_shortcode('purchase', [ $this, 'purchaseShortcode' ] );
-        add_shortcode('checkout', [ $this, 'checkoutShortcode' ] );
-        add_shortcode('client_portal', [ $this, 'clientPortalShortcode' ] );
+        add_shortcode('invoiceninja_purchase', [ $this, 'purchaseShortcode' ] );
+        add_shortcode('invoiceninja_checkout', [ $this, 'checkoutShortcode' ] );
+        add_shortcode('invoiceninja_client_portal', [ $this, 'clientPortalShortcode' ] );
     }
 
     public function addDynamicContent($content)
@@ -257,7 +257,7 @@ class PostApi
 
         $atts = shortcode_atts(array(
             'product_id' => '',
-        ), $atts, 'purchase');
+        ), $atts, 'invoiceninja_purchase');
 
         $in_stock = true;
 
@@ -284,7 +284,7 @@ class PostApi
             }    
         }
 
-        if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['purchase']) ) {
+        if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset($_POST['invoiceninja_purchase']) ) {
             if ( isset($_POST['invoiceninja_nonce']) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_purchase_' . esc_attr( $atts['product_id'] ) ) ) {
                 $product_id = isset($_POST['product_id']) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : false;
                 if ($product_id) {
@@ -308,7 +308,7 @@ class PostApi
                             if ($profile->track_inventory) {
                                 $max = min( $max, $in_stock_quantity );
                             }
-                            $_SESSION['invoiceninja_cart'][$product_id] = min( $max, sanitize_text_field( $_SESSION['invoiceninja_cart'][$product_id] ) );                        
+                            $_SESSION['invoiceninja_cart'][$product_id] = min( $max, sanitize_text_field( $_SESSION['invoiceninja_cart'][$product_id] ) );
                         } else {
                             $_SESSION['invoiceninja_cart'][$product_id] = 1;
                         }
@@ -378,7 +378,7 @@ class PostApi
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_checkout', 'invoiceninja_nonce'); ?>
             <input type="hidden" name="cart_action" value="checkout"/>
-            <button type="submit" name="checkout"><?php echo esc_attr( get_option( 'invoiceninja_checkout_label', 'Checkout' ) ); ?></button>
+            <button type="submit"><?php echo esc_attr( get_option( 'invoiceninja_checkout_label', 'Checkout' ) ); ?></button>
         </form>
         <?php
 
@@ -390,9 +390,9 @@ class PostApi
         $atts = shortcode_atts(array(
             'label' => 'Client Portal',
             'sso' => 'false',
-        ), $atts, 'client_portal');
+        ), $atts, 'invoiceninja_client_portal');
 
-        if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['client_portal'] ) ) {
+        if ( isset($_SERVER['REQUEST_METHOD']) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['invoiceninja_client_portal'] ) ) {
             if ( isset($_POST['invoiceninja_nonce']) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_client_portal' ) ) {
                 $user = wp_get_current_user();
                 $client = ClientApi::find( $user->user_email );
@@ -419,7 +419,7 @@ class PostApi
         ?>
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_client_portal', 'invoiceninja_nonce'); ?>
-            <button type="submit" name="client_portal"><?php echo esc_attr( $atts['label'] ) ?></button>
+            <button type="submit"><?php echo esc_attr( $atts['label'] ) ?></button>
         </form>
         <?php
 

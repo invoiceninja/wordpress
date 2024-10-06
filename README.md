@@ -1,7 +1,7 @@
 # Invoice Ninja
 
 Tested up to: 6.6.1
-Stable tag: 1.0.9
+Stable tag: 1.0.10
 License: GPLv2 or later
 
 WordPress plugin for Invoice Ninja
@@ -55,11 +55,11 @@ The plugin can be used to connect to either the hosted platform API at [invoicin
 
 ## Shortcodes
 
-- **[purchase product_id=""]**: This shortcode will display either an 'Add to Cart' button or a 'Buy Now' button, depending on the Online Purchases setting.
-- **[client_portal label="" sso=""]**: This shortcode generates a button that allows your customers to access their client portal. If the SSO (Single Sign-On) parameter is set to true, they won't need to enter their password.
+- **[invoiceninja_purchase product_id=""]**: This shortcode will display either an 'Add to Cart' button or a 'Buy Now' button, depending on the Online Purchases setting.
+- **[invoiceninja_client_portal label="" sso=""]**: This shortcode generates a button that allows your customers to access their client portal. If the SSO (Single Sign-On) parameter is set to true, they won't need to enter their password.
 
 > [!WARNING]  
-> WARNING: Only use the [client_portal] shortcode if your customers are confirming their email addresses. Without this confirmation, a malicious user could create a fake account and gain unauthorized access to data in Invoice Ninja.
+> WARNING: Only use the [invoiceninja_client_portal] shortcode if your customers are confirming their email addresses. Without this confirmation, a malicious user could create a fake account and gain unauthorized access to data in Invoice Ninja.
 
 ## Credits
 * [Hillel Coren](https://hillel.dev)
