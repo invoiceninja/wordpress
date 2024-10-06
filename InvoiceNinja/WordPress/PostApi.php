@@ -330,7 +330,7 @@ class PostApi
                 <form method="post" action="">
                     <?php wp_nonce_field('invoiceninja_purchase_' . esc_attr($atts['product_id']), 'invoiceninja_nonce'); ?>
                     <input type="hidden" name="product_id" value="<?php echo esc_attr($atts['product_id']); ?>">
-                    <button type="submit" name="purchase"><?php echo ($is_single ? 
+                    <button type="submit" name="invoiceninja_purchase"><?php echo ($is_single ? 
                         esc_attr( get_option( 'invoiceninja_buy_now_label', 'Buy Now' ) ) : 
                         esc_attr( get_option( 'invoiceninja_add_to_cart_label', 'Add to Cart' ) ) ) ?></button>
                 </form>
