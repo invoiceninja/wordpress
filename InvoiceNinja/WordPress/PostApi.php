@@ -105,7 +105,7 @@ class PostApi
             $price = '<p>' . \InvoiceNinja\Utils\Formatting::formatMoney( $price ) . '</p>';
 
             if ( $online_purchases == 'single' || $online_purchases == 'multiple' ) {
-                $content = $price . '[purchase product_id="' . $product_id . '"]' . $content;
+                $content = $price . '[invoiceninja_purchase product_id="' . $product_id . '"]' . $content;
             }
         }
 
@@ -130,7 +130,7 @@ class PostApi
 
             $str .= '&nbsp;';
 
-            $str .= '[checkout]</div>';
+            $str .= '[invoiceninja_checkout]</div>';
             $str .= '<table>
                      <form method="POST" action="" id="invoiceninja_cart">
                      <input type="hidden" id="cart_action" name="cart_action" value=""/>
