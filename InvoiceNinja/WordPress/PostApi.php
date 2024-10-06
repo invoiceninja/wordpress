@@ -403,6 +403,9 @@ class PostApi
                         $url = rtrim( $url, '/' );
                         $url = rtrim( $url, 'api/v1' );
                         $url = rtrim( $url, '/' );                        
+                        if (! $url) {
+                            $url = 'https://invoicing.co';
+                        }
                         $url .= '/client/key_login/' . $contact->contact_key;
                         if ($atts['sso'] == 'true') {
                             $url .= '?client_hash=' . $client->client_hash;
@@ -419,7 +422,7 @@ class PostApi
         ?>
         <form method="post" action="">
             <?php wp_nonce_field('invoiceninja_client_portal', 'invoiceninja_nonce'); ?>
-            <button type="submit"><?php echo esc_attr( $atts['label'] ) ?></button>
+            <button type="submit" name="invoiceninja_client_portal"><?php echo esc_attr( $atts['label'] ) ?></button>
         </form>
         <?php
 
