@@ -10,18 +10,20 @@ class ProfileApi extends BaseApi
 {
     public static function load()
     {
-        $route = self::isUsingToken() ? 'companies' : 'shop/profile';
+        if (self::isUsingToken()) {
+            $route = 'companies/current';
+            $method = 'POST';
+        } else {
+            $route = 'shop/profile';
+            $method = 'GET';
+        }
 
-        if ( ! $response = self::sendRequest( $route ) ) {
+        if ( ! $response = self::sendRequest( $route, $method ) ) {
             return false;
         }
 
         if ( $response ) {
             $response = json_decode( $response )->data;
-        }
-
-        if (self::isUsingToken()) {
-            $response = $response[0];
         }
 
         //echo $response; exit;
