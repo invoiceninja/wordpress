@@ -1,7 +1,7 @@
 # Invoice Ninja
 
 Tested up to: 6.8.3
-Stable tag: 1.0.12
+Stable tag: 1.0.13
 License: GPLv2 or later
 
 WordPress plugin for Invoice Ninja

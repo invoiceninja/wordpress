@@ -80,7 +80,7 @@ class SettingsApi
         return $this;
     }
 
-    public function withSubpage( string $title = null )
+    public function withSubpage( ?string $title = null )
     {
         if ( empty( $this->admin_pages ) ) 
         {

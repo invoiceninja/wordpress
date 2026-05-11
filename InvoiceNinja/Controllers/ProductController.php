@@ -61,10 +61,14 @@ class ProductController extends BaseController
 
     public function autoRefresh()
     {
-        SettingsController::loadProfile();
+        try {
+            SettingsController::loadProfile();
 
-        if ( get_option( 'invoiceninja_sync_products' ) ) {
-            ProductController::loadProducts();
+            if ( get_option( 'invoiceninja_sync_products' ) ) {
+                ProductController::loadProducts();
+            }
+        } catch ( \Throwable $e ) {
+            error_log( 'Invoice Ninja auto_refresh failed: ' . $e->getMessage() );
         }
     }
 

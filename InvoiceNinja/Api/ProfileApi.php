@@ -22,13 +22,15 @@ class ProfileApi extends BaseApi
             return false;
         }
 
-        if ( $response ) {
-            $response = json_decode( $response )->data;
+        $decoded = json_decode( $response );
+        $response = $decoded->data ?? null;
+
+        if ( ! $response ) {
+            return false;
         }
 
-        //echo $response; exit;
-
-        if ( $logo_url = $response->settings->company_logo ) {
+        if ( ! empty( $response->settings->company_logo ) ) {
+            $logo_url = $response->settings->company_logo;
             if ( $image_data = @wp_remote_get( $logo_url ) ) {
                 $args = array(
                     'post_type'      => 'attachment',
@@ -66,21 +68,25 @@ class ProfileApi extends BaseApi
         if ( $static_response = self::sendRequest( 'statics' ) ) {
             $static_response = json_decode( $static_response );
 
-            $currency_map = [];
-            foreach ( $static_response->currencies as $currency ) {
-                $currency_map[$currency->id] = $currency;
+            if ( ! empty( $static_response->currencies ) ) {
+                $currency_map = [];
+                foreach ( $static_response->currencies as $currency ) {
+                    $currency_map[$currency->id] = $currency;
+                }
+                update_option( 'invoiceninja_currencies', wp_json_encode( $currency_map) );
             }
-            update_option( 'invoiceninja_currencies', wp_json_encode( $currency_map) );
 
-            $country_map = [];
-            foreach ( $static_response->countries as $country ) {
-                $obj = new \stdClass;
-                $obj->swap_currency_symbol = $country->swap_currency_symbol;
-                $obj->thousand_separator = $country->thousand_separator;
-                $obj->decimal_separator = $country->decimal_separator;
-                $country_map[$country->id] = $obj;
+            if ( ! empty( $static_response->countries ) ) {
+                $country_map = [];
+                foreach ( $static_response->countries as $country ) {
+                    $obj = new \stdClass;
+                    $obj->swap_currency_symbol = $country->swap_currency_symbol;
+                    $obj->thousand_separator = $country->thousand_separator;
+                    $obj->decimal_separator = $country->decimal_separator;
+                    $country_map[$country->id] = $obj;
+                }
+                update_option( 'invoiceninja_countries', wp_json_encode( $country_map) );
             }
-            update_option( 'invoiceninja_countries', wp_json_encode( $country_map) );
         }
 
         return $response;

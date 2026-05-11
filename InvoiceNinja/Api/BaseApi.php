@@ -51,29 +51,30 @@ class BaseApi
                     'error'
                 );
             } else {
-                echo 'Error: ' . esc_attr( $response->get_error_message() );
-                exit;
+                error_log( 'Invoice Ninja API request failed: ' . $response->get_error_message() );
             }
 
             return null;
         } else {
             $response_code = wp_remote_retrieve_response_code($response);
 
-            if ($response_code === 200) {                                    
+            if ($response_code === 200) {
                 $body = wp_remote_retrieve_body( $response );
 
                 return $body;
             } else {
+                $decoded = json_decode( wp_remote_retrieve_body( $response ) );
+                $message = isset( $decoded->message ) ? $decoded->message : 'HTTP ' . $response_code;
+
                 if ( is_admin() && function_exists( 'add_settings_error' ) ) {
                     add_settings_error(
                         'invoiceninja',
                         'api_request',
-                        json_decode($response['body'])->message,                        
+                        $message,
                         'error'
                     );
                 } else {
-                    echo 'Error: ' . esc_attr( json_decode($response['body'])->message );
-                    exit;
+                    error_log( 'Invoice Ninja API request failed: ' . $message );
                 }
             }
         }
