@@ -11,22 +11,12 @@ class BaseApi
     public static function sendRequest( $route, $method = 'GET', $data = false )
     {
         $key = esc_attr( get_option( 'invoiceninja_api_token' ) );
-        $url = esc_attr( get_option( 'invoiceninja_api_url' ) );
 
         if ( ! $key ) {
             return null;
         }
 
-        if ( empty( $url ) ) {
-            $url = 'https://invoicing.co/api/v1/';
-        } else {
-            $url = rtrim( $url, '/' );
-            $url = rtrim( $url, 'api/v1' );
-            $url = rtrim( $url, '/' );
-            $url .= '/api/v1/';
-        }
-
-        $url .= $route;
+        $url = self::getBaseUrl() . '/api/v1/' . $route;
 
         $args = array(
             'timeout' => '60',
@@ -80,6 +70,16 @@ class BaseApi
         }
 
         return null;
+    }
+
+    public static function getBaseUrl()
+    {
+        $url = trim( (string) get_option( 'invoiceninja_api_url' ) );
+        $url = rtrim( $url, '/' );
+        $url = preg_replace( '#/api/v1$#i', '', $url );
+        $url = rtrim( $url, '/' );
+
+        return $url ? $url : 'https://invoicing.co';
     }
 
     public static function isUsingToken()

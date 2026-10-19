@@ -4,7 +4,7 @@
  * Plugin Name:        Invoice Ninja
  * Plugin URI:         https://github.com/invoiceninja/wordpress
  * Description:        WordPress plugin for Invoice Ninja
- * Version:            1.0.13
+ * Version:            1.0.14
  * Author:             Invoice Ninja
  * Author URI:         https://invoiceninja.com
  * GitHub URI:         https://github.com/invoiceninja/wordpress
