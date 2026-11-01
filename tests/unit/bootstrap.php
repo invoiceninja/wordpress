@@ -1,0 +1,34 @@
+<?php
+
+// Unit tests run without WordPress: WP functions are stubbed per test with Brain Monkey.
+
+require_once dirname( __DIR__, 2 ) . '/vendor/autoload.php';
+
+if ( ! defined( 'ABSPATH' ) ) {
+    define( 'ABSPATH', '/tmp/wordpress/' );
+}
+
+if ( ! defined( 'INVOICENINJA_VERSION' ) ) {
+    define( 'INVOICENINJA_VERSION', 'test' );
+}
+
+// The plugin logs API failures with error_log(); keep test output clean
+ini_set( 'error_log', '/dev/null' );
+
+if ( ! class_exists( 'WP_Error' ) ) {
+    // Minimal stand-in for WordPress' WP_Error
+    class WP_Error
+    {
+        private $message;
+
+        public function __construct( $code = '', $message = '' )
+        {
+            $this->message = $message;
+        }
+
+        public function get_error_message()
+        {
+            return $this->message;
+        }
+    }
+}

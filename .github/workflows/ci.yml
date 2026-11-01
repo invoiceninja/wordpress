@@ -1,0 +1,115 @@
+name: CI
+
+on:
+  push:
+    branches: [main, 1.x]
+  pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 4 * * *' # nightly: catches breakage from new WordPress/PHP releases
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  lint:
+    name: PHP lint (${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['7.4', '8.0', '8.1', '8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+          tools: none
+      - name: Lint every PHP file
+        run: |
+          find . -name '*.php' -not -path './vendor/*' -not -path './tests/*' -print0 \
+            | xargs -0 -n1 -P4 php -l -d display_errors=1 -d error_reporting=-1 > lint.log 2>&1 || { cat lint.log; exit 1; }
+          if grep -E "Deprecated|Warning|Parse error|Fatal" lint.log; then exit 1; fi
+
+  unit:
+    name: Unit tests (PHP ${{ matrix.php }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        php: ['8.1', '8.2', '8.3', '8.4']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: ${{ matrix.php }}
+          coverage: none
+      - uses: ramsey/composer-install@v3
+      - name: PHPUnit
+        run: vendor/bin/phpunit --testsuite unit
+
+  e2e:
+    name: E2E (${{ matrix.image }}${{ matrix.wp && format(', WP {0}', matrix.wp) || ', latest WP' }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - image: php8.1-apache
+          - image: php8.3-apache
+          - image: php8.4-apache
+          - image: php8.3-apache
+            wp: '6.5'
+    env:
+      WP_IMAGE_TAG: ${{ matrix.image }}
+      WP_VERSION: ${{ matrix.wp }}
+      COMPOSE: docker compose -f dev/docker-compose.yml
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
+      - name: Build the autoloader (no dev dependencies, like the release zip)
+        run: composer install --no-dev --optimize-autoloader --no-interaction
+      - name: Start WordPress + mocked Invoice Ninja
+        run: |
+          $COMPOSE pull --quiet
+          $COMPOSE up -d --wait db wordpress
+      - name: Run end-to-end flows
+        run: python3 tests/flows/run.py
+      - name: Show logs on failure
+        if: failure()
+        run: |
+          $COMPOSE exec -T wordpress sh -c 'cat /var/www/html/wp-content/debug.log 2>/dev/null | tail -100' || true
+          $COMPOSE exec -T wordpress sh -c 'tail -50 /var/www/html/wp-content/in-mock-requests.log' || true
+          $COMPOSE logs --tail=100 wordpress || true
+      - name: Stop stack
+        if: always()
+        run: $COMPOSE down -v
+
+  plugin-check:
+    name: WordPress Plugin Check
+    runs-on: ubuntu-latest
+    # Reports WP.org review issues. Not blocking until the 2.0 codebase replaces 1.x.
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v4
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.3'
+          coverage: none
+      - run: composer install --no-dev --optimize-autoloader --no-interaction
+      - name: Build the plugin directory as it is released
+        run: |
+          mkdir -p build/invoiceninja
+          rsync -a --exclude-from=.distignore ./ build/invoiceninja/
+      - uses: wordpress/plugin-check-action@v1
+        with:
+          build-dir: build/invoiceninja

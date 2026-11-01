@@ -47,3 +47,7 @@ wp-config.php
 # uncomment the next line
 #/wp-content/themes
 /vendor/
+
+# Tests
+.phpunit.result.cache
+__pycache__/
