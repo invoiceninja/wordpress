@@ -1,11 +1,26 @@
 #!/bin/bash
+# Usage: ./bump_version.sh 2.0.0-alpha.2
+# Updates the plugin header, the INVOICENINJA_VERSION constant and the readme's Stable tag
+# (Stable tag only for final versions, so pre-releases never become the WordPress.org default).
+set -euo pipefail
 
-current_version=$(grep "1.0." invoiceninja.php | cut -f3 -d "." )
-new_version=$((current_version+1))
-date_today=$(date +%F)
+new="${1:-}"
+if ! [[ "$new" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.]+)?$ ]]; then
+  echo "Usage: $0 <version>   e.g. $0 2.0.0-alpha.2" >&2
+  exit 1
+fi
 
-echo "Bump version... $current_version => $new_version"
+old=$(sed -n 's/^ \* Version: *//p' invoiceninja.php | tr -d '[:space:]')
+echo "Bump version: $old => $new"
 
-sed -i.bak -e "s/* Version:            1.0.$current_version/* Version:            1.0.$new_version/g" ./invoiceninja.php && rm ./invoiceninja.php.bak
-sed -i.bak -e "s/automatic_release_tag: \"v1.0.$current_version/automatic_release_tag: \"v1.0.$new_version/g" .github/workflows/release.yml && rm .github/workflows/release.yml.bak
-sed -i.bak -e "s/Stable tag: 1.0.$current_version/Stable tag: 1.0.$new_version/g" ./README.md && rm ./README.md.bak
+sed -i.bak -E "s/^( \* Version: +).*/\1$new/" invoiceninja.php
+sed -i.bak -E "s/(define\( 'INVOICENINJA_VERSION', ')[^']*(' \);)/\1$new\2/" invoiceninja.php
+rm -f invoiceninja.php.bak
+
+if [[ "$new" != *-* ]]; then
+  sed -i.bak -E "s/^Stable tag: .*/Stable tag: $new/" README.md && rm -f README.md.bak
+fi
+
+grep -n "Version:\|INVOICENINJA_VERSION', '" invoiceninja.php
+grep -n "Stable tag" README.md
+echo "Now commit, then tag: git tag v$new && git push origin v$new"

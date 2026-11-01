@@ -1,7 +1,14 @@
-name: Release Plugin
+name: Release
+
+# Push a tag like v2.0.0-alpha.1 or v2.0.0 to build and publish a release.
+# - The plugin header version must match the tag.
+# - Tags with a "-" (alpha, beta, rc) are GitHub pre-releases and never reach WordPress.org.
+# - Only final v2.x tags are deployed to WordPress.org SVN (needs SVN_USERNAME / SVN_PASSWORD secrets).
+#   1.x releases are made from the 1.x branch.
 
 on:
-  workflow_dispatch:
+  push:
+    tags: ['v*']
 
 permissions:
   contents: write
@@ -9,55 +16,79 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-
+    outputs:
+      version: ${{ steps.version.outputs.version }}
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v2
+      - uses: actions/checkout@v4
 
-    - name: Set up PHP
-      uses: shivammathur/setup-php@v2
-      with:
-        php-version: '8.2'
+      - name: Check the version matches the tag
+        id: version
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          header=$(sed -n 's/^ \* Version: *//p' invoiceninja.php | tr -d '[:space:]')
+          constant=$(sed -n "s/.*define( 'INVOICENINJA_VERSION', '\([^']*\)'.*/\1/p" invoiceninja.php)
+          echo "tag=$tag header=$header constant=$constant"
+          if [ "$tag" != "$header" ] || [ "$tag" != "$constant" ]; then
+            echo "::error::Tag $tag doesn't match the plugin header ($header) or constant ($constant). Run ./bump_version.sh $tag first."
+            exit 1
+          fi
+          echo "version=$tag" >> "$GITHUB_OUTPUT"
 
-    - name: Install Composer dependencies
-      run: composer install --no-dev --optimize-autoloader
+      - uses: shivammathur/setup-php@v2
+        with:
+          php-version: '8.1'
+          coverage: none
 
-    - name: Zip project
-      # The zip contains a top-level invoiceninja/ folder, so installs work even if the zip is renamed (#2)
-      run: |
-        mkdir -p build/invoiceninja
-        rsync -a --exclude-from=.distignore ./ build/invoiceninja/
-        (cd build && zip -rq ../invoiceninja.zip invoiceninja)
-        unzip -l invoiceninja.zip | tail -1
+      - name: Install production dependencies
+        run: composer install --no-dev --optimize-autoloader --no-interaction
 
-    - name: Upload app archive to workflow
-      uses: actions/upload-artifact@v4
-      with:
-        name: InvoiceNinja
-        path: invoiceninja.zip
+      - name: Build the plugin folder and zip
+        # The zip contains a top-level invoiceninja/ folder, so installs work even if the zip is renamed (#2)
+        run: |
+          mkdir -p build/invoiceninja
+          rsync -a --exclude-from=.distignore ./ build/invoiceninja/
+          (cd build && zip -rq ../invoiceninja.zip invoiceninja)
+          unzip -l invoiceninja.zip | tail -1
 
-    - name: Download artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
+      - name: Plugin Check
+        uses: wordpress/plugin-check-action@v1
+        continue-on-error: true
+        with:
+          build-dir: build/invoiceninja
 
-    - name: Create Release
-      uses: marvinpinto/action-automatic-releases@v1.2.1
-      with:
-        repo_token: "${{ secrets.GITHUB_TOKEN }}"
-        draft: false
-        prerelease: false
-        title: "Latest Release"
-        automatic_release_tag: "v1.0.16"
-        files: |
-            ${{ github.workspace }}/artifacts/InvoiceNinja
+      - uses: actions/upload-artifact@v4
+        with:
+          name: invoiceninja
+          path: |
+            invoiceninja.zip
+            build/invoiceninja
 
-#    - name: Submit to WordPress Plugin Store
-#      env:
-#        WORDPRESS_USERNAME: ${{ secrets.WORDPRESS_USERNAME }}
-#        WORDPRESS_PASSWORD: ${{ secrets.WORDPRESS_PASSWORD }}
-#      run: |
-#        curl -u $WORDPRESS_USERNAME:$WORDPRESS_PASSWORD \
-#        -F 'plugin_name=plugin-name' \
-#        -F 'zip_file=@plugin-name.zip' \
-#        https://api.wordpress.org/plugins/add
+      - name: Publish the GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ github.ref_name }}
+          prerelease: ${{ contains(github.ref_name, '-') }}
+          generate_release_notes: true
+          files: invoiceninja.zip
+
+  deploy:
+    # Runs in the same workflow: a release made with GITHUB_TOKEN doesn't trigger other workflows.
+    needs: build
+    if: startsWith(github.ref_name, 'v2.') && !contains(github.ref_name, '-')
+    runs-on: ubuntu-latest
+    environment: wordpress-org
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: invoiceninja
+          path: dist
+      - name: Deploy to WordPress.org
+        uses: 10up/action-wordpress-plugin-deploy@2.3.0
+        env:
+          SVN_USERNAME: ${{ secrets.SVN_USERNAME }}
+          SVN_PASSWORD: ${{ secrets.SVN_PASSWORD }}
+          SLUG: invoiceninja
+          VERSION: ${{ needs.build.outputs.version }}
+          BUILD_DIR: dist/build/invoiceninja
+          ASSETS_DIR: .wordpress-org

@@ -11,3 +11,6 @@ phpunit.xml.dist
 bump_version.sh
 assets/images/screenshot.png
 *.log
+phpcs.xml.dist
+phpstan.neon.dist
+.wordpress-org
