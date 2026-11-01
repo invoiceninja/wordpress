@@ -89,6 +89,8 @@ abstract class TestCase extends PolyfillTestCase
         } );
         Functions\when( 'get_current_user_id' )->justReturn( 1 );
         Functions\when( 'do_action' )->justReturn( null );
+        // No real DNS in unit tests: names resolve to nothing (IP literals are checked directly)
+        \Brain\Monkey\Filters\expectApplied( 'invoiceninja_pre_resolve_host' )->zeroOrMoreTimes()->andReturn( [] );
     }
 
     protected function tear_down(): void

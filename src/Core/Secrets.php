@@ -40,14 +40,16 @@ final class Secrets {
 			throw new \InvalidArgumentException( 'Unknown secret purpose' );
 		}
 		$value = (string) $this->options->get( $purpose, '' );
-		if ( strlen( $value ) < 64 ) {
-			$value = bin2hex( random_bytes( 32 ) );
-			// add_option() is atomic: if another request won the race, use its value.
-			if ( ! add_option( Options::PREFIX . $purpose, $value, '', false ) ) {
-				$value = (string) $this->options->get( $purpose, $value );
-			}
+		if ( preg_match( '/^[0-9a-f]{64}$/', $value ) ) {
+			return $value;
 		}
-		return $value;
+		$fresh = bin2hex( random_bytes( 32 ) );
+		if ( '' !== $value ) {
+			$this->options->set( $purpose, $fresh ); // Damaged value: replace it.
+			return $fresh;
+		}
+		// If another request created it first, use theirs.
+		return $this->options->addAtomic( $purpose, $fresh ) ? $fresh : (string) $this->options->get( $purpose, $fresh );
 	}
 
 	/**
@@ -55,13 +57,15 @@ final class Secrets {
 	 */
 	public function siteCode(): string {
 		$code = (string) $this->options->get( 'site_code', '' );
-		if ( ! preg_match( '/^[A-Z][0-9]$/', $code ) ) {
-			$code = chr( 65 + random_int( 0, 25 ) ) . (string) random_int( 1, 9 );
-			if ( ! add_option( Options::PREFIX . 'site_code', $code, '', false ) ) {
-				$code = (string) $this->options->get( 'site_code', $code );
-			}
+		if ( preg_match( '/^[A-Z][0-9]$/', $code ) ) {
+			return $code;
 		}
-		return $code;
+		$fresh = chr( 65 + random_int( 0, 25 ) ) . (string) random_int( 1, 9 );
+		if ( '' !== $code ) {
+			$this->options->set( 'site_code', $fresh );
+			return $fresh;
+		}
+		return $this->options->addAtomic( 'site_code', $fresh ) ? $fresh : (string) $this->options->get( 'site_code', $fresh );
 	}
 
 	/**
@@ -78,7 +82,7 @@ final class Secrets {
 	 *
 	 * @param string $plain Plain text.
 	 */
-	public function encrypt( string $plain ): string {
+	public function encrypt( #[\SensitiveParameter] string $plain ): string {
 		[ $id, $key ] = $this->key();
 		$nonce        = random_bytes( SODIUM_CRYPTO_SECRETBOX_NONCEBYTES );
 		$cipher       = sodium_crypto_secretbox( $plain, $nonce, $key );

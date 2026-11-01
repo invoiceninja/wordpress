@@ -39,6 +39,17 @@ class SettingsApi
         }
 
         add_action('updated_option', [ $this, 'optionUpdated' ], 10, 3);
+
+        // 2.0 tests and saves the connection; refresh the 1.x company profile once it succeeded
+        add_action( 'invoiceninja_connected', [ $this, 'refreshProfile' ] );
+    }
+
+    public function refreshProfile()
+    {
+        $profile = ProfileApi::load();
+        if ( $profile ) {
+            update_option( 'invoiceninja_profile', wp_json_encode( $profile ) );
+        }
     }
 
     public function enqueueStyles()
@@ -54,7 +65,10 @@ class SettingsApi
 
     function optionUpdated($option_name, $old_value, $new_value) 
     {
-        if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') {
+        if ( ( $option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url' ) && \InvoiceNinja\Plugin::booted() ) {
+            // Never call the API mid-change: the address may already be new while the token is still old
+            return;
+        } else if ($option_name === 'invoiceninja_api_token' || $option_name === 'invoiceninja_api_url') {
             $profile = ProfileApi::load();
             if ( $profile ) {
                 update_option('invoiceninja_profile', wp_json_encode( $profile ) );                

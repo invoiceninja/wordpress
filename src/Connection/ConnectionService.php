@@ -184,6 +184,10 @@ final class ConnectionService {
 	public function connect( string $raw_url, #[\SensitiveParameter] string $token, bool $allow_private = false, bool $confirm_switch = false ): array {
 		$result          = $this->test( $raw_url, $token, $allow_private );
 		$result['saved'] = false;
+		if ( $this->credentials->locked() ) {
+			$result['error'] = self::describe( new ApiException( ErrorKind::Locked ) );
+			return $result;
+		}
 		if ( ! $result['ok'] ) {
 			$this->logger->warning( 'connection', 'Connection test failed: ' . (string) ( $result['error']['title'] ?? '' ), array( 'kind' => $result['error']['kind'] ?? '' ) );
 			return $result;
@@ -198,7 +202,7 @@ final class ConnectionService {
 			return $result;
 		}
 		$this->credentials->save( $result['url'], trim( $token ) );
-		$this->state->markConnected( $result['company'], $result['version'], true, true, $result['gateways'], $allow_private );
+		$this->state->markConnected( $result['company'], $result['version'], true, true, $result['gateways'], $allow_private ? BaseUrl::host( $result['url'] ) : '' );
 		$result['saved'] = true;
 		$this->logger->info( 'connection', sprintf( 'Connected to %s (Invoice Ninja %s)', (string) $result['company']['name'], $result['version'] ) );
 		if ( '' !== $old_id && $old_id !== (string) $result['company']['id'] ) {
@@ -229,19 +233,34 @@ final class ConnectionService {
 	public function refresh(): bool {
 		$state = $this->state->get();
 		try {
-			$client   = $this->credentials->client( $state['allow_private'] );
-			$company  = Company::current( $client, 10.0 );
+			$client  = $this->credentials->client( $this->state->allowsPrivate( $this->credentials->url() ) );
+			$company = Company::current( $client, 10.0 );
+			$this->guardCompany( $state, $company );
 			$version  = $client->appVersion();
 			$gateways = CompanyGateways::activeLabels( $client );
 			if ( ! HttpClient::versionAtLeast( $version ) ) {
 				throw new ApiException( ErrorKind::VersionTooOld, 'X-APP-VERSION ' . $version );
 			}
-			$this->state->markConnected( $company, $version, $state['admin'], $state['webhooks'], $gateways, $state['allow_private'] );
+			$this->state->markConnected( $company, $version, $state['admin'], $state['webhooks'], $gateways, $state['private_host'] );
 			return true;
 		} catch ( ApiException $e ) {
 			$this->state->markError( $e );
 			$this->logger->warning( 'connection', 'Refreshing the connection failed: ' . $e->kind->title(), array( 'technical' => $e->technical ) );
 			return false;
+		}
+	}
+
+	/**
+	 * Refuse a silent company switch (e.g. a token swapped in wp-config.php).
+	 *
+	 * @param array<string, mixed> $state   Current state.
+	 * @param array<string, mixed> $company Company the token now returns.
+	 * @throws ApiException When the company changed.
+	 */
+	public function guardCompany( array $state, array $company ): void {
+		$old = (string) ( $state['company']['id'] ?? '' );
+		if ( '' !== $old && (string) ( $company['id'] ?? '' ) !== $old ) {
+			throw new ApiException( ErrorKind::CompanyChanged, sprintf( 'connected to %s, token returns %s', $old, (string) ( $company['id'] ?? '' ) ) );
 		}
 	}
 

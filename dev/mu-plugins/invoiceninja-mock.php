@@ -50,6 +50,11 @@ function in_mock_clients() {
     ];
 }
 
+// The fake host doesn't exist in DNS; give the plugin's private-network check a public address.
+add_filter( 'invoiceninja_pre_resolve_host', function ( $ips, $host ) {
+    return $host === 'in.test' ? [ '93.184.216.34' ] : $ips;
+}, 10, 2 );
+
 add_action( 'generate_rewrite_rules', function () {
     in_mock_log( [ 'event' => 'flush_rewrite_rules' ] );
 } );

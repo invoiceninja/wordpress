@@ -82,7 +82,7 @@
 	function Button( props ) {
 		const { primary, danger, link, busy, children, ...rest } = props;
 		const cls = [ 'button', primary ? 'button-primary' : '', danger ? 'in-button-danger' : '', link ? 'button-link' : '' ].join( ' ' ).trim();
-		return h( 'button', Object.assign( { type: 'button', className: cls, disabled: busy || rest.disabled, 'aria-busy': busy ? 'true' : undefined }, rest ), children );
+		return h( 'button', Object.assign( { type: 'button', className: cls }, rest, { disabled: !! ( busy || rest.disabled ), 'aria-busy': busy ? 'true' : undefined } ), children );
 	}
 
 	function ErrorDetails( { error } ) {
@@ -220,6 +220,14 @@
 				o.note ? h( 'span', { className: 'in-choice__note in-choice__note--' + o.noteKind }, h( StatusIcon, { kind: o.noteKind } ), o.note ) : null ) ) );
 	}
 
+	function hostOf( raw ) {
+		try {
+			return new URL( normalizePreview( raw ) ).hostname.toLowerCase();
+		} catch ( e ) {
+			return '';
+		}
+	}
+
 	function normalizePreview( raw ) {
 		let u = String( raw || '' ).trim().replace( /\/+$/, '' ).replace( /\/api\/v1$/i, '' ).replace( /\/+$/, '' );
 		if ( ! u ) {
@@ -238,7 +246,8 @@
 		const [ url, setUrl ] = useState( existing.hosted ? '' : existing.url );
 		const [ token, setToken ] = useState( '' );
 		const [ showToken, setShowToken ] = useState( false );
-		const [ allowPrivate, setAllowPrivate ] = useState( !! existing.state.allow_private );
+		// A private-network permission only ever applies to the host it was given for.
+		const [ allowPrivateHost, setAllowPrivateHost ] = useState( existing.state.private_host || '' );
 		const [ test, setTest ] = useState( null );
 		const [ busy, setBusy ] = useState( false );
 		const [ error, setError ] = useState( '' );
@@ -276,6 +285,7 @@
 		};
 
 		const payload = () => ( where === 'hosted' ? { hosted: true } : { url } );
+		const allowPrivate = where === 'self' && !! allowPrivateHost && allowPrivateHost === hostOf( url );
 
 		const runTest = async () => {
 			setBusy( true );
@@ -301,8 +311,8 @@
 					boot.connection = result.connection;
 					setSwitchInfo( null );
 					go( step + 1 );
-				} else {
-					setTest( result );
+				} else if ( result.error ) {
+					setError( result.error.title + '. ' + result.error.fix );
 				}
 			} catch ( e ) {
 				setError( errorText( e ) );
@@ -427,8 +437,8 @@
 					h( 'strong', null, c.label ),
 					h( 'span', { className: 'in-muted' }, c.detail ) ) ) ) : null,
 				tokenError ? h( ErrorDetails, { error: tokenError } ) : null,
-				tokenError && tokenError.kind === 'private_host' ? h( 'p', null, h( Button, { onClick: () => { setAllowPrivate( true ); setTest( null ); } }, sprintf( /* translators: %s: host */ __( 'Allow %s', 'invoiceninja' ), base.replace( /^https?:\/\//, '' ) ) ) ) : null,
-				tokenError && tokenError.kind === 'redirect' && tokenError.location ? h( 'p', null, h( Button, { onClick: () => { setWhere( 'self' ); setUrl( tokenError.location.replace( /\/api\/v1.*$/, '' ) ); setTest( null ); } }, __( 'Use the address it redirects to', 'invoiceninja' ) ) ) : null,
+				tokenError && tokenError.kind === 'private_host' ? h( 'p', null, h( Button, { onClick: () => { setAllowPrivateHost( hostOf( url ) ); setTest( null ); } }, sprintf( /* translators: %s: host */ __( 'Allow %s', 'invoiceninja' ), hostOf( url ) ) ) ) : null,
+				tokenError && tokenError.kind === 'redirect' && tokenError.location ? h( 'p', null, h( Button, { onClick: () => { setWhere( 'self' ); setUrl( tokenError.location.replace( /\/api\/v1.*$/, '' ) ); setTest( null ); go( 0 ); } }, sprintf( /* translators: %s: host */ __( 'Check the address it redirects to (%s)', 'invoiceninja' ), hostOf( tokenError.location ) ) ) ) : null,
 				tokenError && tokenError.kind === 'plan_required' ? h( 'p', { className: 'in-row' },
 					h( External, { className: 'button button-primary', href: 'https://invoicing.co' }, __( 'Upgrade in Invoice Ninja', 'invoiceninja' ) ),
 					h( Button, { onClick: runTest }, __( "I've upgraded, check again", 'invoiceninja' ) ) ) : null );
@@ -590,7 +600,7 @@
 			setBusy( true );
 			setMessage( '' );
 			try {
-				const r = await api( '/connection', { method: 'POST', data: { url, token, allow_private: conn.state.allow_private, confirm_switch: !! confirmSwitch } } );
+				const r = await api( '/connection', { method: 'POST', data: { url, token, allow_private: !! conn.state.private_host && conn.state.private_host === hostOf( url ), confirm_switch: !! confirmSwitch } } );
 				setResult( r );
 				if ( r.saved ) {
 					setConn( r.connection );
@@ -762,22 +772,27 @@
 			setRunning( false );
 		};
 		const act = async ( action ) => {
-			if ( action === 'repair' || action === 'run_jobs' ) {
-				return repair();
-			}
-			if ( action === 'allow_orders' ) {
-				// eslint-disable-next-line no-alert
-				if ( window.confirm( __( 'Allow orders from this site? Checkout will create real invoices and take real payments.', 'invoiceninja' ) ) ) {
-					boot.connection = await api( '/environment', { method: 'POST', data: { action: 'allow' } } );
-					return run();
+			try {
+				if ( action === 'repair' || action === 'run_jobs' ) {
+					return await repair();
 				}
-				return;
-			}
-			if ( action === 'send_test' ) {
-				const r = await api( '/mail/test', { method: 'POST', data: {} } );
-				setMessage( r.sent ? sprintf( /* translators: %s: email */ __( 'Test email sent to %s.', 'invoiceninja' ), r.to ) : __( "WordPress couldn't send the email.", 'invoiceninja' ) );
+				if ( action === 'allow_orders' ) {
+					// eslint-disable-next-line no-alert
+					if ( window.confirm( __( 'Allow orders from this site? Checkout will create real invoices and take real payments.', 'invoiceninja' ) ) ) {
+						boot.connection = await api( '/environment', { method: 'POST', data: { action: 'allow' } } );
+						return await run();
+					}
+					return;
+				}
+				if ( action === 'send_test' ) {
+					const r = await api( '/mail/test', { method: 'POST', data: {} } );
+					setMessage( r.sent ? sprintf( /* translators: %s: email */ __( 'Test email sent to %s.', 'invoiceninja' ), r.to ) : __( "WordPress couldn't send the email.", 'invoiceninja' ) );
+				}
+			} catch ( e ) {
+				setMessage( errorText( e ) );
 			}
 		};
+		const canAct = ( action ) => ( action === 'allow_orders' ? boot.can.manageSite : boot.can.manage );
 		const actionLabels = {
 			setup: [ __( 'Start setup', 'invoiceninja' ), boot.urls.setup ],
 			reconnect: [ __( 'Fix connection', 'invoiceninja' ), boot.urls.settings ],
@@ -809,7 +824,7 @@
 							h( StatusIcon, { kind: c.status } ),
 							h( 'strong', null, c.label ),
 							h( 'span', null, c.detail ),
-							h( 'span', { className: 'in-checks__action' }, a ? ( a[ 1 ] ? ( /^https?:/.test( a[ 1 ] ) && a[ 1 ].indexOf( window.location.host ) < 0 ? h( External, { className: 'button', href: a[ 1 ] }, a[ 0 ] ) : h( 'a', { className: 'button', href: a[ 1 ] }, a[ 0 ] ) ) : h( Button, { onClick: () => act( c.action ) }, a[ 0 ] ) ) : null ) );
+							h( 'span', { className: 'in-checks__action' }, a && ( a[ 1 ] || canAct( c.action ) ) ? ( a[ 1 ] ? ( /^https?:/.test( a[ 1 ] ) && a[ 1 ].indexOf( window.location.host ) < 0 ? h( External, { className: 'button', href: a[ 1 ] }, a[ 0 ] ) : h( 'a', { className: 'button', href: a[ 1 ] }, a[ 0 ] ) ) : h( Button, { onClick: () => act( c.action ) }, a[ 0 ] ) ) : null ) );
 					} ),
 					passed.length ? h( 'li', { className: 'in-checks__toggle' },
 						h( 'button', { type: 'button', 'aria-expanded': showPassed ? 'true' : 'false', onClick: () => setShowPassed( ! showPassed ) },
@@ -841,9 +856,13 @@
 		}, [ filters.level, filters.channel, filters.page ] );
 		const pages = data ? Math.max( 1, Math.ceil( data.total / 50 ) ) : 1;
 		const clear = async () => {
-			await api( '/logs', { method: 'DELETE' } );
-			setConfirmClear( false );
-			load( filters );
+			try {
+				await api( '/logs', { method: 'DELETE' } );
+				setConfirmClear( false );
+				load( filters );
+			} catch ( e ) {
+				setError( errorText( e ) );
+			}
 		};
 		const levelTone = { error: 'error', warning: 'warning' };
 		const areas = [ '', 'connection', 'sync', 'checkout', 'webhooks', 'email', 'upgrade', 'queue' ];

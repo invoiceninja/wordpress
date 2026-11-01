@@ -35,6 +35,8 @@ def setup():
         lib.wp('user', 'update', 'admin', '--user_pass=admin', '--skip-email')
     lib.wp('rewrite', 'structure', '/%postname%/')
     lib.wp('plugin', 'activate', 'invoiceninja')
+    # localhost looks like a copy, so orders are paused until confirmed
+    lib.wp('invoiceninja', 'environment', 'confirm')
 
     for name, value in {
         'invoiceninja_api_url': 'https://in.test',

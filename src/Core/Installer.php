@@ -127,13 +127,12 @@ final class Installer {
 	 * Take the upgrade lock. Locks older than ten minutes are considered abandoned.
 	 */
 	private function lock(): bool {
-		$key = Options::PREFIX . 'install_lock';
-		if ( add_option( $key, time(), '', false ) ) {
+		if ( $this->options->addAtomic( 'install_lock', (string) time() ) ) {
 			return true;
 		}
-		if ( (int) get_option( $key, 0 ) < time() - 600 ) {
-			delete_option( $key );
-			return add_option( $key, time(), '', false );
+		if ( (int) $this->options->get( 'install_lock', 0 ) < time() - 600 ) {
+			$this->options->delete( 'install_lock' );
+			return $this->options->addAtomic( 'install_lock', (string) time() );
 		}
 		return false;
 	}

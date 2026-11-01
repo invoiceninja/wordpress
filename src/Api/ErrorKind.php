@@ -30,6 +30,8 @@ enum ErrorKind: string {
 	case InvalidResponse = 'invalid_response';
 	case VersionTooOld   = 'version_too_old';
 	case TokenUnreadable = 'token_unreadable';
+	case CompanyChanged  = 'company_changed';
+	case Locked          = 'locked';
 
 	/**
 	 * Whether trying again later can succeed without anyone changing anything.
@@ -42,7 +44,7 @@ enum ErrorKind: string {
 	 * Whether the connection itself is broken (as opposed to one request failing).
 	 */
 	public function breaksConnection(): bool {
-		return in_array( $this, array( self::Auth, self::PlanRequired, self::NonAdmin, self::TokenUnreadable, self::VersionTooOld, self::NotConfigured ), true );
+		return in_array( $this, array( self::Auth, self::PlanRequired, self::NonAdmin, self::TokenUnreadable, self::VersionTooOld, self::NotConfigured, self::CompanyChanged ), true );
 	}
 
 	/**
@@ -77,6 +79,8 @@ enum ErrorKind: string {
 			self::VersionTooOld   => __( 'Invoice Ninja is too old', 'invoiceninja' ),
 			self::TokenUnreadable => __( "Your saved token can't be read any more", 'invoiceninja' ),
 			self::NotConfigured   => __( 'Invoice Ninja is not connected yet', 'invoiceninja' ),
+			self::CompanyChanged  => __( 'The token now belongs to a different company', 'invoiceninja' ),
+			self::Locked          => __( 'The connection is set in wp-config.php', 'invoiceninja' ),
 		};
 	}
 
@@ -105,6 +109,8 @@ enum ErrorKind: string {
 			self::VersionTooOld   => sprintf( __( 'This plugin needs Invoice Ninja %s or newer. Update Invoice Ninja, then test again.', 'invoiceninja' ), \InvoiceNinja\Api\HttpClient::MIN_VERSION ),
 			self::TokenUnreadable => __( "WordPress's security keys changed, or the site moved, so the encrypted token can't be unlocked. Paste it again; nothing else is lost.", 'invoiceninja' ),
 			self::NotConfigured   => __( 'Run setup to connect.', 'invoiceninja' ),
+			self::CompanyChanged  => __( 'Nothing was changed. Confirm the switch in Settings → Connection, or put back the previous token.', 'invoiceninja' ),
+			self::Locked          => __( 'Edit INVOICENINJA_API_URL and INVOICENINJA_API_TOKEN in wp-config.php to change it.', 'invoiceninja' ),
 		};
 	}
 }

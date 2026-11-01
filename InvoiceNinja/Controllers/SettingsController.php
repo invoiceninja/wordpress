@@ -110,7 +110,9 @@ class SettingsController extends BaseController
          ->register();
       */
 
-      add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'addLink' ] );  
+      if ( ! \InvoiceNinja\Plugin::booted() ) {
+         add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'addLink' ] );
+      }
 
       add_filter( 'pre_update_option_invoiceninja_buy_now_label', [ $this, 'filterBuyNowLabel' ], 10, 2 );
       add_filter( 'pre_update_option_invoiceninja_add_to_cart_label', [ $this, 'filterAddToCartLabel' ], 10, 2 );

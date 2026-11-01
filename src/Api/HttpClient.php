@@ -35,12 +35,21 @@ final class HttpClient {
 	 */
 	private int $server_time = 0;
 
+
 	/**
-	 * Resolved private-host checks, per host.
+	 * Host and address checked by the private-host guard, used for the request.
 	 *
-	 * @var array<string, bool>
+	 * @var array{0: string, 1: string}|null
 	 */
-	private static array $private_hosts = array();
+	private ?array $pinned = null;
+
+	/**
+	 * Recent lookups (host => [time, addresses]); the checked address is pinned, so a short
+	 * cache can't be used for rebinding.
+	 *
+	 * @var array<string, array{0: int, 1: list<string>}>
+	 */
+	private static array $resolved = array();
 
 	/**
 	 * Constructor.
@@ -206,7 +215,24 @@ final class HttpClient {
 			$args['body']                    = (string) wp_json_encode( $body );
 		}
 
-		$raw = wp_remote_request( $url, $args );
+		$pin = null;
+		if ( null !== $this->pinned ) {
+			[ $pin_host, $pin_ip ] = $this->pinned;
+			$port                  = (int) ( wp_parse_url( $url, PHP_URL_PORT ) ?: ( str_starts_with( $url, 'https:' ) ? 443 : 80 ) );
+			$pin                   = static function ( $handle ) use ( $pin_host, $pin_ip, $port ): void {
+				if ( defined( 'CURLOPT_RESOLVE' ) ) {
+					curl_setopt( $handle, CURLOPT_RESOLVE, array( $pin_host . ':' . $port . ':' . ( str_contains( $pin_ip, ':' ) ? '[' . $pin_ip . ']' : $pin_ip ) ) ); // phpcs:ignore WordPress.WP.AlternativeFunctions.curl_curl_setopt -- pins the checked address.
+				}
+			};
+			add_action( 'http_api_curl', $pin );
+		}
+		try {
+			$raw = wp_remote_request( $url, $args );
+		} finally {
+			if ( null !== $pin ) {
+				remove_action( 'http_api_curl', $pin );
+			}
+		}
 		if ( is_wp_error( $raw ) ) {
 			throw self::transportError( $raw->get_error_message() );
 		}
@@ -301,43 +327,125 @@ final class HttpClient {
 	}
 
 	/**
-	 * Refuse private and reserved addresses unless allowed.
+	 * Refuse private and reserved addresses unless allowed, and pin the checked address so
+	 * DNS can't change between the check and the request (rebinding).
 	 *
 	 * @throws ApiException For a private host that isn't allowed.
 	 */
 	private function guardPrivateHost(): void {
+		$this->pinned = null;
 		if ( $this->allow_private ) {
 			return;
 		}
 		$host = BaseUrl::host( $this->base );
-		if ( ! isset( self::$private_hosts[ $host ] ) ) {
-			self::$private_hosts[ $host ] = self::isPrivate( $host );
-		}
-		if ( self::$private_hosts[ $host ] ) {
+		$ips  = self::resolve( $host );
+		if ( self::isPrivateSet( $host, $ips ) ) {
 			throw new ApiException( ErrorKind::PrivateHost, $host . ' resolves to a private or reserved address' );
+		}
+		if ( $ips && ! filter_var( trim( $host, '[]' ), FILTER_VALIDATE_IP ) ) {
+			$this->pinned = array( $host, $ips[0] );
 		}
 	}
 
 	/**
-	 * Whether a host is, or resolves only to, private or reserved addresses.
+	 * Every IPv4 and IPv6 address a host resolves to.
+	 *
+	 * @param string $host Host.
+	 * @return list<string>
+	 */
+	public static function resolve( string $host ): array {
+		$host = trim( strtolower( $host ), '[]' );
+		if ( filter_var( $host, FILTER_VALIDATE_IP ) ) {
+			return array( $host );
+		}
+		/**
+		 * Short-circuit DNS resolution for the private-network check (return a list of addresses).
+		 *
+		 * @since 2.0.0
+		 * @param list<string>|null $ips  Addresses, or null to resolve normally.
+		 * @param string            $host Host.
+		 */
+		$pre = apply_filters( 'invoiceninja_pre_resolve_host', null, $host );
+		if ( is_array( $pre ) ) {
+			return array_values( array_map( 'strval', $pre ) );
+		}
+		if ( isset( self::$resolved[ $host ] ) && self::$resolved[ $host ][0] > time() - 60 ) {
+			return self::$resolved[ $host ][1];
+		}
+		$ips     = array();
+		$records = function_exists( 'dns_get_record' ) ? @dns_get_record( $host, DNS_A | DNS_AAAA ) : false; // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged -- unresolvable hosts are reported by the request.
+		foreach ( is_array( $records ) ? $records : array() as $record ) {
+			if ( isset( $record['ip'] ) ) {
+				$ips[] = (string) $record['ip'];
+			} elseif ( isset( $record['ipv6'] ) ) {
+				$ips[] = (string) $record['ipv6'];
+			}
+		}
+		if ( ! $ips ) {
+			$v4  = gethostbynamel( $host );
+			$ips = is_array( $v4 ) ? $v4 : array();
+		}
+		$ips                     = array_values( array_unique( $ips ) );
+		self::$resolved[ $host ] = array( time(), $ips );
+		return $ips;
+	}
+
+	/**
+	 * Whether a host is, or resolves to any, private or reserved address.
 	 *
 	 * @param string $host Host.
 	 */
 	public static function isPrivate( string $host ): bool {
+		return self::isPrivateSet( $host, self::resolve( $host ) );
+	}
+
+	/**
+	 * Whether a host or any of its addresses is private.
+	 *
+	 * @param string       $host Host.
+	 * @param list<string> $ips  Addresses.
+	 */
+	private static function isPrivateSet( string $host, array $ips ): bool {
 		$host = trim( strtolower( $host ), '[]' );
 		if ( 'localhost' === $host || str_ends_with( $host, '.localhost' ) ) {
 			return true;
 		}
-		$resolved = filter_var( $host, FILTER_VALIDATE_IP ) ? array( $host ) : gethostbynamel( $host );
-		$ips      = is_array( $resolved ) ? $resolved : array();
-		if ( ! $ips ) {
-			return false; // Unresolvable: the request reports a DNS error instead.
-		}
 		foreach ( $ips as $ip ) {
-			if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
-				return false;
+			if ( self::privateIp( $ip ) ) {
+				return true;
 			}
 		}
-		return true;
+		return false; // Unresolvable: the request reports a DNS error instead.
+	}
+
+	/**
+	 * Whether one address is private, reserved, shared or otherwise not on the public internet.
+	 *
+	 * @param string $ip Address.
+	 */
+	public static function privateIp( string $ip ): bool {
+		$ip = strtolower( trim( $ip, '[]' ) );
+		if ( preg_match( '/^(?:::ffff:|::)(\d+\.\d+\.\d+\.\d+)$/', $ip, $m ) ) {
+			$ip = $m[1]; // IPv4-mapped or -compatible IPv6.
+		}
+		if ( ! filter_var( $ip, FILTER_VALIDATE_IP ) || ! filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
+			return true;
+		}
+		if ( filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4 ) ) {
+			$long = (int) ip2long( $ip );
+			foreach ( array( array( '100.64.0.0', 10 ), array( '198.18.0.0', 15 ), array( '192.0.0.0', 24 ), array( '0.0.0.0', 8 ) ) as [ $net, $bits ] ) {
+				$mask = -1 << ( 32 - $bits );
+				if ( ( $long & $mask ) === ( (int) ip2long( $net ) & $mask ) ) {
+					return true;
+				}
+			}
+			return false;
+		}
+		$bin = (string) inet_pton( $ip );
+		// Also private: NAT64 prefix, unique local, link local and documentation ranges.
+		return substr( $bin, 0, 12 ) === substr( (string) inet_pton( '64:ff9b::' ), 0, 12 )
+			|| ( ord( $bin[0] ) & 0xfe ) === 0xfc
+			|| ( ord( $bin[0] ) === 0xfe && ( ord( $bin[1] ) & 0xc0 ) === 0x80 )
+			|| substr( $bin, 0, 4 ) === substr( (string) inet_pton( '2001:db8::' ), 0, 4 );
 	}
 }

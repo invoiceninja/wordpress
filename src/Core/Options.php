@@ -73,6 +73,28 @@ final class Options {
 	}
 
 	/**
+	 * Add an option only if it doesn't exist, atomically (add_option() checks then inserts,
+	 * so two concurrent requests can both "win"). Returns whether this call created it.
+	 *
+	 * @param string $key   Key without the prefix.
+	 * @param string $value Value.
+	 */
+	public function addAtomic( string $key, string $value ): bool {
+		global $wpdb;
+		$name = self::PREFIX . $key;
+		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'query' ) || ! isset( $wpdb->options ) ) {
+			return add_option( $name, $value, '', false );
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off')", $name, $value ) );
+		$created = 1 === (int) $wpdb->rows_affected;
+		wp_cache_delete( $name, 'options' );
+		wp_cache_delete( 'notoptions', 'options' );
+		wp_cache_delete( 'alloptions', 'options' );
+		return $created;
+	}
+
+	/**
 	 * Delete a raw option.
 	 *
 	 * @param string $key Key without the prefix.

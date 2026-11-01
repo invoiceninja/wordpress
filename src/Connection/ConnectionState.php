@@ -10,6 +10,7 @@ declare(strict_types=1);
 namespace InvoiceNinja\Connection;
 
 use InvoiceNinja\Api\ApiException;
+use InvoiceNinja\Api\BaseUrl;
 use InvoiceNinja\Core\Options;
 
 /**
@@ -29,7 +30,7 @@ final class ConnectionState {
 	/**
 	 * The full state with defaults.
 	 *
-	 * @return array{status: string, company: array<string, mixed>, version: string, admin: bool, webhooks: bool, gateways: list<string>, allow_private: bool, checked_at: int, connected_at: int, error: array{kind: string, technical: string, at: int}|null}
+	 * @return array{status: string, company: array<string, mixed>, version: string, admin: bool, webhooks: bool, gateways: list<string>, private_host: string, allow_private: bool, checked_at: int, connected_at: int, error: array{kind: string, technical: string, at: int}|null}
 	 */
 	public function get(): array {
 		$state = $this->options->get( self::OPTION, array() );
@@ -41,7 +42,8 @@ final class ConnectionState {
 			'admin'         => (bool) ( $state['admin'] ?? false ),
 			'webhooks'      => (bool) ( $state['webhooks'] ?? false ),
 			'gateways'      => array_values( array_map( 'strval', (array) ( $state['gateways'] ?? array() ) ) ),
-			'allow_private' => (bool) ( $state['allow_private'] ?? false ),
+			'private_host'  => (string) ( $state['private_host'] ?? '' ),
+			'allow_private' => '' !== (string) ( $state['private_host'] ?? '' ),
 			'checked_at'    => (int) ( $state['checked_at'] ?? 0 ),
 			'connected_at'  => (int) ( $state['connected_at'] ?? 0 ),
 			'error'         => is_array( $state['error'] ?? null ) ? array(
@@ -50,6 +52,16 @@ final class ConnectionState {
 				'at'        => (int) ( $state['error']['at'] ?? 0 ),
 			) : null,
 		);
+	}
+
+	/**
+	 * Whether the admin allowed this address's host to be on a private network.
+	 *
+	 * @param string $url Base URL.
+	 */
+	public function allowsPrivate( string $url ): bool {
+		$host = $this->get()['private_host'];
+		return '' !== $host && '' !== $url && strtolower( BaseUrl::host( $url ) ) === $host;
 	}
 
 	/**
@@ -67,23 +79,23 @@ final class ConnectionState {
 	 * @param bool                 $admin    Admin token.
 	 * @param bool                 $webhooks Webhooks allowed.
 	 * @param list<string>         $gateways Gateway labels.
-	 * @param bool                 $allow_private Private host allowed.
+	 * @param string               $private_host  Host allowed to be private, or ''.
 	 */
-	public function markConnected( array $company, string $version, bool $admin, bool $webhooks, array $gateways, bool $allow_private ): void {
+	public function markConnected( array $company, string $version, bool $admin, bool $webhooks, array $gateways, string $private_host ): void {
 		$previous = $this->get();
 		$this->options->set(
 			self::OPTION,
 			array(
-				'status'        => 'connected',
-				'company'       => $company,
-				'version'       => $version,
-				'admin'         => $admin,
-				'webhooks'      => $webhooks,
-				'gateways'      => $gateways,
-				'allow_private' => $allow_private,
-				'checked_at'    => time(),
-				'connected_at'  => 'connected' === $previous['status'] && $previous['connected_at'] ? $previous['connected_at'] : time(),
-				'error'         => null,
+				'status'       => 'connected',
+				'company'      => $company,
+				'version'      => $version,
+				'admin'        => $admin,
+				'webhooks'     => $webhooks,
+				'gateways'     => $gateways,
+				'private_host' => strtolower( $private_host ),
+				'checked_at'   => time(),
+				'connected_at' => 'connected' === $previous['status'] && $previous['connected_at'] ? $previous['connected_at'] : time(),
+				'error'        => null,
 			),
 			true
 		);

@@ -88,7 +88,7 @@ final class Diagnostics {
 		$live = $network && '' !== $url && is_string( $token ) && '' !== $token;
 
 		if ( $live ) {
-			$test = $p->connection->test( $url, $token, $state['allow_private'] );
+			$test = $p->connection->test( $url, $token, $p->state->allowsPrivate( $url ) );
 			$ips  = filter_var( $host, FILTER_VALIDATE_IP ) ? array( $host ) : gethostbynamel( $host );
 			$dns  = 'dns' === ( $test['error']['kind'] ?? '' );
 			$add(
@@ -124,7 +124,17 @@ final class Diagnostics {
 					$add( $map[ $check['id'] ][0], $map[ $check['id'] ][1], $status, $detail, 'fail' === $status ? 'reconnect' : '' );
 				}
 			}
+			$switched = false;
 			if ( $test['ok'] ) {
+				try {
+					$p->connection->guardCompany( $state, $test['company'] );
+				} catch ( \InvoiceNinja\Api\ApiException $e ) {
+					$switched = true;
+					$p->state->markError( $e );
+					$add( 'company', __( 'Company', 'invoiceninja' ), 'fail', $e->kind->title() . '. ' . $e->kind->fix(), 'reconnect' );
+				}
+			}
+			if ( $test['ok'] && ! $switched ) {
 				$company = $test['company'];
 				$add(
 					'company',
@@ -148,7 +158,7 @@ final class Diagnostics {
 						: __( "No payment gateway yet, so customers can't pay online.", 'invoiceninja' ),
 					$test['gateways'] ? '' : 'gateways'
 				);
-				$this->plugin->state->markConnected( $company, $test['version'], true, true, $test['gateways'], $state['allow_private'] );
+				$this->plugin->state->markConnected( $company, $test['version'], true, true, $test['gateways'], $state['private_host'] );
 				$this->plugin->notifications->connectionRecovered();
 			}
 		} elseif ( '' !== $url ) {

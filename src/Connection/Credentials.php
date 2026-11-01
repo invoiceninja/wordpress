@@ -35,15 +35,15 @@ final class Credentials {
 	 * Whether wp-config.php sets the connection.
 	 */
 	public function locked(): bool {
-		return defined( 'INVOICENINJA_API_URL' ) || defined( 'INVOICENINJA_API_TOKEN' );
+		return defined( 'INVOICENINJA_API_URL' ) && defined( 'INVOICENINJA_API_TOKEN' );
 	}
 
 	/**
 	 * Where the credentials come from: constants, options or none.
 	 */
 	public function source(): string {
-		if ( $this->locked() ) {
-			return 'constants';
+		if ( defined( 'INVOICENINJA_API_TOKEN' ) || defined( 'INVOICENINJA_API_URL' ) ) {
+			return '' !== $this->url() && $this->hasToken() ? 'constants' : 'none';
 		}
 		return '' !== $this->url() && '' !== (string) $this->options->get( 'api_token', '' ) ? 'options' : 'none';
 	}
@@ -95,11 +95,12 @@ final class Credentials {
 	 * @param string $token Plain token.
 	 */
 	public function save( string $url, #[\SensitiveParameter] string $token ): void {
-		if ( $this->locked() ) {
-			return;
+		if ( ! defined( 'INVOICENINJA_API_URL' ) ) {
+			$this->options->set( 'api_url', $url, true );
 		}
-		$this->options->set( 'api_url', $url, true );
-		$this->options->set( 'api_token', $this->secrets->encrypt( $token ) );
+		if ( ! defined( 'INVOICENINJA_API_TOKEN' ) ) {
+			$this->options->set( 'api_token', $this->secrets->encrypt( $token ) );
+		}
 	}
 
 	/**

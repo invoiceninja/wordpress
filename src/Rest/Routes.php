@@ -109,7 +109,7 @@ final class Routes {
 		if ( $error ) {
 			return $error;
 		}
-		return new \WP_REST_Response( $this->plugin->connection->test( $url, $token, (bool) $request->get_param( 'allow_private' ) ) );
+		return new \WP_REST_Response( $this->plugin->connection->test( $url, $token, $this->allowPrivate( $request ) ) );
 	}
 
 	/**
@@ -125,7 +125,7 @@ final class Routes {
 		if ( $error ) {
 			return $error;
 		}
-		$result               = $this->plugin->connection->connect( $url, $token, (bool) $request->get_param( 'allow_private' ), (bool) $request->get_param( 'confirm_switch' ) );
+		$result               = $this->plugin->connection->connect( $url, $token, $this->allowPrivate( $request ), (bool) $request->get_param( 'confirm_switch' ) );
 		$result['connection'] = $this->connectionPayload();
 		return new \WP_REST_Response( $result );
 	}
@@ -202,6 +202,9 @@ final class Routes {
 				/* translators: %s: email address */
 				return $this->error( 'invalid_email', sprintf( __( '%s is not a valid email address.', 'invoiceninja' ), (string) $changes['email'][ $field ] ), 400 );
 			}
+		}
+		if ( ! current_user_can( 'manage_options' ) && ( isset( $changes['delete_data_on_uninstall'] ) || isset( $changes['email'] ) || isset( $changes['notifications']['recipients'] ) ) ) {
+			return $this->error( 'forbidden', __( 'Only site administrators can change email addresses or uninstall settings.', 'invoiceninja' ), 403 );
 		}
 		$saved = $this->plugin->options->saveSettings( $changes );
 		if ( 'debug' === ( $changes['log_level'] ?? '' ) ) {
@@ -348,6 +351,19 @@ final class Routes {
 			return array( '', '', $this->error( 'invalid_url', __( "That doesn't look like a web address.", 'invoiceninja' ), 400 ) );
 		}
 		return array( $url, $token, null );
+	}
+
+	/**
+	 * Whether this request may allow a private host. On multisite only network admins can,
+	 * so a subsite admin can't aim the site at the internal network.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	private function allowPrivate( \WP_REST_Request $request ): bool {
+		if ( ! $request->get_param( 'allow_private' ) ) {
+			return false;
+		}
+		return ! is_multisite() || current_user_can( 'manage_network_options' );
 	}
 
 	/**

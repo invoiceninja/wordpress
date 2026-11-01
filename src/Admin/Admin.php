@@ -65,7 +65,6 @@ final class Admin {
 		add_submenu_page( $connected ? 'options.php' : 'invoiceninja', __( 'Set up Invoice Ninja', 'invoiceninja' ), __( 'Setup', 'invoiceninja' ), 'manage_options', 'invoiceninja-setup', array( $this, 'render' ) );
 		add_submenu_page( 'invoiceninja', __( 'Settings', 'invoiceninja' ), __( 'Settings', 'invoiceninja' ), Capabilities::MANAGE, 'invoiceninja-settings', array( $this, 'render' ) );
 		add_submenu_page( 'invoiceninja', __( 'Status', 'invoiceninja' ), __( 'Status', 'invoiceninja' ), Capabilities::VIEW, 'invoiceninja-status', array( $this, 'render' ) );
-
 	}
 
 	/**

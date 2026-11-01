@@ -187,11 +187,15 @@ def portal_sso_for_matching_contact():
 
 @test
 def failed_connection_test_keeps_the_token():
-    option('invoiceninja_api_token', 'badtoken123456')
-    check(wp('option', 'get', 'invoiceninja_api_token') == 'badtoken123456', 'token must be kept (#3 #8 #14)')
-    check(wp('option', 'get', 'invoiceninja_profile', check_ok=False) in ('', 'false'), 'profile should be cleared')
-    option('invoiceninja_api_token', 'goodtoken1234567890')
-    check('Mock Company' in wp('option', 'get', 'invoiceninja_profile'), 'profile should reload with a good token')
+    b = Browser().login('admin', 'admin').rest_nonce()
+    before = wp('option', 'get', 'invoiceninja_api_token')
+    _, r = b.api('POST', '/connection', {'url': 'https://in.test', 'token': 'badtoken123456'})
+    check(not r['saved'] and r['error']['kind'] == 'auth', 'a bad token is reported, not saved (#3 #8 #14)', r)
+    check(wp('option', 'get', 'invoiceninja_api_token') == before, 'the working token is kept')
+    wp('option', 'update', 'invoiceninja_profile', '')
+    _, r = b.api('POST', '/connection', {'url': 'https://in.test', 'token': 'goodtoken1234567890'})
+    check(r['saved'], 'good token saved', r)
+    check('Mock Company' in wp('option', 'get', 'invoiceninja_profile'), '1.x profile reloads after connecting')
 
 
 @test
@@ -246,7 +250,7 @@ def legacy_code_uses_the_decrypted_2x_token():
 @test
 def inventory_tracking_limits_and_out_of_stock():
     option('in_mock_track_inventory', '1')
-    option('invoiceninja_api_token', 'goodtoken1234567892')  # reloads the profile
+    wp_eval("do_action('invoiceninja_connected', array());")  # reloads the 1.x profile
     try:
         set_mode('multiple')
         _, _, html = Browser().get('/stock/')

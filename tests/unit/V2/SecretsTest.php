@@ -48,6 +48,15 @@ class SecretsTest extends TestCase
         $this->assertNotSame( $a, $secrets->get( 'device_secret' ) );
     }
 
+    public function testDamagedSecretIsReplaced()
+    {
+        $this->options['invoiceninja_cart_secret'] = 'short';
+        $value = ( new Secrets( new Options() ) )->get( 'cart_secret' );
+
+        $this->assertMatchesRegularExpression( '/^[0-9a-f]{64}$/', $value );
+        $this->assertSame( $value, $this->options['invoiceninja_cart_secret'] );
+    }
+
     public function testUnknownPurposeIsRejected()
     {
         $this->expectException( \InvalidArgumentException::class );

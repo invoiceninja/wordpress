@@ -130,6 +130,9 @@ final class Command {
 	 * @param array<string, string> $assoc Options.
 	 */
 	public function connect( array $args, array $assoc ): void {
+		if ( $this->plugin->credentials->locked() ) {
+			\WP_CLI::error( 'The connection is set in wp-config.php (INVOICENINJA_API_URL and INVOICENINJA_API_TOKEN). Change it there.' );
+		}
 		$token = trim( (string) stream_get_contents( STDIN ) );
 		if ( '' === $token ) {
 			\WP_CLI::error( 'Pipe the API token on STDIN, e.g. wp invoiceninja connect https://invoicing.co < token.txt' );

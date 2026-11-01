@@ -214,8 +214,12 @@ final class Logger {
 			}
 		}
 		$max_id = (int) $wpdb->get_var( "SELECT MAX(id) FROM {$table}" );
-		if ( $max_id > self::MAX_ROWS ) {
-			$deleted += (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE id <= %d LIMIT 10000", $max_id - self::MAX_ROWS ) );
+		for ( $i = 0; $max_id > self::MAX_ROWS && $i < 50; $i++ ) {
+			$n        = (int) $wpdb->query( $wpdb->prepare( "DELETE FROM {$table} WHERE id <= %d LIMIT 10000", $max_id - self::MAX_ROWS ) );
+			$deleted += $n;
+			if ( $n < 10000 ) {
+				break;
+			}
 		}
 		// phpcs:enable
 		return $deleted;
@@ -226,7 +230,10 @@ final class Logger {
 	 */
 	public function clear(): void {
 		global $wpdb;
-		$wpdb->query( 'TRUNCATE TABLE ' . self::table() ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery -- table name is ours.
+		// phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery -- table name is ours.
+		if ( false === $wpdb->query( 'TRUNCATE TABLE ' . self::table() ) ) {
+			$wpdb->query( 'DELETE FROM ' . self::table() ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared, WordPress.DB.DirectDatabaseQuery -- hosts without DROP privilege.
+		}
 	}
 
 	/**

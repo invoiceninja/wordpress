@@ -19,6 +19,22 @@ class BaseApi
 
         $url = self::getBaseUrl() . '/api/v1/' . $route;
 
+        if ( \InvoiceNinja\Plugin::booted() ) {
+            $plugin = \InvoiceNinja\Plugin::instance();
+
+            // A staging copy or moved site must never create real invoices or clients
+            if ( $method !== 'GET' && strpos( $route, 'companies/current' ) !== 0 && ! $plugin->environment->writesAllowed() ) {
+                $plugin->logger->warning( 'checkout', 'Blocked a write to Invoice Ninja because orders are paused on this site', [ 'route' => strtok( $route, '?' ) ] );
+
+                return null;
+            }
+
+            $base = self::getBaseUrl();
+            if ( ! $plugin->state->allowsPrivate( $base ) && \InvoiceNinja\Api\HttpClient::isPrivate( \InvoiceNinja\Api\BaseUrl::host( $base ) ) ) {
+                return null;
+            }
+        }
+
         $args = array(
             'timeout' => '30',
             'redirection' => 0,

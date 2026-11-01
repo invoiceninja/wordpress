@@ -53,7 +53,7 @@ final class Queue {
 				'attempt' => $attempt,
 			),
 		);
-		if ( $unique && as_has_scheduled_action( $hook, null, self::GROUP ) ) {
+		if ( $unique && as_has_scheduled_action( $hook, $args, self::GROUP ) ) {
 			return 0;
 		}
 		return $delay > 0
@@ -148,6 +148,7 @@ final class Queue {
 		);
 		$done     = as_get_scheduled_actions(
 			array(
+				'group'    => self::GROUP,
 				'status'   => 'complete',
 				'per_page' => 1,
 				'orderby'  => 'date',
