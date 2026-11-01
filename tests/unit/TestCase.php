@@ -20,6 +20,12 @@ abstract class TestCase extends PolyfillTestCase
     /** @var string */
     protected $home_url = 'https://shop.example.com';
 
+    /** @var array<string, mixed> */
+    protected $transients = [];
+
+    /** @var array<int, array{to: mixed, subject: string, body: string}> */
+    protected $mails = [];
+
     /** @var string */
     protected $environment_type = 'production';
 
@@ -89,6 +95,29 @@ abstract class TestCase extends PolyfillTestCase
         } );
         Functions\when( 'get_current_user_id' )->justReturn( 1 );
         Functions\when( 'do_action' )->justReturn( null );
+        $this->transients = [];
+        $this->mails      = [];
+        Functions\when( 'get_transient' )->alias( function ( $name ) {
+            return $this->transients[ $name ] ?? false;
+        } );
+        Functions\when( 'set_transient' )->alias( function ( $name, $value ) {
+            $this->transients[ $name ] = $value;
+            return true;
+        } );
+        Functions\when( 'delete_transient' )->alias( function ( $name ) {
+            unset( $this->transients[ $name ] );
+            return true;
+        } );
+        Functions\when( 'wp_mail' )->alias( function ( $to, $subject, $body ) {
+            $this->mails[] = compact( 'to', 'subject', 'body' );
+            return true;
+        } );
+        Functions\when( 'is_email' )->alias( function ( $email ) {
+            return (bool) filter_var( $email, FILTER_VALIDATE_EMAIL );
+        } );
+        Functions\when( 'wp_specialchars_decode' )->returnArg();
+        Functions\stubEscapeFunctions();
+        Functions\when( 'esc_html__' )->returnArg();
         // No real DNS in unit tests: names resolve to nothing (IP literals are checked directly)
         \Brain\Monkey\Filters\expectApplied( 'invoiceninja_pre_resolve_host' )->zeroOrMoreTimes()->andReturn( [] );
     }

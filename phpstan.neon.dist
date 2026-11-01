@@ -10,3 +10,6 @@ parameters:
 	bootstrapFiles:
 		- tests/phpstan/bootstrap.php
 	treatPhpDocTypesAsCertain: false
+	dynamicConstantNames:
+		- COOKIEPATH
+		- COOKIE_DOMAIN

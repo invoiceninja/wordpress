@@ -314,3 +314,12 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
         wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
                 " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"
                 " wp_delete_post($p->ID, true); $wpdb->delete($wpdb->prefix . 'invoiceninja_map', array('in_type' => 'product', 'in_id' => $id)); } }")
+
+
+@test
+def order_numbers_are_unique_and_readable():
+    out = wp_eval("$n = new InvoiceNinja\\Commerce\\OrderNumbers(InvoiceNinja\\Plugin::instance()->options, InvoiceNinja\\Plugin::instance()->secrets); echo $n->next(), ' ', $n->next();")
+    a, b = out.split()
+    code = wp('option', 'get', 'invoiceninja_site_code')
+    check(a.startswith('WEB-' + code + '-') and b.startswith('WEB-' + code + '-'), 'prefix and site code', out)
+    check(int(b.rsplit('-', 1)[1]) == int(a.rsplit('-', 1)[1]) + 1, 'sequence increments', out)
