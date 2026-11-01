@@ -8,6 +8,8 @@ from lib import (Browser, IN_BASE, api_calls, check, cart_nonce, describe, form_
                  mock_log, option, reset_mock_log, selected_quantities, wp, wp_eval)
 
 TESTS = []
+INVITE_LINKS = ['https://in.test/client/invoice/INVITE%d' % n for n in range(1, 200)]
+INVITE_LINK = INVITE_LINKS[0]
 
 
 def test(fn):
@@ -136,7 +138,7 @@ def buy_now(user):
 @test
 def buy_now_existing_client_with_plus_email():
     status, location, calls = buy_now('member')
-    check(location == 'https://in.test/client/invoice/INVITE1', 'should redirect to the invoice', '%s %s' % (status, location))
+    check(location in INVITE_LINKS, 'should redirect to the invoice', '%s %s' % (status, location))
     urls = [c['url'] for c in calls]
     check(IN_BASE + 'clients?email=a%2Bb%40x.com' in urls, 'email must be URL-encoded (#11 duplicates)', describe(calls))
     invoice = [c for c in calls if c['url'].startswith(IN_BASE + 'invoices')]
@@ -147,7 +149,7 @@ def buy_now_existing_client_with_plus_email():
 @test
 def buy_now_new_client_is_created_correctly():
     status, location, calls = buy_now('newbie')
-    check(location == 'https://in.test/client/invoice/INVITE1', 'should redirect to the invoice', '%s %s' % (status, location))
+    check(location in INVITE_LINKS, 'should redirect to the invoice', '%s %s' % (status, location))
     created = [c for c in calls if c['method'] == 'POST' and c['url'] == IN_BASE + 'clients']
     check(created and '"email":"newbie@x.com"' in created[0]['body'] and '"first_name":"New"' in created[0]['body'],
           'client should be created from the WP user', describe(calls))
@@ -168,7 +170,7 @@ def multi_item_checkout_creates_one_invoice():
     status, location, _ = browser.post('/shop/', {'cart_action': 'checkout',
                                                   'invoiceninja_nonce': form_nonce(html, 'value="checkout"')})
     calls = api_calls()
-    check(location == 'https://in.test/client/invoice/INVITE1', 'checkout should redirect to the invoice', '%s %s' % (status, location))
+    check(location in INVITE_LINKS, 'checkout should redirect to the invoice', '%s %s' % (status, location))
     invoices = [c for c in calls if c['url'].startswith(IN_BASE + 'invoices')]
     check(len(invoices) == 1 and '"quantity":2' in invoices[0]['body'], 'exactly one invoice with quantity 2', describe(calls))
 

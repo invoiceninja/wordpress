@@ -129,7 +129,7 @@ class Browser:
 
     def api(self, method, path, data=None):
         body = json.dumps(data).encode() if data is not None else None
-        headers = {'Content-Type': 'application/json'}
+        headers = {'Content-Type': 'application/json', 'Origin': BASE}
         if getattr(self, 'nonce', ''):
             headers['X-WP-Nonce'] = self.nonce
         req = urllib.request.Request(BASE + '/wp-json/invoiceninja/v1' + path, data=body, headers=headers, method=method)

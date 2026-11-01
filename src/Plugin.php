@@ -12,6 +12,13 @@ namespace InvoiceNinja;
 use InvoiceNinja\Admin\Admin;
 use InvoiceNinja\Catalog\ImageSideloader;
 use InvoiceNinja\Catalog\ProductSync;
+use InvoiceNinja\Commerce\Cart;
+use InvoiceNinja\Commerce\Checkout;
+use InvoiceNinja\Commerce\OrderNumbers;
+use InvoiceNinja\Commerce\Orders;
+use InvoiceNinja\Commerce\OrderService;
+use InvoiceNinja\Verification\DeviceRemember;
+use InvoiceNinja\Verification\EmailCode;
 use InvoiceNinja\CLI\Command;
 use InvoiceNinja\Connection\ConnectionService;
 use InvoiceNinja\Connection\ConnectionState;
@@ -57,6 +64,10 @@ final class Plugin {
 	public readonly Notifications $notifications;
 	public readonly Mapping $mapping;
 	public readonly ProductSync $products;
+	public readonly Orders $orders;
+	public readonly Cart $cart;
+	public readonly OrderService $orderService;
+	public readonly Checkout $checkout;
 
 	/**
 	 * Constructor.
@@ -77,6 +88,18 @@ final class Plugin {
 		$this->notifications = new Notifications( $this->options, $this->mailer, $this->logger );
 		$this->mapping       = new Mapping();
 		$this->products      = new ProductSync( $this, $this->mapping );
+		$this->orders        = new Orders();
+		$this->cart          = new Cart( $this->secrets, $this->mapping );
+		$this->orderService  = new OrderService( $this, $this->orders );
+		$this->checkout      = new Checkout(
+			$this,
+			$this->cart,
+			$this->orders,
+			$this->orderService,
+			new OrderNumbers( $this->options, $this->secrets ),
+			new EmailCode( $this->secrets, $this->mailer, $this->logger ),
+			new DeviceRemember( $this->secrets )
+		);
 		$this->diagnostics   = new Diagnostics( $this );
 	}
 
@@ -156,6 +179,8 @@ final class Plugin {
 			}
 		);
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
+		$this->queue->handle( 'invoiceninja_place_order', array( $this->orderService, 'retry' ) );
+		add_action( 'invoiceninja_order_placed', array( $this->checkout, 'emailBuyer' ) );
 		$this->queue->handle( 'invoiceninja_sideload_image', array( new ImageSideloader( $this ), 'handle' ) );
 		add_action(
 			'invoiceninja_connected',

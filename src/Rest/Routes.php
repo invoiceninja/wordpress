@@ -21,7 +21,7 @@ final class Routes {
 
 	public const NS = 'invoiceninja/v1';
 
-	public const PUBLIC_ROUTES = array( '/ping' );
+	public const PUBLIC_ROUTES = array( '/ping', '/cart', '/cart/items', '/checkout/start', '/checkout/confirm', '/orders/(?P<number>[A-Za-z0-9-]+)' );
 
 	/**
 	 * Constructor.
@@ -39,6 +39,13 @@ final class Routes {
 		$view        = static fn(): bool => current_user_can( Capabilities::VIEW );
 
 		$this->route( '/ping', 'GET', array( $this, 'ping' ), '__return_true' );
+
+		$same_site = array( $this, 'sameSite' );
+		$this->route( '/cart', 'GET', array( $this, 'getCart' ), '__return_true' );
+		$this->route( '/cart/items', 'POST', array( $this, 'setCartItem' ), $same_site );
+		$this->route( '/checkout/start', 'POST', array( $this, 'checkoutStart' ), $same_site );
+		$this->route( '/checkout/confirm', 'POST', array( $this, 'checkoutConfirm' ), $same_site );
+		$this->route( '/orders/(?P<number>[A-Za-z0-9-]+)', 'GET', array( $this, 'orderStatus' ), '__return_true' );
 
 		$this->route( '/connection', 'GET', array( $this, 'getConnection' ), $view );
 		$this->route( '/connection', 'POST', array( $this, 'saveConnection' ), $manage_site );
@@ -74,7 +81,8 @@ final class Routes {
 	 * @throws \LogicException When a non-public route has an open permission.
 	 */
 	private function route( string $path, string $method, callable $callback, callable $permission ): void {
-		if ( '__return_true' === $permission && ! in_array( $path, self::PUBLIC_ROUTES, true ) ) {
+		$public = '__return_true' === $permission || ( is_array( $permission ) && 'sameSite' === $permission[1] );
+		if ( $public && ! in_array( $path, self::PUBLIC_ROUTES, true ) ) {
 			throw new \LogicException( 'Route ' . esc_html( $path ) . ' is not in the public allowlist' );
 		}
 		register_rest_route(
@@ -86,6 +94,97 @@ final class Routes {
 				'permission_callback' => $permission,
 			)
 		);
+	}
+
+	/**
+	 * Public writes must come from this site's own pages (Origin or Referer), which protects
+	 * the cookie-based cart without nonces that page caches would break.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function sameSite( \WP_REST_Request $request ): bool {
+		$source = (string) ( $request->get_header( 'origin' ) ?? '' );
+		if ( '' === $source ) {
+			$source = (string) ( $request->get_header( 'referer' ) ?? '' );
+		}
+		$host = strtolower( (string) wp_parse_url( $source, PHP_URL_HOST ) );
+		return '' !== $host && strtolower( (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ) ) === $host;
+	}
+
+	/**
+	 * GET /cart.
+	 */
+	public function getCart(): \WP_REST_Response {
+		nocache_headers();
+		$cart = $this->plugin->cart;
+		return new \WP_REST_Response( $cart->summary( $cart->items( $cart->currentId() ) ) );
+	}
+
+	/**
+	 * POST /cart/items {product, quantity}.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function setCartItem( \WP_REST_Request $request ): \WP_REST_Response {
+		$cart   = $this->plugin->cart;
+		$id     = $cart->ensureId();
+		$result = $cart->set( $id, (string) $request->get_param( 'product' ), (int) $request->get_param( 'quantity' ) );
+		return new \WP_REST_Response( $result + array( 'cart' => $cart->summary( $cart->items( $id ) ) ) );
+	}
+
+	/**
+	 * POST /checkout/start.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function checkoutStart( \WP_REST_Request $request ): \WP_REST_Response {
+		$result = $this->plugin->checkout->start( $this->buyer( $request ), self::ip() );
+		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
+	}
+
+	/**
+	 * POST /checkout/confirm.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function checkoutConfirm( \WP_REST_Request $request ): \WP_REST_Response {
+		$result = $this->plugin->checkout->confirm( $this->buyer( $request ), (string) $request->get_param( 'code' ), (bool) $request->get_param( 'remember' ) );
+		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
+	}
+
+	/**
+	 * GET /orders/{number}?key= — the same reply for a wrong number or a wrong key.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function orderStatus( \WP_REST_Request $request ): \WP_REST_Response {
+		nocache_headers();
+		$order = $this->plugin->checkout->status( (string) $request->get_param( 'number' ), (string) $request->get_param( 'key' ) );
+		return null === $order
+			? $this->error( 'not_found', __( "We couldn't find that order. Check the link in your email.", 'invoiceninja' ), 404 )
+			: new \WP_REST_Response( $order );
+	}
+
+	/**
+	 * Buyer details from a request.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return array<string, string>
+	 */
+	private function buyer( \WP_REST_Request $request ): array {
+		return array(
+			'email'      => sanitize_email( (string) $request->get_param( 'email' ) ),
+			'first_name' => sanitize_text_field( (string) $request->get_param( 'first_name' ) ),
+			'last_name'  => sanitize_text_field( (string) $request->get_param( 'last_name' ) ),
+			'phone'      => sanitize_text_field( (string) $request->get_param( 'phone' ) ),
+		);
+	}
+
+	/**
+	 * The shopper's IP, for rate limits only.
+	 */
+	private static function ip(): string {
+		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
 	}
 
 	/**

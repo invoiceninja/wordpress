@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '5', 'schema at 5', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '6', 'schema at 6', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -46,7 +46,7 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '5', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '6', 'all migrations ran')
     reset_mock_log()
     wp_eval('InvoiceNinja\\Controllers\\ProductController::loadProducts();')
     calls = api_calls()
@@ -342,3 +342,152 @@ def order_numbers_are_unique_and_readable():
     code = wp('option', 'get', 'invoiceninja_site_code')
     check(a.startswith('WEB-' + code + '-') and b.startswith('WEB-' + code + '-'), 'prefix and site code', out)
     check(int(b.rsplit('-', 1)[1]) == int(a.rsplit('-', 1)[1]) + 1, 'sequence increments', out)
+
+
+# ---------- M2: cart and checkout ----------
+
+def mails(to=None):
+    from lib import mock_log
+    return [e for e in mock_log() if e.get('event') == 'mail' and (to is None or to in str(e.get('to')))]
+
+
+def last_code(to):
+    import re
+    for m in reversed(mails(to)):
+        found = re.match(r'^(\d{6}) is your', m['subject'])
+        if found:
+            return found.group(1)
+    raise AssertionError('no code mailed to ' + to)
+
+
+def shopper():
+    s = Browser()
+    s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 2})
+    return s
+
+
+def checkout(s, email, **extra):
+    details = {'email': email, 'first_name': 'Gina', 'last_name': 'Guest'}
+    status, r = s.api('POST', '/checkout/start', details)
+    check(status == 200 and r['ok'], 'checkout started', r)
+    if r['next'] == 'code':
+        details['code'] = last_code(email)
+    details.update(extra)
+    return s.api('POST', '/checkout/confirm', details)
+
+
+def store_ready():
+    b = admin()
+    connect(b)
+    wp('invoiceninja', 'environment', 'confirm')
+    sync(b)
+    wp('option', 'delete', 'in_mock_invoices', check_ok=False)
+    wp('option', 'delete', 'in_mock_paid', check_ok=False)
+    reset_mock_log()
+
+
+@test
+def cart_uses_synced_prices_and_limits():
+    store_ready()
+    s = Browser()
+    status, r = s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 500, 'price': 0.01})
+    check(status == 200 and r['quantity'] == 5, 'quantity limited to the product maximum', r)
+    check(r['cart']['total'] == 50.0, 'price comes from the synced product, not the request', r['cart'])
+    _, r = s.api('POST', '/cart/items', {'product': 'NOPE', 'quantity': 1})
+    check(not r['ok'], 'unknown products are refused', r)
+    anon = Browser()
+    import urllib.request, urllib.error, json as _json
+    req = urllib.request.Request(anon_base() + '/wp-json/invoiceninja/v1/cart/items', data=_json.dumps({'product': 'P1', 'quantity': 1}).encode(), headers={'Content-Type': 'application/json'}, method='POST')
+    try:
+        anon.opener.open(req, timeout=30)
+        cross = 200
+    except urllib.error.HTTPError as e:
+        cross = e.code
+    check(cross in (401, 403), 'writes without a same-site Origin are refused', cross)
+
+
+def anon_base():
+    from lib import BASE
+    return BASE
+
+
+@test
+def guest_checkout_with_email_code():
+    store_ready()
+    s = shopper()
+    email = 'gina.guest@example.com'
+    status, r = s.api('POST', '/checkout/start', {'email': email, 'first_name': 'Gina', 'last_name': 'Guest'})
+    check(status == 200 and r['next'] == 'code', 'a code is required', r)
+    writes = [c for c in api_calls() if c['method'] != 'GET']
+    check(not writes, 'nothing is created in Invoice Ninja before the code is confirmed', describe(writes))
+    status, r = s.api('POST', '/checkout/confirm', {'email': email, 'code': '000000' if last_code(email) != '000000' else '111111'})
+    check(status == 422 and r['code'] == 'code_wrong', 'wrong code refused', r)
+    status, r = s.api('POST', '/checkout/confirm', {'email': email, 'code': last_code(email), 'remember': True, 'first_name': 'Gina', 'last_name': 'Guest'})
+    check(status == 200 and r['status'] == 'awaiting_payment', 'order placed', r)
+    check(r['pay_link'].startswith('https://in.test/client/invoice/'), 'payment link returned to the buyer', r)
+    check(r['number'].startswith('WEB-'), 'readable order number', r['number'])
+    check(r['email'] == 'g***@example.com', 'email masked in the reply')
+    invoice = [c for c in api_calls() if c['method'] == 'POST' and '/invoices' in c['url']]
+    check(len(invoice) == 1 and r['number'] in invoice[0]['body'], 'one invoice with the order number as PO number', describe(invoice))
+    check(any('complete your payment' in m['subject'] for m in mails(email)), 'payment email sent')
+    # Order status with the key; the same reply for a wrong key or number
+    key = r['status_url'].split('key=')[1]
+    status, o = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
+    check(status == 200 and o['status'] == 'awaiting_payment', 'order status with key', o)
+    status, _ = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], 'x' * 32))
+    check(status == 404, 'wrong key refused')
+    # Paid in Invoice Ninja -> paid here
+    inv = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['invoice_id'];" % r['number'])
+    option('in_mock_paid', '')
+    wp_eval("update_option('in_mock_paid', array('%s')); $o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); delete_transient('invoiceninja_order_check_' . $o['id']);" % (inv, r['number']))
+    status, o = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
+    check(o['status'] == 'paid', 'payment detected', o)
+    # Remembered device skips the code next time
+    s2 = s
+    s2.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+    _, r2 = s2.api('POST', '/checkout/start', {'email': email})
+    check(r2['next'] == 'confirm', 'remembered device skips the code', r2)
+    _, r3 = s2.api('POST', '/checkout/start', {'email': 'someone.else@example.com'})
+    check(r3['next'] == 'code', 'but only for the same email', r3)
+
+
+@test
+def timeout_after_invoice_created_makes_one_invoice():
+    store_ready()
+    option('in_mock_invoice_timeout', '1')
+    try:
+        status, r = checkout(shopper(), 'timeout.buyer@example.com')
+    finally:
+        wp('option', 'delete', 'in_mock_invoice_timeout')
+    check(status == 200 and r['status'] == 'awaiting_payment', 'found the invoice that was created despite the timeout', r)
+    count = wp_eval("echo count(array_filter(get_option('in_mock_invoices', array()), function($i) { return $i['po_number'] === '%s'; }));" % r['number'])
+    check(count == '1', 'exactly one invoice for the order', count)
+
+
+@test
+def invoice_ninja_down_queues_the_order():
+    store_ready()
+    option('in_mock_mode', 'down')
+    try:
+        status, r = checkout(shopper(), 'down.buyer@example.com')
+    finally:
+        option('in_mock_mode', 'up')
+    check(status == 200 and r['status'] == 'queued' and not r['pay_link'], 'order saved while Invoice Ninja is down', r)
+    check(any('received order' in m['subject'] for m in mails('down.buyer@example.com')), '"order received" email sent')
+    # The retry job is scheduled a minute out; run it now
+    wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); InvoiceNinja\\Plugin::instance()->orderService->retry(array('order_id' => $o['id']));" % r['number'])
+    order = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['status'];" % r['number'])
+    check(order == 'awaiting_payment', 'queued order sent once Invoice Ninja is back', order)
+    check(any('complete your payment' in m['subject'] for m in mails('down.buyer@example.com')), 'payment email follows')
+
+
+@test
+def paused_site_takes_no_orders():
+    store_ready()
+    wp('invoiceninja', 'environment', 'pause')
+    try:
+        s = shopper()
+        status, r = s.api('POST', '/checkout/start', {'email': 'paused@example.com'})
+        check(status == 422 and r['code'] == 'unavailable', 'checkout closed on a paused site', r)
+    finally:
+        wp('invoiceninja', 'environment', 'confirm')

@@ -55,6 +55,12 @@ add_filter( 'invoiceninja_pre_resolve_host', function ( $ips, $host ) {
     return $host === 'in.test' ? [ '93.184.216.34' ] : $ips;
 }, 10, 2 );
 
+// Capture outgoing email (there is no mail server in the dev stack)
+add_filter( 'pre_wp_mail', function ( $null, $atts ) {
+    in_mock_log( [ 'event' => 'mail', 'to' => $atts['to'], 'subject' => $atts['subject'], 'body' => $atts['message'] ] );
+    return true;
+}, 10, 2 );
+
 add_action( 'generate_rewrite_rules', function () {
     in_mock_log( [ 'event' => 'flush_rewrite_rules' ] );
 } );
@@ -158,18 +164,57 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
     }
 
     if ( $route === 'clients' && $method === 'POST' ) {
-        return in_mock_response( [ 'data' => [ 'id' => 'NEWCLIENT', 'contacts' => [] ] ] );
+        $data = json_decode( (string) $body, true ) ?: [];
+        return in_mock_response( [ 'data' => [ 'id' => 'NEWCLIENT', 'name' => $data['name'] ?? '', 'contacts' => [ [ 'id' => 'NC1', 'email' => $data['contacts'][0]['email'] ?? '' ] ] ] ] );
     }
 
     if ( preg_match( '#^clients/[^/?]+$#', $route ) && $method === 'PUT' ) {
         return in_mock_response( [ 'data' => [ 'id' => basename( $route ), 'contacts' => [] ] ] );
     }
 
+    // 2.0: invoices are remembered so they can be searched by po_number and fetched by id
     if ( strpos( $route, 'invoices' ) === 0 && $method === 'POST' ) {
-        return in_mock_response( [ 'data' => [
-            'id' => 'INV1',
-            'invitations' => [ [ 'link' => 'https://in.test/client/invoice/INVITE1' ] ],
-        ] ] );
+        $data     = json_decode( (string) $body, true ) ?: [];
+        $invoices = get_option( 'in_mock_invoices', [] );
+        $n        = count( $invoices ) + 1;
+        $amount   = 0;
+        foreach ( $data['line_items'] ?? [] as $line ) {
+            $amount += (float) $line['cost'] * (float) $line['quantity'];
+        }
+        $invoice = [
+            'id' => $n === 1 ? 'INV1' : 'INV' . $n, 'number' => sprintf( '%04d', $n ), 'client_id' => $data['client_id'] ?? '',
+            'po_number' => $data['po_number'] ?? '', 'amount' => $amount, 'balance' => $amount, 'status_id' => '2',
+            'line_items' => $data['line_items'] ?? [],
+            'invitations' => [ [ 'key' => 'INVITE' . $n, 'link' => 'https://in.test/client/invoice/INVITE' . $n ] ],
+        ];
+        $invoices[ $invoice['id'] ] = $invoice;
+        update_option( 'in_mock_invoices', $invoices, false );
+        if ( get_option( 'in_mock_invoice_timeout' ) ) {
+            // Invoice Ninja saved it, but the response never arrived
+            return new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 8000 milliseconds' );
+        }
+        return in_mock_response( [ 'data' => $invoice ] );
+    }
+
+    if ( strpos( $route, 'invoices?' ) === 0 && $method === 'GET' ) {
+        parse_str( (string) parse_url( $url, PHP_URL_QUERY ), $q );
+        $found = array_values( array_filter( get_option( 'in_mock_invoices', [] ), function ( $inv ) use ( $q ) {
+            return ! isset( $q['po_number'] ) || $inv['po_number'] === $q['po_number'];
+        } ) );
+        return in_mock_response( [ 'data' => $found, 'meta' => [ 'pagination' => [ 'total_pages' => 1 ] ] ] );
+    }
+
+    if ( preg_match( '#^invoices/([^/?]+)#', $route, $m ) && $method === 'GET' ) {
+        $invoices = get_option( 'in_mock_invoices', [] );
+        if ( ! isset( $invoices[ $m[1] ] ) ) {
+            return in_mock_response( [ 'message' => 'Not found' ], 404 );
+        }
+        $invoice = $invoices[ $m[1] ];
+        if ( in_array( $invoice['id'], (array) get_option( 'in_mock_paid', [] ), true ) ) {
+            $invoice['status_id'] = '4';
+            $invoice['balance']   = 0;
+        }
+        return in_mock_response( [ 'data' => $invoice ] );
     }
 
     return in_mock_response( [ 'message' => 'Mock: unhandled route ' . $route ], 404 );

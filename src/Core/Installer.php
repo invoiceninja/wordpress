@@ -18,7 +18,7 @@ use InvoiceNinja\Connection\Credentials;
  */
 final class Installer {
 
-	public const SCHEMA = 5;
+	public const SCHEMA = 6;
 
 	/**
 	 * Constructor.
@@ -82,6 +82,7 @@ final class Installer {
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( Logger::schema() );
 		dbDelta( \InvoiceNinja\Sync\Mapping::schema() );
+		dbDelta( \InvoiceNinja\Commerce\Orders::schema() );
 	}
 
 	/**
@@ -116,6 +117,9 @@ final class Installer {
 			},
 			5 => static function (): void {
 				// Tables were widened; createTables() above already applied it.
+			},
+			6 => static function (): void {
+				// Orders table; created by createTables() above.
 			},
 		);
 		foreach ( $steps as $version => $step ) {
