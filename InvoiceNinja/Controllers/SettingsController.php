@@ -22,8 +22,14 @@ class SettingsController extends BaseController
 
    public function register()
    {
-      $logo_url = plugins_url( '/../../assets/images/logo.svg', __FILE__ );
-      $logo_response = wp_remote_get( $logo_url );
+      // Read the menu icon from disk, fetching it over HTTP on every request was very slow
+      $icon_url = 'dashicons-store';
+      if ( is_admin() ) {
+         $logo_svg = @file_get_contents( $this->plugin_path . 'assets/images/logo.svg' );
+         if ( $logo_svg ) {
+            $icon_url = 'data:image/svg+xml;base64,' . base64_encode( $logo_svg );
+         }
+      }
 
       $pages = [
          [
@@ -80,8 +86,7 @@ class SettingsController extends BaseController
 
                require_once "$this->plugin_path/templates/settings.php";
             },
-            //'icon_url' => 'dashicons-store',
-            'icon_url' => 'data:image/svg+xml;base64,' . base64_encode( wp_remote_retrieve_body( $logo_response ) ),
+            'icon_url' => $icon_url,
             'position' => 110,
          ],
       ];
@@ -549,7 +554,7 @@ class SettingsController extends BaseController
       }
 
       if ( ( get_option( 'invoiceninja_online_purchases') == 'multiple' 
-               || get_option( 'invoiceninja_online_purchases') == 'single' ) && $profile->track_inventory) {
+               || get_option( 'invoiceninja_online_purchases') == 'single' ) && ! empty( $profile->track_inventory ) ) {
          $args[] = [
             'id' => 'invoiceninja_out_of_stock_label',
             'title' => 'Out of Stock Label',

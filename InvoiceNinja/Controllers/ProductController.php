@@ -40,23 +40,20 @@ class ProductController extends BaseController
             ->register();
 
         add_action('init', [ $this, 'registerCron' ] );
-        register_deactivation_hook(__FILE__, [ $this, 'deactivation' ] );
+        add_action('invoiceninja_auto_refresh', [ $this, 'autoRefresh' ] );
     }
 
     public function registerCron()
     {
-        if ( ! wp_next_scheduled('auto_refresh') ) {
-            wp_schedule_event( time(), 'hourly', 'auto_refresh' );
+        // One-time cleanup of the event scheduled by older versions under a generic hook name
+        if ( ! get_option( 'invoiceninja_legacy_cron_cleared' ) ) {
+            wp_clear_scheduled_hook( 'auto_refresh' );
+            update_option( 'invoiceninja_legacy_cron_cleared', 1 );
         }
 
-        add_action('auto_refresh', [ $this, 'autoRefresh' ] );
-    }
-
-    function deactivation() 
-    {
-        $timestamp = wp_next_scheduled( 'auto_refresh' );
-        
-        wp_unschedule_event( $timestamp, 'auto_refresh' );
+        if ( ! wp_next_scheduled('invoiceninja_auto_refresh') ) {
+            wp_schedule_event( time(), 'hourly', 'invoiceninja_auto_refresh' );
+        }
     }
 
     public function autoRefresh()

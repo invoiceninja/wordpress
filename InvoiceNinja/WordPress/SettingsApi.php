@@ -42,8 +42,8 @@ class SettingsApi
 
     public function enqueueStyles()
     {        
-        wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/settings.css', __FILE__ ), [], time() );
-        wp_enqueue_script( 'custom-script', plugins_url( '/../../assets/js/settings.js', __FILE__ ), [], time(), false );        
+        wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/settings.css', __FILE__ ), [], INVOICENINJA_VERSION );
+        wp_enqueue_script( 'custom-script', plugins_url( '/../../assets/js/settings.js', __FILE__ ), [], INVOICENINJA_VERSION, false );        
     }
 
     function optionUpdated($option_name, $old_value, $new_value) 
@@ -53,13 +53,18 @@ class SettingsApi
             if ( $profile ) {
                 update_option('invoiceninja_profile', wp_json_encode( $profile ) );                
             } else {
+                // Keep the token so the user can see/fix it, the API error is shown as a settings notice
                 update_option('invoiceninja_profile', '');
-                update_option('invoiceninja_api_token', '');
             }
         } else if ($option_name === 'invoiceninja_product_label' 
             || $option_name === 'invoiceninja_products_label' 
             || $option_name === 'invoiceninja_product_template' 
             || $option_name === 'invoiceninja_image_template') {
+                if ( $option_name === 'invoiceninja_product_label' ) {
+                    // The product label is used as the post type slug
+                    update_option( 'invoiceninja_flush_rewrite', 1 );
+                }
+
                 if ( get_option( 'invoiceninja_sync_products' ) ) {
                     ProductController::loadProducts();
                 }
@@ -161,7 +166,7 @@ class SettingsApi
             register_setting( 
                 $setting['option_group'], 
                 $setting['option_name'], 
-                ( isset( $section['option_sanitize'] ) ? $section['option_sanitize'] : '' ),
+                ( isset( $setting['option_sanitize'] ) ? $setting['option_sanitize'] : '' ),
             );
         }
 

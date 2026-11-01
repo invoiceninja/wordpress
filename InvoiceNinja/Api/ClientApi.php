@@ -21,7 +21,14 @@ class ClientApi extends BaseApi
 
     public static function find($email)
     {
-        $response = self::sendRequest( "clients?email=$email" );
+        $email = trim( (string) $email );
+
+        // An empty email filter is ignored by the API, which would return all clients
+        if ( $email === '' ) {
+            return null;
+        }
+
+        $response = self::sendRequest( 'clients?email=' . rawurlencode( $email ) );
 
         if ( $response ) {
             $response = json_decode( $response )->data;

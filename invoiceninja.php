@@ -4,7 +4,7 @@
  * Plugin Name:        Invoice Ninja
  * Plugin URI:         https://github.com/invoiceninja/wordpress
  * Description:        WordPress plugin for Invoice Ninja
- * Version:            1.0.14
+ * Version:            1.0.15
  * Author:             Invoice Ninja
  * Author URI:         https://invoiceninja.com
  * GitHub URI:         https://github.com/invoiceninja/wordpress
@@ -22,14 +22,23 @@ if ( file_exists( dirname( __FILE__ ) . '/vendor/autoload.php' ) )
    require_once dirname( __FILE__ ) . '/vendor/autoload.php';
 }
 
+if ( ! defined( 'INVOICENINJA_VERSION' ) )
+{
+   $invoiceninja_plugin_data = get_file_data( __FILE__, [ 'version' => 'Version' ] );
+   define( 'INVOICENINJA_VERSION', $invoiceninja_plugin_data['version'] );
+}
+
 function activate_invoiceninja_plugin()
 {
-   flush_rewrite_rules();
+   // The post type isn't registered yet, flush on the next init instead
+   update_option( 'invoiceninja_flush_rewrite', 1 );
 }
 register_activation_hook( __FILE__, 'activate_invoiceninja_plugin' );
 
 function deactivate_invoiceninja_plugin()
 {
+   wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
+
    flush_rewrite_rules();
 }
 register_deactivation_hook( __FILE__, 'deactivate_invoiceninja_plugin' );

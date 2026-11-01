@@ -12,18 +12,34 @@ class InvoiceApi extends BaseApi
 {
     public static function create($cart)
     {
-        $user = wp_get_current_user();        
+        $user = wp_get_current_user();
 
-        if ( ! $client = ClientApi::find( $user->user_email ) ) {            
-            $client = ClientApi::create( $data, $user );
+        // Never look up a client without a known email: an empty email filter
+        // makes the API return every client, attaching the invoice to a stranger.
+        if ( ! is_user_logged_in() || empty( $user->user_email ) ) {
+            return null;
         }
-        
+
+        if ( ! $client = ClientApi::find( $user->user_email ) ) {
+            $client = ClientApi::create( $user );
+        }
+
+        if ( empty( $client->id ) ) {
+            return null;
+        }
+
         $invoice = [
             'client_id' => $client->id,
             'line_items' => [],
         ];
 
         foreach ($cart as $product_id => $quantity) {
+
+            $quantity = (int) $quantity;
+
+            if ( $quantity < 1 ) {
+                continue;
+            }
 
             $args = [
                 'post_type' => 'invoiceninja_product',
@@ -65,6 +81,12 @@ class InvoiceApi extends BaseApi
                     'custom_value4' => get_post_meta( $post_id, 'custom_value4', true ),
                 ];
             }
+        }
+
+        wp_reset_postdata();
+
+        if ( empty( $invoice['line_items'] ) ) {
+            return null;
         }
 
         $response = self::sendRequest( 'invoices?mark_sent=true', 'POST', $invoice );
