@@ -1,0 +1,39 @@
+<?xml version="1.0"?>
+<ruleset name="Invoice Ninja">
+	<description>WordPress coding standards for the 2.0 code.</description>
+	<file>src</file>
+	<file>invoiceninja.php</file>
+	<file>uninstall.php</file>
+	<arg name="extensions" value="php"/>
+	<arg value="ps"/>
+	<arg name="colors"/>
+	<config name="testVersion" value="8.1-"/>
+	<config name="minimum_wp_version" value="6.7"/>
+	<rule ref="PHPCompatibilityWP">
+		<!-- Doesn't understand enum methods; the plugin requires PHP 8.1. -->
+		<exclude name="PHPCompatibility.Variables.ForbiddenThisUseContexts"/>
+	</rule>
+	<!-- Exception messages are never echoed raw; the UI escapes them. -->
+	<rule ref="WordPress.Security.EscapeOutput.ExceptionNotEscaped">
+		<severity>0</severity>
+	</rule>
+	<rule ref="WordPress-Extra">
+		<!-- PSR-4 class files and camelCase methods/properties. -->
+		<exclude name="WordPress.Files.FileName"/>
+		<exclude name="WordPress.NamingConventions.ValidFunctionName.MethodNameInvalid"/>
+		<exclude name="WordPress.NamingConventions.ValidVariableName"/>
+		<exclude name="Universal.Arrays.DisallowShortArraySyntax"/>
+		<exclude name="Universal.Operators.DisallowShortTernary"/>
+		<exclude name="Generic.Arrays.DisallowShortArraySyntax"/>
+	</rule>
+	<rule ref="WordPress.WP.I18n">
+		<properties>
+			<property name="text_domain" type="array"><element value="invoiceninja"/></property>
+		</properties>
+	</rule>
+	<rule ref="WordPress.NamingConventions.PrefixAllGlobals">
+		<properties>
+			<property name="prefixes" type="array"><element value="invoiceninja"/><element value="InvoiceNinja"/></property>
+		</properties>
+	</rule>
+</ruleset>

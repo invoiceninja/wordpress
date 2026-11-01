@@ -16,7 +16,8 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import lib  # noqa: E402
-import test_v1  # noqa: E402
+import test_v1
+import test_v2  # noqa: E402
 
 PLUGIN_PATH_MARKER = '/plugins/invoiceninja/'
 
@@ -72,7 +73,7 @@ def main():
     print('Setting up WordPress at %s ...' % lib.BASE, flush=True)
     setup()
 
-    tests = [t for t in test_v1.TESTS if pattern in t.__name__]
+    tests = [t for t in test_v1.TESTS + test_v2.TESTS if pattern in t.__name__]
     failures = []
     started = time.time()
     for fn in tests:

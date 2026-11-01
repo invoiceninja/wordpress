@@ -22,21 +22,13 @@ class SettingsController extends BaseController
 
    public function register()
    {
-      // Read the menu icon from disk, fetching it over HTTP on every request was very slow
-      $icon_url = 'dashicons-store';
-      if ( is_admin() ) {
-         $logo_svg = @file_get_contents( $this->plugin_path . 'assets/images/logo.svg' );
-         if ( $logo_svg ) {
-            $icon_url = 'data:image/svg+xml;base64,' . base64_encode( $logo_svg );
-         }
-      }
-
       $pages = [
          [
-            'page_title' => 'Invoice Ninja',
-            'menu_title' => 'Invoice Ninja',
+            'parent_slug' => 'invoiceninja',
+            'page_title' => 'Invoice Ninja (legacy)',
+            'menu_title' => 'Products & Settings (legacy)',
             'capability' => 'manage_options',
-            'menu_slug' => 'invoiceninja',
+            'menu_slug' => 'invoiceninja-legacy',
             'callback' => function() 
             {
                $product_label = get_option( 'invoiceninja_product_label', 'Product' );
@@ -86,12 +78,10 @@ class SettingsController extends BaseController
 
                require_once "$this->plugin_path/templates/settings.php";
             },
-            'icon_url' => $icon_url,
-            'position' => 110,
          ],
       ];
 
-      $this->settings->addPages( $pages );
+      $this->settings->addSubpages( $pages );
 
       $this->setSections();
       $this->setSettings();
@@ -121,7 +111,6 @@ class SettingsController extends BaseController
       */
 
       add_filter( 'plugin_action_links_' . $this->plugin_basename, [ $this, 'addLink' ] );  
-      add_filter( 'pre_update_option_invoiceninja_api_token', [ $this, 'filterToken' ], 10, 2 );
 
       add_filter( 'pre_update_option_invoiceninja_buy_now_label', [ $this, 'filterBuyNowLabel' ], 10, 2 );
       add_filter( 'pre_update_option_invoiceninja_add_to_cart_label', [ $this, 'filterAddToCartLabel' ], 10, 2 );
@@ -199,14 +188,6 @@ class SettingsController extends BaseController
    public function setSettings()
    {
       $args = [
-         [
-            'option_group' => 'invoiceninja_settings',
-            'option_name' => 'invoiceninja_api_url',
-         ],
-         [
-            'option_group' => 'invoiceninja_settings',
-            'option_name' => 'invoiceninja_api_token',
-         ],
          [
             'option_group' => 'invoiceninja_settings',
             'option_name' => 'invoiceninja_sync_clients',
@@ -325,42 +306,6 @@ class SettingsController extends BaseController
       $products_label = esc_attr( get_option( 'invoiceninja_products_label', 'Products' ) );
 
       $args = [
-         [
-            'id' => 'invoiceninja_api_token',
-            'title' => 'Token',
-            'callback' => function() 
-            { 
-               $value = get_option( 'invoiceninja_api_token' );
-               if ( $value ) {
-                  $value = substr( $value, 0, 10) . '******************';
-               }
-               echo '<input type="text" class="regular-text code" value="' . esc_attr( $value ) . '" name="invoiceninja_api_token"' . ( $value ? '' : ' autofocus' ) . ' required/>';
-               echo '<p class="description">API tokens can be created in Invoice Ninja on Settings > Account Management</p>'; 
-            },
-            'page' => 'invoiceninja_credentials',
-            'section' => 'invoiceninja_admin_index',
-            'args' => [
-               'label_for' => 'invoiceninja_api_token',
-               //'class' => '',
-               'help' => 'test',
-            ]
-         ],
-         [
-            'id' => 'invoiceninja_api_url',
-            'title' => 'URL',
-            'callback' => function() 
-            { 
-               $value = get_option( 'invoiceninja_api_url' );
-               echo '<input type="url" class="regular-text code" value="' . esc_attr( $value ) . '" name="invoiceninja_api_url" placeholder="https://invoicing.co"/>'; 
-               echo '<p class="description">Leave this field blank if you\'re using the hosted platform</p>'; 
-            },
-            'page' => 'invoiceninja_credentials',
-            'section' => 'invoiceninja_admin_index',
-            'args' => [
-               'label_for' => 'invoiceninja_api_url',
-               //'class' => '',
-            ]
-         ],
          [
             'id' => 'invoiceninja_sync_clients',
             'title' => 'Sync Clients',

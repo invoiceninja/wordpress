@@ -27,9 +27,10 @@ class SettingsApi
     {
         add_action( 'admin_enqueue_scripts', [ $this, 'enqueueStyles' ] );
 
-        if ( ! empty( $this->admin_pages) ) 
+        if ( ! empty( $this->admin_pages ) || ! empty( $this->admin_subpages ) )
         {
-            add_action( 'admin_menu', [ $this, 'addAdminMenu' ] );
+            // After the 2.0 menu, which owns the top-level page
+            add_action( 'admin_menu', [ $this, 'addAdminMenu' ], 20 );
         }
 
         if ( ! empty( $this->settings ) )
@@ -41,7 +42,12 @@ class SettingsApi
     }
 
     public function enqueueStyles()
-    {        
+    {
+        // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- only choosing which assets to load
+        if ( ! isset( $_GET['page'] ) || 'invoiceninja-legacy' !== $_GET['page'] ) {
+            return;
+        }
+
         wp_enqueue_style( 'custom-page-styles', plugins_url( '/../../assets/css/settings.css', __FILE__ ), [], INVOICENINJA_VERSION );
         wp_enqueue_script( 'custom-script', plugins_url( '/../../assets/js/settings.js', __FILE__ ), [], INVOICENINJA_VERSION, false );        
     }

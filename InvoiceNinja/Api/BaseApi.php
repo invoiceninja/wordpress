@@ -10,21 +10,18 @@ class BaseApi
 {
     public static function sendRequest( $route, $method = 'GET', $data = false )
     {
-        $key = esc_attr( get_option( 'invoiceninja_api_token' ) );
+        // 2.0 owns the connection: it decrypts the token and honours wp-config.php constants
+        $key = self::token();
 
         if ( ! $key ) {
-            return null;
-        }
-
-        // Tokens saved by version 2.0+ are encrypted and can't be used here (eg. after a downgrade)
-        if ( self::hasEncryptedToken() ) {
             return null;
         }
 
         $url = self::getBaseUrl() . '/api/v1/' . $route;
 
         $args = array(
-            'timeout' => '60',
+            'timeout' => '30',
+            'redirection' => 0,
             'headers' => array(
                 'X-API-TOKEN' => $key,
                 'X-CLIENT-PLATFORM' => 'WordPress',
@@ -82,24 +79,29 @@ class BaseApi
         return strpos( (string) get_option( 'invoiceninja_api_token' ), 'in1:' ) === 0;
     }
 
+    public static function token()
+    {
+        if ( class_exists( '\\InvoiceNinja\\Plugin' ) && \InvoiceNinja\Plugin::booted() ) {
+            return (string) \InvoiceNinja\Plugin::instance()->credentials->token();
+        }
+
+        // Without 2.0 an encrypted token can't be used
+        return self::hasEncryptedToken() ? '' : (string) get_option( 'invoiceninja_api_token' );
+    }
+
     public static function getBaseUrl()
     {
+        if ( class_exists( '\\InvoiceNinja\\Plugin' ) && \InvoiceNinja\Plugin::booted() ) {
+            $url = \InvoiceNinja\Plugin::instance()->credentials->url();
+
+            return $url ? $url : 'https://invoicing.co';
+        }
+
         $url = trim( (string) get_option( 'invoiceninja_api_url' ) );
         $url = rtrim( $url, '/' );
         $url = preg_replace( '#/api/v1$#i', '', $url );
         $url = rtrim( $url, '/' );
 
         return $url ? $url : 'https://invoicing.co';
-    }
-
-    public static function isUsingToken()
-    {
-        return true;
-        
-        /*
-        $value = get_option( 'invoiceninja_api_token' );
-
-        return strlen( $value ) == 64;
-        */
     }
 }

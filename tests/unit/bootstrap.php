@@ -32,3 +32,9 @@ if ( ! class_exists( 'WP_Error' ) ) {
         }
     }
 }
+
+foreach ( array( 'MINUTE_IN_SECONDS' => 60, 'HOUR_IN_SECONDS' => 3600, 'DAY_IN_SECONDS' => 86400 ) as $name => $value ) {
+    if ( ! defined( $name ) ) {
+        define( $name, $value );
+    }
+}

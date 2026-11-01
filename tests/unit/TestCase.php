@@ -17,6 +17,12 @@ abstract class TestCase extends PolyfillTestCase
     /** @var callable|null Returns a WP-style response array (or WP_Error) for a request */
     protected $responder = null;
 
+    /** @var string */
+    protected $home_url = 'https://shop.example.com';
+
+    /** @var string */
+    protected $environment_type = 'production';
+
     protected function set_up(): void
     {
         parent::set_up();
@@ -51,6 +57,38 @@ abstract class TestCase extends PolyfillTestCase
         Functions\when( 'wp_remote_retrieve_body' )->alias( function ( $response ) {
             return $response['body'];
         } );
+        Functions\when( 'wp_remote_retrieve_headers' )->alias( function ( $response ) {
+            return $response['headers'] ?? array();
+        } );
+        Functions\when( 'add_option' )->alias( function ( $name, $value ) {
+            if ( array_key_exists( $name, $this->options ) ) {
+                return false;
+            }
+            $this->options[ $name ] = $value;
+            return true;
+        } );
+        Functions\when( 'delete_option' )->alias( function ( $name ) {
+            unset( $this->options[ $name ] );
+            return true;
+        } );
+        Functions\stubTranslationFunctions();
+        Functions\when( 'wp_parse_url' )->alias( 'parse_url' );
+        Functions\when( 'sanitize_text_field' )->alias( 'trim' );
+        Functions\when( 'sanitize_key' )->alias( function ( $key ) {
+            return preg_replace( '/[^a-z0-9_\-]/', '', strtolower( (string) $key ) );
+        } );
+        Functions\when( 'sanitize_email' )->alias( 'trim' );
+        Functions\when( 'esc_url_raw' )->returnArg();
+        Functions\when( 'home_url' )->alias( function () {
+            return $this->home_url;
+        } );
+        Functions\when( 'wp_salt' )->justReturn( 'test-salt-auth-key-and-salt' );
+        Functions\when( 'get_bloginfo' )->justReturn( '6.8' );
+        Functions\when( 'wp_get_environment_type' )->alias( function () {
+            return $this->environment_type;
+        } );
+        Functions\when( 'get_current_user_id' )->justReturn( 1 );
+        Functions\when( 'do_action' )->justReturn( null );
     }
 
     protected function tear_down(): void
@@ -63,7 +101,7 @@ abstract class TestCase extends PolyfillTestCase
     protected function respondWith( array $body, int $code = 200 ): void
     {
         $this->responder = function () use ( $body, $code ) {
-            return [ 'response' => [ 'code' => $code ], 'body' => json_encode( $body ) ];
+            return [ 'response' => [ 'code' => $code ], 'body' => json_encode( $body ), 'headers' => [ 'x-app-version' => '5.13.52' ] ];
         };
     }
 

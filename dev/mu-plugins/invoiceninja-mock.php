@@ -24,7 +24,7 @@ function in_mock_log( array $entry ) {
 
 function in_mock_response( $body, $code = 200 ) {
     return [
-        'headers'  => [ 'x-app-version' => '5.13.37' ],
+        'headers'  => [ 'x-app-version' => get_option( 'in_mock_version', '5.13.52' ) ],
         'body'     => wp_json_encode( $body ),
         'response' => [ 'code' => $code, 'message' => 'Mock' ],
         'cookies'  => [],
@@ -58,7 +58,8 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
     $method = isset( $args['method'] ) ? $args['method'] : 'GET';
     $body   = isset( $args['body'] ) && is_string( $args['body'] ) ? $args['body'] : null;
 
-    in_mock_log( [ 'event' => 'http', 'method' => $method, 'url' => $url, 'body' => $body ] );
+    $sent_token = isset( $args['headers']['X-API-TOKEN'] ) ? $args['headers']['X-API-TOKEN'] : '';
+    in_mock_log( [ 'event' => 'http', 'method' => $method, 'url' => $url, 'body' => $body, 'token' => $sent_token, 'redirection' => isset( $args['redirection'] ) ? $args['redirection'] : null ] );
 
     if ( strpos( $url, IN_MOCK_BASE ) !== 0 ) {
         return $pre; // Not ours (WP core requests etc.)
@@ -72,8 +73,22 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
     if ( $token === 'badtoken123456' ) {
         return in_mock_response( [ 'message' => 'Invalid token', 'errors' => new stdClass() ], 403 );
     }
+    if ( strpos( $token, 'freeplan' ) === 0 ) {
+        return in_mock_response( [ 'message' => 'Feature not available with free / unpaid account.', 'errors' => new stdClass() ], 403 );
+    }
 
     $route = substr( $url, strlen( IN_MOCK_BASE ) );
+
+    // 2.0: admin probe (an invalid webhook create: 422 for admins, 403 for others)
+    if ( $route === 'webhooks' && $method === 'POST' ) {
+        return strpos( $token, 'nonadmin' ) === 0
+            ? in_mock_response( [ 'message' => 'This action is unauthorized.' ], 403 )
+            : in_mock_response( [ 'message' => 'The given data was invalid.', 'errors' => [ 'target_url' => [ 'required' ] ] ], 422 );
+    }
+
+    if ( strpos( $route, 'company_gateways' ) === 0 ) {
+        return in_mock_response( [ 'data' => get_option( 'in_mock_no_gateway' ) ? [] : [ [ 'id' => 'G1', 'label' => 'Stripe', 'gateway_key' => 'd14dd26a37cecc30fdd65700bfb55b23', 'is_deleted' => false ] ] ] );
+    }
 
     if ( strpos( $route, 'companies/current' ) === 0 ) {
         return in_mock_response( [ 'data' => [

@@ -1,20 +1,8 @@
 <?php if ( ! defined( 'ABSPATH' ) ) exit; ?>
 
 <div class="wrap">
-    <h1>Invoice Ninja</h1>
+    <h1><?php esc_html_e( 'Products & Settings (legacy)', 'invoiceninja' ); ?></h1>
     <?php settings_errors(); ?>
-
-    <?php if ( \InvoiceNinja\Api\BaseApi::hasEncryptedToken() ) { ?>
-        <div class="notice notice-warning"><p>
-            <?php echo esc_html( 'Your API token was saved by a newer version of the plugin and can\'t be used by this version. Please enter your token again.' ); ?>
-        </p></div>
-    <?php } ?>
-
-    <?php if ( version_compare( PHP_VERSION, '8.1', '<' ) || version_compare( get_bloginfo( 'version' ), '6.7', '<' ) ) { ?>
-        <div class="notice notice-info"><p>
-            <?php echo esc_html( sprintf( 'Heads up: version 2.0 of this plugin will require PHP 8.1+ and WordPress 6.7+. This site runs PHP %s and WordPress %s.', PHP_VERSION, get_bloginfo( 'version' ) ) ); ?>
-        </p></div>
-    <?php } ?>
 
     <form method="post" action="options.php" autocomplete="off">
     <input autocomplete="new-password" name="hidden" type="text" style="display:none;"/>
@@ -33,7 +21,10 @@
 
     <div class="tab-content">
         <div id="tab-credentials" class="tab-pane active">
-            <?php do_settings_sections( 'invoiceninja_credentials' ); ?>
+            <p>
+                <?php esc_html_e( 'The connection to Invoice Ninja is now managed in Invoice Ninja → Settings → Connection.', 'invoiceninja' ); ?>
+                <a href="<?php echo esc_url( admin_url( 'admin.php?page=invoiceninja-settings' ) ); ?>"><?php esc_html_e( 'Open Connection settings', 'invoiceninja' ); ?></a>
+            </p>
         </div>
         <div id="tab-clients" class="tab-pane">
             <?php do_settings_sections( 'invoiceninja_clients' ); ?>

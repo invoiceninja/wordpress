@@ -228,15 +228,17 @@ def product_import_replaces_products_when_successful():
 
 
 @test
-def encrypted_token_from_2x_is_never_sent():
-    option('invoiceninja_api_token', 'in1:abcd1234:ZW5jcnlwdGVk')
+def legacy_code_uses_the_decrypted_2x_token():
+    wp_eval("InvoiceNinja\\Plugin::instance()->credentials->save('https://in.test', 'goodtoken-encrypted-1');")
     try:
+        stored = wp('option', 'get', 'invoiceninja_api_token')
+        check(stored.startswith('in1:') and 'goodtoken' not in stored, 'token stored encrypted', stored)
         reset_mock_log()
         import_products()
-        check(not api_calls(), 'an encrypted 2.x token must never be sent', describe(api_calls()))
-        check(product_count() == 2, 'products kept when the token is unusable', product_count())
-        status, _, html = Browser().login('admin', 'admin').get('/wp-admin/admin.php?page=invoiceninja')
-        check('saved by a newer version' in html, 'settings page should ask to re-enter the token')
+        calls = api_calls()
+        check(calls and all(c.get('token') == 'goodtoken-encrypted-1' for c in calls), '1.x requests carry the decrypted token', describe(calls))
+        check(all(c.get('redirection') == 0 for c in calls), '1.x requests never follow redirects')
+        check(product_count() == 2, 'products imported', product_count())
     finally:
         option('invoiceninja_api_token', 'goodtoken1234567891')
 

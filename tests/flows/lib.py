@@ -119,6 +119,30 @@ class Browser:
     def get(self, path):
         return self.request(path)
 
+    def rest_nonce(self):
+        _, _, html = self.get('/wp-admin/admin.php?page=invoiceninja')
+        m = re.search(r'createNonceMiddleware\(\s*"([0-9a-f]+)"', html)
+        if not m:
+            raise Failure('no REST nonce on the admin page')
+        self.nonce = m.group(1)
+        return self
+
+    def api(self, method, path, data=None):
+        body = json.dumps(data).encode() if data is not None else None
+        headers = {'Content-Type': 'application/json'}
+        if getattr(self, 'nonce', ''):
+            headers['X-WP-Nonce'] = self.nonce
+        req = urllib.request.Request(BASE + '/wp-json/invoiceninja/v1' + path, data=body, headers=headers, method=method)
+        try:
+            resp = self.opener.open(req, timeout=120)
+            return resp.status, json.loads(resp.read().decode() or 'null')
+        except urllib.error.HTTPError as e:
+            raw = e.read().decode('utf-8', 'replace')
+            try:
+                return e.code, json.loads(raw)
+            except ValueError:
+                return e.code, raw
+
     def post(self, path, data):
         return self.request(path, data)
 
