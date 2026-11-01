@@ -57,6 +57,9 @@ final class Routes {
 		$this->route( '/logs', 'GET', array( $this, 'logs' ), $view );
 		$this->route( '/logs', 'DELETE', array( $this, 'clearLogs' ), $manage );
 
+		$this->route( '/sync/products', 'GET', array( $this, 'syncStatus' ), $view );
+		$this->route( '/sync/products', 'POST', array( $this, 'syncProducts' ), $manage );
+
 		$this->route( '/mail/test', 'POST', array( $this, 'mailTest' ), $manage );
 		$this->route( '/mail/confirm', 'POST', array( $this, 'mailConfirm' ), $manage );
 	}
@@ -269,6 +272,41 @@ final class Routes {
 		$this->plugin->logger->clear();
 		$this->plugin->logger->info( 'connection', 'Activity log cleared' );
 		return new \WP_REST_Response( array( 'cleared' => true ) );
+	}
+
+	/**
+	 * GET /sync/products — last result and, when paused, what would change.
+	 */
+	public function syncStatus(): \WP_REST_Response {
+		return new \WP_REST_Response( $this->syncPayload() );
+	}
+
+	/**
+	 * POST /sync/products — sync now; `force` applies a sync the circuit breaker stopped.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function syncProducts( \WP_REST_Request $request ): \WP_REST_Response {
+		$force  = (bool) $request->get_param( 'force' );
+		$result = $this->plugin->products->run( true, $force );
+		if ( $force ) {
+			$this->plugin->logger->info( 'sync', 'Product sync applied after review' );
+		}
+		return new \WP_REST_Response( array( 'result' => $result ) + $this->syncPayload() );
+	}
+
+	/**
+	 * Sync state for the UI.
+	 *
+	 * @return array<string, mixed>
+	 */
+	private function syncPayload(): array {
+		return array(
+			'status'  => $this->plugin->options->get( 'sync_status' ),
+			'paused'  => $this->plugin->options->get( 'sync_paused' ),
+			'enabled' => $this->plugin->products->enabled(),
+			'count'   => $this->plugin->mapping->count( 'product' ),
+		);
 	}
 
 	/**

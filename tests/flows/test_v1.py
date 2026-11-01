@@ -59,7 +59,7 @@ def cron_uses_prefixed_hook_and_clears_legacy_event_once():
     wp_eval('delete_option("invoiceninja_legacy_cron_cleared");')
     wp('cron', 'event', 'list', '--fields=hook')  # loads the plugin -> init -> cleanup
     hooks = wp('cron', 'event', 'list', '--fields=hook', '--format=csv')
-    check('invoiceninja_auto_refresh' in hooks, 'invoiceninja_auto_refresh should be scheduled', hooks)
+    check('invoiceninja_auto_refresh' not in hooks, '2.0 replaces the 1.x delete-and-reimport cron', hooks)
     check('\nauto_refresh' not in '\n' + hooks.replace('invoiceninja_auto_refresh', ''),
           'legacy auto_refresh event should be cleared', hooks)
 
@@ -207,7 +207,7 @@ def product_import_survives_an_outage():
     try:
         check(import_products() == '0', 'import should report 0 when IN is down')
         check(product_count() == before, 'products must not be deleted when IN is down (1.0.16)', product_count())
-        wp('cron', 'event', 'run', 'invoiceninja_auto_refresh')
+        wp_eval('InvoiceNinja\\Plugin::instance()->products->run(true);')
         check(product_count() == before, 'hourly refresh must not delete products when IN is down', product_count())
     finally:
         option('in_mock_mode', 'up')

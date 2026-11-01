@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '3', 'schema at 3', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '4', 'schema at 4', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -46,7 +46,7 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '3', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '4', 'all migrations ran')
     reset_mock_log()
     wp_eval('InvoiceNinja\\Controllers\\ProductController::loadProducts();')
     calls = api_calls()
@@ -217,3 +217,100 @@ def cli_status_doctor_and_environment():
     out = wp('invoiceninja', 'environment', 'confirm')
     check('allowed' in out, 'environment confirm', out)
     check(wp_ok('invoiceninja', 'doctor', '--repair'), 'doctor --repair exits cleanly (no failing checks)')
+
+
+# ---------- M2: product sync ----------
+
+def product_ids():
+    out = wp('post', 'list', '--post_type=invoiceninja_product', '--post_status=any', '--fields=ID,post_title,post_status', '--format=csv')
+    rows = [line.split(',') for line in out.splitlines()[1:]]
+    return {r[1]: (r[0], r[2]) for r in rows}
+
+
+def meta(post_id, key):
+    return wp('post', 'meta', 'get', post_id, key, check_ok=False)
+
+
+def sync(b, **data):
+    status, r = b.api('POST', '/sync/products', data)
+    check(status == 200, 'sync ran', r)
+    return r
+
+
+@test
+def upgrade_links_1x_products_and_retires_the_cron():
+    wp_eval("InvoiceNinja\\Plugin::instance()->mapping->clear('product'); update_option('invoiceninja_schema_version', 3); InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade();")
+    count = int(wp_eval("echo InvoiceNinja\\Plugin::instance()->mapping->count('product');"))
+    check(count == int(wp('post', 'list', '--post_type=invoiceninja_product', '--post_status=any', '--format=count')), '1.x posts linked', count)
+
+
+@test
+def sync_updates_products_in_place():
+    b = admin()
+    connect(b)
+    before = product_ids()
+    option('in_mock_price_bump', '2')
+    try:
+        r = sync(b)
+        check(r['result']['status'] == 'synced' and r['result']['updated'] >= 2, 'prices updated', r)
+        after = product_ids()
+        check(after['Widget'][0] == before['Widget'][0] and after['Gadget'][0] == before['Gadget'][0], 'post ids unchanged (URLs stay)', (before, after))
+        check(meta(after['Widget'][0], 'price') == '12', 'new price stored', meta(after['Widget'][0], 'price'))
+        r = sync(b)
+        check(r['result']['updated'] == 0 and r['result']['unchanged'] >= 2, 'unchanged products are skipped', r)
+    finally:
+        wp('option', 'delete', 'in_mock_price_bump')
+        sync(admin())
+
+
+@test
+def archived_products_are_unpublished_not_deleted():
+    b = admin()
+    option('in_mock_archived', 'P2')
+    try:
+        r = sync(b)
+        check(r['result']['drafted'] == 1, 'one product unpublished', r)
+        check(product_ids()['Gadget'][1] == 'draft', 'archived product is a draft')
+    finally:
+        wp('option', 'delete', 'in_mock_archived')
+    sync(b)
+    check(product_ids()['Gadget'][1] == 'publish', 'restored product is published again')
+
+
+@test
+def outage_changes_nothing():
+    b = admin()
+    before = product_ids()
+    option('in_mock_mode', 'down')
+    try:
+        r = sync(b)
+        check(r['result']['status'] == 'failed', 'sync reports the failure', r)
+    finally:
+        option('in_mock_mode', 'up')
+    check(product_ids() == before, 'every product kept during an outage')
+
+
+@test
+def circuit_breaker_stops_mass_changes_until_reviewed():
+    b = admin()
+    option('in_mock_many', '12')
+    try:
+        sync(b)  # adds the extra products (new products don't trip the breaker on a small catalog)
+        option('in_mock_price_bump', '7')
+        r = sync(b)
+        check(r['result']['status'] == 'paused', 'mass price change paused', r)
+        check(r['paused']['changes'] >= 12 and r['paused']['sample'], 'review details stored', r['paused'])
+        check(meta(product_ids()['Widget'][0], 'price') != '17', 'nothing changed before review')
+        _, d = b.api('GET', '/diagnostics')
+        check(any(c['id'] == 'product_sync' and c['status'] == 'fail' and c['action'] == 'review_sync' for c in d['checks']), 'Status shows the paused sync', d['checks'])
+        r = sync(b, force=True)
+        check(r['result']['status'] == 'synced' and not r['paused'], 'applied after review', r)
+        check(meta(product_ids()['Widget'][0], 'price') == '17', 'price applied')
+    finally:
+        wp('option', 'delete', 'in_mock_price_bump')
+        wp('option', 'delete', 'in_mock_many')
+        sync(b, force=True)
+        # Remove the extra test products so later runs start from the two base products
+        wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
+                " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"
+                " wp_delete_post($p->ID, true); $wpdb->delete($wpdb->prefix . 'invoiceninja_map', array('in_type' => 'product', 'in_id' => $id)); } }")

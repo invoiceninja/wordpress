@@ -182,6 +182,29 @@ final class Diagnostics {
 			);
 		}
 
+		$paused = $p->options->get( 'sync_paused' );
+		$sync   = $p->options->get( 'sync_status' );
+		if ( is_array( $paused ) ) {
+			$add(
+				'product_sync',
+				__( 'Product sync', 'invoiceninja' ),
+				'fail',
+				/* translators: 1: changes, 2: total products */
+				sprintf( __( 'Stopped: %1$d of %2$d products would change. Waiting for your review.', 'invoiceninja' ), (int) $paused['changes'], (int) $paused['total'] ),
+				'review_sync'
+			);
+		} elseif ( ! $p->products->enabled() ) {
+			$add( 'product_sync', __( 'Product sync', 'invoiceninja' ), 'skip', __( 'Skipped: product sync is turned off.', 'invoiceninja' ) );
+		} elseif ( is_array( $sync ) && 'failed' === ( $sync['status'] ?? '' ) ) {
+			/* translators: %s: reason */
+			$add( 'product_sync', __( 'Product sync', 'invoiceninja' ), 'warn', sprintf( __( 'The last sync failed: %s. It retries every hour.', 'invoiceninja' ), (string) $sync['message'] ), 'sync_now' );
+		} elseif ( is_array( $sync ) ) {
+			/* translators: 1: number of products, 2: time ago */
+			$add( 'product_sync', __( 'Product sync', 'invoiceninja' ), 'pass', sprintf( __( '%1$d products, synced %2$s ago', 'invoiceninja' ), $p->mapping->count( 'product' ), human_time_diff( (int) $sync['at'] ) ) );
+		} else {
+			$add( 'product_sync', __( 'Product sync', 'invoiceninja' ), 'info', __( 'Not synced yet.', 'invoiceninja' ), 'sync_now' );
+		}
+
 		$stats = Queue::stats();
 		if ( ! Queue::available() ) {
 			$add( 'scheduler', __( 'Background jobs', 'invoiceninja' ), 'fail', __( 'Action Scheduler is missing. Reinstall the plugin.', 'invoiceninja' ) );

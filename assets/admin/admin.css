@@ -145,3 +145,5 @@
 	.in-checks li > strong { flex-basis: 100%; }
 	.in-wizard__card { padding: 18px 16px; }
 }
+
+.in-sample { margin: 6px 0 6px 18px; list-style: disc; }

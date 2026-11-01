@@ -51,6 +51,13 @@ class ProductController extends BaseController
             update_option( 'invoiceninja_legacy_cron_cleared', 1 );
         }
 
+        if ( \InvoiceNinja\Plugin::booted() ) {
+            // 2.0 syncs products in place on Action Scheduler
+            wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
+
+            return;
+        }
+
         if ( ! wp_next_scheduled('invoiceninja_auto_refresh') ) {
             wp_schedule_event( time(), 'hourly', 'invoiceninja_auto_refresh' );
         }
@@ -71,6 +78,17 @@ class ProductController extends BaseController
 
     public static function loadProducts()
     {
+        if ( \InvoiceNinja\Plugin::booted() ) {
+            // 2.0 updates posts in place (ids and URLs stay) and never deletes because of an outage
+            $result = \InvoiceNinja\Plugin::instance()->products->run( true );
+            if ( $result['status'] !== 'synced' ) {
+                return 0;
+            }
+            self::rebuildProductPage();
+
+            return $result['total'];
+        }
+
         // Fetch first: if the API is unreachable or returns nothing, keep the existing
         // products rather than deleting the whole catalog
         $products = ProductApi::load();
@@ -201,6 +219,13 @@ class ProductController extends BaseController
             }
         }     
         
+        self::rebuildProductPage();
+
+        return count( $products );
+    }
+
+    public static function rebuildProductPage()
+    {
         $profile = json_decode( get_option( 'invoiceninja_profile' ) );
         $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
         
@@ -320,6 +345,5 @@ class ProductController extends BaseController
             update_option( 'invoiceninja_product_page_id', $page_id );
         }
 
-        return count( $products );
     }
 }

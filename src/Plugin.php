@@ -10,6 +10,8 @@ declare(strict_types=1);
 namespace InvoiceNinja;
 
 use InvoiceNinja\Admin\Admin;
+use InvoiceNinja\Catalog\ImageSideloader;
+use InvoiceNinja\Catalog\ProductSync;
 use InvoiceNinja\CLI\Command;
 use InvoiceNinja\Connection\ConnectionService;
 use InvoiceNinja\Connection\ConnectionState;
@@ -26,6 +28,7 @@ use InvoiceNinja\Core\Options;
 use InvoiceNinja\Core\Queue;
 use InvoiceNinja\Core\Secrets;
 use InvoiceNinja\Rest\Routes;
+use InvoiceNinja\Sync\Mapping;
 
 /**
  * One instance per request. Services are plain objects created up front; they are cheap
@@ -52,6 +55,8 @@ final class Plugin {
 	public readonly Diagnostics $diagnostics;
 	public readonly Mailer $mailer;
 	public readonly Notifications $notifications;
+	public readonly Mapping $mapping;
+	public readonly ProductSync $products;
 
 	/**
 	 * Constructor.
@@ -70,6 +75,8 @@ final class Plugin {
 		$this->installer     = new Installer( $this->options, $this->secrets, $this->credentials, $this->logger );
 		$this->mailer        = new Mailer( $this->options );
 		$this->notifications = new Notifications( $this->options, $this->mailer, $this->logger );
+		$this->mapping       = new Mapping();
+		$this->products      = new ProductSync( $this, $this->mapping );
 		$this->diagnostics   = new Diagnostics( $this );
 	}
 
@@ -129,9 +136,27 @@ final class Plugin {
 			'action_scheduler_init',
 			function (): void {
 				$this->queue->recurring( 'invoiceninja_daily', DAY_IN_SECONDS );
+				if ( 'none' !== $this->credentials->source() && $this->products->enabled() ) {
+					$this->queue->recurring( 'invoiceninja_sync_products', HOUR_IN_SECONDS );
+				}
 			}
 		);
 		$this->queue->handle( 'invoiceninja_daily', array( $this, 'daily' ) );
+		$this->queue->handle(
+			'invoiceninja_sync_products',
+			function ( array $payload ): void {
+				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ) );
+			}
+		);
+		$this->queue->handle( 'invoiceninja_sideload_image', array( new ImageSideloader( $this ), 'handle' ) );
+		add_action(
+			'invoiceninja_connected',
+			function (): void {
+				if ( $this->products->enabled() ) {
+					$this->queue->push( 'invoiceninja_sync_products', array( 'full' => true ) );
+				}
+			}
+		);
 
 		add_action( 'rest_api_init', array( new Routes( $this ), 'register' ) );
 		add_filter( 'site_status_tests', array( new SiteHealth( $this ), 'tests' ) );

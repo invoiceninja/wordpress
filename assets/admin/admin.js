@@ -743,6 +743,17 @@
 		const [ running, setRunning ] = useState( false );
 		const [ showPassed, setShowPassed ] = useState( false );
 		const [ message, setMessage ] = useState( '' );
+		const [ review, setReview ] = useState( null );
+		const applySync = async () => {
+			try {
+				const r = await api( '/sync/products', { method: 'POST', data: { force: true } } );
+				setReview( null );
+				setMessage( syncMessage( r.result ) );
+				await run();
+			} catch ( e ) {
+				setMessage( errorText( e ) );
+			}
+		};
 		const run = async () => {
 			setRunning( true );
 			setMessage( '' );
@@ -784,6 +795,15 @@
 					}
 					return;
 				}
+				if ( action === 'review_sync' ) {
+					setReview( await api( '/sync/products' ) );
+					return;
+				}
+				if ( action === 'sync_now' ) {
+					const r = await api( '/sync/products', { method: 'POST', data: {} } );
+					setMessage( syncMessage( r.result ) );
+					return await run();
+				}
 				if ( action === 'send_test' ) {
 					const r = await api( '/mail/test', { method: 'POST', data: {} } );
 					setMessage( r.sent ? sprintf( /* translators: %s: email */ __( 'Test email sent to %s.', 'invoiceninja' ), r.to ) : __( "WordPress couldn't send the email.", 'invoiceninja' ) );
@@ -802,6 +822,8 @@
 			run_jobs: [ __( 'Repair', 'invoiceninja' ) ],
 			allow_orders: [ __( 'Allow orders…', 'invoiceninja' ) ],
 			send_test: [ __( 'Send a test email', 'invoiceninja' ) ],
+			review_sync: [ __( 'Review changes', 'invoiceninja' ) ],
+			sync_now: [ __( 'Sync now', 'invoiceninja' ) ],
 		};
 		const checks = diag ? diag.checks : [];
 		const open = checks.filter( ( c ) => c.status !== 'pass' );
@@ -816,7 +838,13 @@
 				h( 'span', { role: 'status', className: 'in-muted' }, running ? __( 'Running…', 'invoiceninja' ) : diag ? sprintf( /* translators: %s: time */ __( 'Last run %s', 'invoiceninja' ), new Date( diag.ran_at * 1000 ).toLocaleTimeString() ) : '' ),
 				h( Button, { busy: running, onClick: run }, __( 'Run checks again', 'invoiceninja' ) ),
 				repairable && boot.can.manage ? h( Button, { primary: true, busy: running, onClick: repair }, __( 'Fix problems', 'invoiceninja' ) ) : null ) },
-				message ? h( Notice, { type: 'info' }, h( 'p', null, message ) ) : null,
+				message ? h( Notice, { type: 'info' }, h( 'p', { role: 'status' }, message ) ) : null,
+				review && review.paused ? h( Notice, { type: 'warning', title: sprintf( /* translators: 1: changes, 2: total */ __( '%1$d of %2$d products would change', 'invoiceninja' ), review.paused.changes, review.paused.total ) },
+					h( 'p', null, __( "That's more than one sync normally changes, so nothing was changed. If you just edited products in bulk in Invoice Ninja, it's safe to apply.", 'invoiceninja' ) ),
+					h( 'ul', { className: 'in-sample' }, ( review.paused.sample || [] ).map( ( x, i ) => h( 'li', { key: i }, ( { create: __( 'Add', 'invoiceninja' ), update: __( 'Update', 'invoiceninja' ), draft: __( 'Unpublish', 'invoiceninja' ) }[ x.action ] || x.action ) + ': ' + x.title ) ) ),
+					h( 'p', { className: 'in-row' },
+						h( Button, { onClick: () => setReview( null ) }, __( 'Not now', 'invoiceninja' ) ),
+						boot.can.manage ? h( Button, { primary: true, onClick: applySync }, __( 'Sync anyway', 'invoiceninja' ) ) : null ) ) : null,
 				h( 'ul', { className: 'in-checks in-checks--status' },
 					open.map( ( c ) => {
 						const a = actionLabels[ c.action ];
@@ -932,6 +960,8 @@
 			h( 'div', { className: 'in-tools' },
 				tool( __( 'Fix problems', 'invoiceninja' ), __( "Runs every check and repairs what's safe to repair automatically, such as scheduled jobs and database tables.", 'invoiceninja' ), null,
 					h( Button, { primary: true, busy: busy === 'repair', disabled: ! boot.can.manage, onClick: () => run( 'repair', async () => { const r = await api( '/diagnostics/repair', { method: 'POST' } ); setMessage( r.done.join( ' · ' ) ); } ) }, __( 'Fix problems', 'invoiceninja' ) ) ),
+				tool( __( 'Sync products now', 'invoiceninja' ), __( 'Fetch products from Invoice Ninja straight away instead of waiting for the hourly sync. Products are updated in place; nothing is removed because of an outage.', 'invoiceninja' ), null,
+					h( Button, { busy: busy === 'sync', disabled: conn.source === 'none' || ! boot.can.manage, onClick: () => run( 'sync', async () => { const r = await api( '/sync/products', { method: 'POST', data: {} } ); setMessage( syncMessage( r.result ) ); } ) }, __( 'Sync now', 'invoiceninja' ) ) ),
 				tool( __( 'Refresh company details', 'invoiceninja' ), __( 'Reload the company name, currency and payment gateways.', 'invoiceninja' ), conn.state.checked_at ? sprintf( /* translators: %s: time */ __( 'Last checked %s', 'invoiceninja' ), new Date( conn.state.checked_at * 1000 ).toLocaleString() ) : null,
 					h( Button, { busy: busy === 'refresh', disabled: conn.source === 'none' || ! boot.can.manage, onClick: () => run( 'refresh', async () => { const c = await api( '/connection/refresh', { method: 'POST' } ); setConn( c ); boot.connection = c; setMessage( c.state.status === 'connected' ? __( 'Refreshed just now.', 'invoiceninja' ) : __( "Couldn't refresh. See Checks.", 'invoiceninja' ) ); } ) }, __( 'Refresh', 'invoiceninja' ) ) ) ),
 			h( 'h2', null, __( 'Orders', 'invoiceninja' ) ),
@@ -955,6 +985,19 @@
 					'wp invoiceninja disconnect',
 					'wp invoiceninja environment confirm',
 				].join( '\n' ) ) ) );
+	}
+
+	function syncMessage( r ) {
+		if ( ! r ) {
+			return '';
+		}
+		if ( r.status === 'paused' ) {
+			return __( 'The sync stopped for review: too many products would change.', 'invoiceninja' );
+		}
+		if ( r.status === 'failed' ) {
+			return sprintf( /* translators: %s: reason */ __( 'The sync failed: %s', 'invoiceninja' ), r.message );
+		}
+		return sprintf( /* translators: 1: added, 2: updated, 3: unpublished */ __( 'Products synced: %1$d added, %2$d updated, %3$d unpublished.', 'invoiceninja' ), r.created, r.updated, r.drafted );
 	}
 
 	// ---------- Mount ----------

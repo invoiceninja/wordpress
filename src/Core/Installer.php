@@ -18,7 +18,7 @@ use InvoiceNinja\Connection\Credentials;
  */
 final class Installer {
 
-	public const SCHEMA = 3;
+	public const SCHEMA = 4;
 
 	/**
 	 * Constructor.
@@ -81,6 +81,7 @@ final class Installer {
 	public function createTables(): void {
 		require_once ABSPATH . 'wp-admin/includes/upgrade.php';
 		dbDelta( Logger::schema() );
+		dbDelta( \InvoiceNinja\Sync\Mapping::schema() );
 	}
 
 	/**
@@ -104,6 +105,14 @@ final class Installer {
 			},
 			3 => static function (): void {
 				Capabilities::grant();
+			},
+			4 => function (): void {
+				// 2.0 syncs products in place; link 1.x posts and retire its hourly delete-and-reimport.
+				$linked = \InvoiceNinja\Plugin::instance()->products->linkLegacyPosts();
+				wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
+				if ( $linked > 0 ) {
+					$this->logger->info( 'upgrade', sprintf( 'Linked %d products from 1.x', $linked ) );
+				}
 			},
 		);
 		foreach ( $steps as $version => $step ) {

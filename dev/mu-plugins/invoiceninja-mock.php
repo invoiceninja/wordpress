@@ -118,10 +118,21 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             return in_mock_response( [ 'data' => [] ] );
         }
 
-        return in_mock_response( [ 'data' => [
-            in_mock_product( 'P1', 'Widget', 10, 5, 3 ),
-            in_mock_product( 'P2', 'Gadget', 25.5, 0, 0 ),
-        ] ] );
+        $bump     = (float) get_option( 'in_mock_price_bump', 0 );
+        $archived = array_filter( explode( ',', (string) get_option( 'in_mock_archived', '' ) ) );
+        $products = [
+            in_mock_product( 'P1', 'Widget', 10 + $bump, 5, 3 ),
+            in_mock_product( 'P2', 'Gadget', 25.5 + $bump, 0, 0 ),
+        ];
+        for ( $i = 3; $i <= (int) get_option( 'in_mock_many', 0 ); $i++ ) {
+            $products[] = in_mock_product( 'P' . $i, 'Extra ' . $i, 5 + $bump, 0, 0 );
+        }
+        foreach ( $products as &$product ) {
+            $product['updated_at']  = 1700000000;
+            $product['archived_at'] = in_array( $product['id'], $archived, true ) ? 1700000000 : 0;
+            $product['is_deleted']  = false;
+        }
+        return in_mock_response( [ 'data' => $products ] );
     }
 
     if ( strpos( $route, 'clients?email=' ) === 0 ) {
