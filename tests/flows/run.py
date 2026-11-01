@@ -30,6 +30,8 @@ def setup():
     if wp_version:
         lib.wp('core', 'update', '--version=' + wp_version, '--force')
         lib.wp('core', 'update-db')
+        # WordPress 6.8+ hashes passwords with bcrypt, which older versions can't verify
+        lib.wp('user', 'update', 'admin', '--user_pass=admin', '--skip-email')
     lib.wp('rewrite', 'structure', '/%postname%/')
     lib.wp('plugin', 'activate', 'invoiceninja')
 

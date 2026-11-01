@@ -1,6 +1,6 @@
 # Invoice Ninja
 
-Tested up to: 6.8.3
+Tested up to: 7.1
 Stable tag: 1.0.16
 License: GPLv2 or later
 
