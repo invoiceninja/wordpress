@@ -16,6 +16,11 @@ class BaseApi
             return null;
         }
 
+        // Tokens saved by version 2.0+ are encrypted and can't be used here (eg. after a downgrade)
+        if ( self::hasEncryptedToken() ) {
+            return null;
+        }
+
         $url = self::getBaseUrl() . '/api/v1/' . $route;
 
         $args = array(
@@ -70,6 +75,11 @@ class BaseApi
         }
 
         return null;
+    }
+
+    public static function hasEncryptedToken()
+    {
+        return strpos( (string) get_option( 'invoiceninja_api_token' ), 'in1:' ) === 0;
     }
 
     public static function getBaseUrl()

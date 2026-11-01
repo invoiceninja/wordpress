@@ -1,0 +1,13 @@
+.git
+.github
+.gitignore
+.distignore
+.DS_Store
+build
+dev
+tests
+phpunit.xml.dist
+.phpunit.result.cache
+bump_version.sh
+assets/images/screenshot.png
+*.log

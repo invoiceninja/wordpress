@@ -23,7 +23,12 @@ jobs:
       run: composer install --no-dev --optimize-autoloader
 
     - name: Zip project
-      run: zip -r invoiceninja.zip . -x '*.git*' assets/images/screenshot.png bump_version.sh .gitignore
+      # The zip contains a top-level invoiceninja/ folder, so installs work even if the zip is renamed (#2)
+      run: |
+        mkdir -p build/invoiceninja
+        rsync -a --exclude-from=.distignore ./ build/invoiceninja/
+        (cd build && zip -rq ../invoiceninja.zip invoiceninja)
+        unzip -l invoiceninja.zip | tail -1
 
     - name: Upload app archive to workflow
       uses: actions/upload-artifact@v4
@@ -43,7 +48,7 @@ jobs:
         draft: false
         prerelease: false
         title: "Latest Release"
-        automatic_release_tag: "v1.0.15"
+        automatic_release_tag: "v1.0.16"
         files: |
             ${{ github.workspace }}/artifacts/InvoiceNinja
 

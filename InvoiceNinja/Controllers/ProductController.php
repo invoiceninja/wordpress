@@ -71,6 +71,16 @@ class ProductController extends BaseController
 
     public static function loadProducts()
     {
+        // Fetch first: if the API is unreachable or returns nothing, keep the existing
+        // products rather than deleting the whole catalog
+        $products = ProductApi::load();
+
+        if ( ! is_array( $products ) || empty( $products ) ) {
+            error_log( 'Invoice Ninja: product import skipped, no products were returned by the API' );
+
+            return 0;
+        }
+
         $args = [
             'post_type' => 'invoiceninja_product',
             'posts_per_page' => -1,
@@ -122,9 +132,7 @@ class ProductController extends BaseController
             wp_reset_postdata();
         }
 
-        $products = ProductApi::load();
-
-        foreach ($products as $product) 
+        foreach ($products as $product)
         {             
             $post_data = array(
                 'post_title' => esc_attr( $product->product_key ),
