@@ -18,7 +18,7 @@ use InvoiceNinja\Connection\Credentials;
  */
 final class Installer {
 
-	public const SCHEMA = 4;
+	public const SCHEMA = 5;
 
 	/**
 	 * Constructor.
@@ -113,6 +113,9 @@ final class Installer {
 				if ( $linked > 0 ) {
 					$this->logger->info( 'upgrade', sprintf( 'Linked %d products from 1.x', $linked ) );
 				}
+			},
+			5 => static function (): void {
+				// Tables were widened; createTables() above already applied it.
 			},
 		);
 		foreach ( $steps as $version => $step ) {

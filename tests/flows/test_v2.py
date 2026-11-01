@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '4', 'schema at 4', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '5', 'schema at 5', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -46,7 +46,7 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '4', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '5', 'all migrations ran')
     reset_mock_log()
     wp_eval('InvoiceNinja\\Controllers\\ProductController::loadProducts();')
     calls = api_calls()
@@ -311,6 +311,25 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
         wp('option', 'delete', 'in_mock_many')
         sync(b, force=True)
         # Remove the extra test products so later runs start from the two base products
+        wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
+                " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"
+                " wp_delete_post($p->ID, true); $wpdb->delete($wpdb->prefix . 'invoiceninja_map', array('in_type' => 'product', 'in_id' => $id)); } }")
+
+
+@test
+def upgraded_catalog_syncs_without_tripping_the_breaker():
+    b = admin()
+    option('in_mock_many', '12')
+    try:
+        sync(b)
+        # Simulate a 1.x site: posts exist but nothing is linked yet
+        wp_eval("InvoiceNinja\\Plugin::instance()->mapping->clear('product'); update_option('invoiceninja_schema_version', 3); InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade();")
+        r = sync(b)
+        check(r['result']['status'] == 'synced', 'first sync after linking 1.x posts runs (12 products, none really changed)', r)
+        r = sync(b)
+        check(r['result']['updated'] == 0, 'then everything is unchanged', r)
+    finally:
+        wp('option', 'delete', 'in_mock_many')
         wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
                 " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"
                 " wp_delete_post($p->ID, true); $wpdb->delete($wpdb->prefix . 'invoiceninja_map', array('in_type' => 'product', 'in_id' => $id)); } }")

@@ -41,6 +41,13 @@ class ProductController extends BaseController
 
         add_action('init', [ $this, 'registerCron' ] );
         add_action('invoiceninja_auto_refresh', [ $this, 'autoRefresh' ] );
+
+        // 2.0 syncs hourly; keep the 1.x products page in step with it
+        add_action( 'invoiceninja_products_synced', function ( $result ) {
+            if ( ! empty( $result['created'] ) || ! empty( $result['updated'] ) || ! empty( $result['drafted'] ) ) {
+                self::rebuildProductPage();
+            }
+        } );
     }
 
     public function registerCron()
@@ -232,6 +239,7 @@ class ProductController extends BaseController
         $count = 0;
         $args = [
             'post_type' => 'invoiceninja_product',
+            'post_status' => 'publish',
             'posts_per_page' => -1,
             'order_by' => 'title', // date, menu_order
             'order' => 'ASC',

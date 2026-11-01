@@ -85,7 +85,10 @@ class SettingsApi
                     update_option( 'invoiceninja_flush_rewrite', 1 );
                 }
 
-                if ( get_option( 'invoiceninja_sync_products' ) ) {
+                if ( \InvoiceNinja\Plugin::booted() ) {
+                    // Only the page layout changed: rebuild it without calling the API
+                    ProductController::rebuildProductPage();
+                } else if ( get_option( 'invoiceninja_sync_products' ) ) {
                     ProductController::loadProducts();
                 }
         }
@@ -238,6 +241,17 @@ class SettingsApi
             }
     
             $count = ProductController::loadProducts();
+
+            if ( \InvoiceNinja\Plugin::booted() && get_option( 'invoiceninja_sync_paused' ) ) {
+                add_settings_error(
+                    'invoiceninja',
+                    'imported_products',
+                    'The product sync stopped for review because many products would change. Review it in Invoice Ninja → Status.',
+                    'warning'
+                );
+
+                return;
+            }
 
             $products_label = get_option( 'invoiceninja_products_label', 'Products' );
             $messageOne = 'Successfully imported 1 product';

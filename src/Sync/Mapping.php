@@ -35,7 +35,7 @@ final class Mapping {
 		return "CREATE TABLE {$table} (
 			id bigint(20) unsigned NOT NULL AUTO_INCREMENT,
 			in_type varchar(20) NOT NULL,
-			in_id varchar(32) NOT NULL,
+			in_id varchar(64) NOT NULL,
 			wp_type varchar(20) NOT NULL,
 			wp_id bigint(20) unsigned NOT NULL,
 			hash char(40) NOT NULL DEFAULT '',
@@ -90,6 +90,26 @@ final class Mapping {
 		$table = self::table();
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
 		$wpdb->query( $wpdb->prepare( "INSERT INTO {$table} (in_type, in_id, wp_type, wp_id, hash, synced_at) VALUES (%s, %s, %s, %d, %s, %s) ON DUPLICATE KEY UPDATE wp_type = VALUES(wp_type), wp_id = VALUES(wp_id), hash = VALUES(hash), synced_at = VALUES(synced_at)", $in_type, $in_id, $wp_type, $wp_id, $hash, gmdate( 'Y-m-d H:i:s' ) ) );
+	}
+
+	/**
+	 * Every mapping of a type, by Invoice Ninja id.
+	 *
+	 * @param string $in_type Record type.
+	 * @return array<string, array{wp_id: int, hash: string}>
+	 */
+	public function all( string $in_type ): array {
+		global $wpdb;
+		$table = self::table();
+		$rows  = $wpdb->get_results( $wpdb->prepare( "SELECT in_id, wp_id, hash FROM {$table} WHERE in_type = %s", $in_type ), ARRAY_A ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		$out   = array();
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$out[ (string) $row['in_id'] ] = array(
+				'wp_id' => (int) $row['wp_id'],
+				'hash'  => (string) $row['hash'],
+			);
+		}
+		return $out;
 	}
 
 	/**

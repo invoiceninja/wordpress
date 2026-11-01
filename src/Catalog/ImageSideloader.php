@@ -45,15 +45,28 @@ final class ImageSideloader {
 			return;
 		}
 
-		$base    = $this->plugin->credentials->url();
-		$own     = '' !== $base && strtolower( (string) wp_parse_url( $url, PHP_URL_HOST ) ) === strtolower( BaseUrl::host( $base ) );
-		$args    = array(
-			'timeout'             => 15,
-			'redirection'         => 2,
-			'limit_response_size' => self::MAX_BYTES,
-		);
-		$private = $own && $this->plugin->state->allowsPrivate( $base );
-		$result  = $private ? wp_remote_get( $url, $args ) : wp_safe_remote_get( $url, $args );
+		$base = $this->plugin->credentials->url();
+		$own  = '' !== $base && self::sameOrigin( $url, $base );
+		if ( $own && $this->plugin->state->allowsPrivate( $base ) ) {
+			// The allowed private host: no redirects (they could point anywhere on the network).
+			$result = wp_remote_get(
+				$url,
+				array(
+					'timeout'             => 15,
+					'redirection'         => 0,
+					'limit_response_size' => self::MAX_BYTES,
+				)
+			);
+		} else {
+			$result = wp_safe_remote_get(
+				$url,
+				array(
+					'timeout'             => 15,
+					'redirection'         => 2,
+					'limit_response_size' => self::MAX_BYTES,
+				)
+			);
+		}
 		if ( is_wp_error( $result ) || 200 !== (int) wp_remote_retrieve_response_code( $result ) ) {
 			$this->plugin->logger->warning( 'sync', sprintf( "A product image couldn't be downloaded (post %d)", $post_id ), array( 'url' => $url ) );
 			return;
@@ -62,6 +75,7 @@ final class ImageSideloader {
 		$type = (string) wp_remote_retrieve_header( $result, 'content-type' );
 		if ( '' === $body || strlen( $body ) >= self::MAX_BYTES || ! str_starts_with( strtolower( $type ), 'image/' ) ) {
 			$this->plugin->logger->warning( 'sync', sprintf( 'Skipped a product image that is too large or not an image (post %d)', $post_id ) );
+			update_post_meta( $post_id, '_invoiceninja_image_url', $url ); // Don't retry until it changes.
 			return;
 		}
 
@@ -73,7 +87,8 @@ final class ImageSideloader {
 			default      => 'jpg',
 		};
 		if ( '' === $ext ) {
-			return; // SVG can carry scripts; not imported.
+			update_post_meta( $post_id, '_invoiceninja_image_url', $url ); // SVG can carry scripts; not imported.
+			return;
 		}
 		$filename = sanitize_file_name( 'invoiceninja-' . get_post_meta( $post_id, 'product_id', true ) . '.' . $ext );
 		$upload   = wp_upload_bits( $filename, null, $body );
@@ -102,10 +117,36 @@ final class ImageSideloader {
 			return;
 		}
 		wp_update_attachment_metadata( $attachment_id, wp_generate_attachment_metadata( $attachment_id, $upload['file'] ) );
+		$current = (int) get_post_thumbnail_id( $post_id );
+		$ours    = (int) get_post_meta( $post_id, '_invoiceninja_attachment', true );
+		if ( $current > 0 && $current !== $ours ) {
+			// An admin chose this image; keep it and don't keep a copy nobody uses.
+			wp_delete_attachment( $attachment_id, true );
+			update_post_meta( $post_id, '_invoiceninja_image_url', $url );
+			return;
+		}
 		$this->removeOwnImage( $post_id );
 		set_post_thumbnail( $post_id, $attachment_id );
 		update_post_meta( $post_id, '_invoiceninja_attachment', $attachment_id );
 		update_post_meta( $post_id, '_invoiceninja_image_url', $url );
+	}
+
+	/**
+	 * Whether a URL has the same scheme, host and port as the Invoice Ninja address.
+	 *
+	 * @param string $url  Image URL.
+	 * @param string $base Base URL.
+	 */
+	private static function sameOrigin( string $url, string $base ): bool {
+		$a = wp_parse_url( $url );
+		$b = wp_parse_url( $base );
+		if ( ! is_array( $a ) || ! is_array( $b ) ) {
+			return false;
+		}
+		$port = static fn( array $u ): int => (int) ( $u['port'] ?? ( 'https' === ( $u['scheme'] ?? '' ) ? 443 : 80 ) );
+		return strtolower( (string) ( $a['scheme'] ?? '' ) ) === strtolower( (string) ( $b['scheme'] ?? '' ) )
+			&& strtolower( (string) ( $a['host'] ?? '' ) ) === strtolower( (string) ( $b['host'] ?? '' ) )
+			&& $port( $a ) === $port( $b );
 	}
 
 	/**

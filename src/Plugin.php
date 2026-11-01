@@ -145,9 +145,17 @@ final class Plugin {
 		$this->queue->handle(
 			'invoiceninja_sync_products',
 			function ( array $payload ): void {
+				if ( ! $this->products->enabled() ) {
+					// Turned off since it was scheduled.
+					if ( function_exists( 'as_unschedule_all_actions' ) ) {
+						as_unschedule_all_actions( 'invoiceninja_sync_products', array(), Queue::GROUP );
+					}
+					return;
+				}
 				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ) );
 			}
 		);
+		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
 		$this->queue->handle( 'invoiceninja_sideload_image', array( new ImageSideloader( $this ), 'handle' ) );
 		add_action(
 			'invoiceninja_connected',

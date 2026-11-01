@@ -73,7 +73,28 @@ final class ProductSync {
 			$result['status'] = 'skipped';
 			return $result;
 		}
+		// Only one sync at a time, or two runs could both create the same new product.
+		if ( ! $this->lock() ) {
+			$result['status']  = 'busy';
+			$result['message'] = __( 'Another sync is running.', 'invoiceninja' );
+			return $result;
+		}
+		try {
+			return $this->runLocked( $full, $force, $result );
+		} finally {
+			$this->plugin->options->delete( 'sync_lock' );
+		}
+	}
 
+	/**
+	 * The sync itself, with the lock held.
+	 *
+	 * @param bool                 $full   Full sync.
+	 * @param bool                 $force  Bypass the circuit breaker.
+	 * @param array<string, mixed> $result Result skeleton.
+	 * @return array{status: string, created: int, updated: int, drafted: int, unchanged: int, total: int, message: string}
+	 */
+	private function runLocked( bool $full, bool $force, array $result ): array {
 		$cursor = (int) $this->plugin->options->get( 'sync_cursor_products', 0 );
 		$query  = array( 'status' => 'active,archived,deleted' );
 		if ( ! $full && $cursor > 0 ) {
@@ -96,37 +117,47 @@ final class ProductSync {
 			);
 		}
 
-		$plan = array();
-		$max  = $cursor;
+		// Load mappings, post statuses and 1.x links in three queries instead of several per product.
+		$mapped   = $this->mapping->all( 'product' );
+		$statuses = $this->postStatuses();
+		$legacy   = $this->legacyIndex();
+		$existing = count( array_filter( $mapped, static fn( array $m ): bool => isset( $statuses[ $m['wp_id'] ] ) ) );
+
+		$plan    = array();
+		$changes = 0;
 		foreach ( $items as $item ) {
-			$id = (string) ( $item['id'] ?? '' );
+			$id = self::cleanId( (string) ( $item['id'] ?? '' ) );
 			if ( '' === $id ) {
 				continue;
 			}
 			$desired = self::desired( $item );
-			$mapped  = $this->mapping->find( 'product', $id );
-			$post_id = $mapped ? $mapped['wp_id'] : $this->legacyPostId( $id );
-			if ( $post_id && ! get_post( $post_id ) ) {
+			$map     = $mapped[ $id ] ?? null;
+			$post_id = $map ? $map['wp_id'] : (int) ( $legacy[ $id ] ?? 0 );
+			$status  = $statuses[ $post_id ] ?? null;
+			if ( null === $status ) {
 				$post_id = 0;
 			}
 			$action = match ( true ) {
-				0 === $post_id && 'draft' === $desired['post']['post_status'] => 'skip',
-				0 === $post_id                                                 => 'create',
-				null !== $mapped && $mapped['hash'] === $desired['hash']       => 'unchanged',
-				'draft' === $desired['post']['post_status'] && 'draft' !== get_post_status( $post_id ) => 'draft',
-				default                                                        => 'update',
+				'trash' === $status                                              => 'skip', // An admin removed it; leave it alone.
+				0 === $post_id && 'draft' === $desired['post']['post_status']   => 'skip',
+				0 === $post_id                                                   => 'create',
+				null !== $map && $map['hash'] === $desired['hash']               => 'unchanged',
+				'draft' === $desired['post']['post_status'] && 'draft' !== $status => 'draft',
+				default                                                          => 'update',
 			};
-			$plan[] = array( $action, $id, $post_id, $desired );
-			$max    = max( $max, (int) ( $item['updated_at'] ?? 0 ) );
+			// Products just linked from 1.x have no hash yet; their first update isn't a "change".
+			$adopting = 'update' === $action && ( null === $map || '' === $map['hash'] );
+			if ( ( 'update' === $action && ! $adopting ) || 'draft' === $action || ( 'create' === $action && $existing > 0 ) ) {
+				++$changes;
+			}
+			$plan[] = array( $action, $id, $post_id, $desired, (int) ( $item['updated_at'] ?? 0 ), $status );
 		}
 
-		$existing = $this->mapping->count( 'product' );
-		$changes  = count( array_filter( $plan, static fn( array $p ): bool => in_array( $p[0], array( 'update', 'draft' ), true ) || ( 'create' === $p[0] && $existing > 0 ) ) );
 		if ( ! $force && $existing >= self::BREAKER_MIN && $changes / max( 1, $existing ) > self::BREAKER_RATIO ) {
-			$titles = array();
+			$sample = array();
 			foreach ( $plan as $p ) {
-				if ( 'unchanged' !== $p[0] && 'skip' !== $p[0] && count( $titles ) < 10 ) {
-					$titles[] = array(
+				if ( in_array( $p[0], array( 'create', 'update', 'draft' ), true ) && count( $sample ) < 10 ) {
+					$sample[] = array(
 						'action' => $p[0],
 						'title'  => (string) $p[3]['post']['post_title'],
 					);
@@ -138,7 +169,7 @@ final class ProductSync {
 					'at'      => time(),
 					'changes' => $changes,
 					'total'   => $existing,
-					'sample'  => $titles,
+					'sample'  => $sample,
 				)
 			);
 			$message = sprintf( '%d of %d products would change', $changes, $existing );
@@ -154,23 +185,29 @@ final class ProductSync {
 			);
 		}
 
-		foreach ( $plan as [ $action, $id, $post_id, $desired ] ) {
-			if ( 'skip' === $action ) {
+		$max          = $cursor;
+		$first_failed = PHP_INT_MAX;
+		foreach ( $plan as [ $action, $id, $post_id, $desired, $updated_at, $status ] ) {
+			if ( 'skip' === $action || 'unchanged' === $action ) {
+				$result['unchanged'] += 'unchanged' === $action ? 1 : 0;
+				$max                  = max( $max, $updated_at );
 				continue;
 			}
-			if ( 'unchanged' === $action ) {
-				++$result['unchanged'];
+			$written = $this->write( (int) $post_id, $desired, $status );
+			if ( $written <= 0 ) {
+				$first_failed = min( $first_failed, $updated_at );
 				continue;
 			}
-			$post_id = $this->write( (int) $post_id, $desired );
-			if ( $post_id <= 0 ) {
-				continue;
-			}
-			$this->mapping->save( 'product', $id, 'post', $post_id, $desired['hash'] );
+			$this->mapping->save( 'product', $id, 'post', $written, $desired['hash'] );
 			++$result[ 'create' === $action ? 'created' : ( 'draft' === $action ? 'drafted' : 'updated' ) ];
-			$this->maybeQueueImage( $post_id, $desired['image'] );
+			$max = max( $max, $updated_at );
+			$this->maybeQueueImage( $written, $desired['image'] );
 		}
 
+		// Never move the cursor past a product that failed to save, so it's tried again.
+		if ( PHP_INT_MAX !== $first_failed ) {
+			$max = min( $max, max( 0, $first_failed - 1 ) );
+		}
 		$this->plugin->options->set( 'sync_cursor_products', $max );
 		$this->plugin->options->delete( 'sync_paused' );
 		$result['total'] = $this->mapping->count( 'product' );
@@ -189,23 +226,116 @@ final class ProductSync {
 	}
 
 	/**
-	 * Link 1.x product posts (meta product_id) into the mapping table.
+	 * Take the sync lock (stale after 10 minutes).
+	 */
+	private function lock(): bool {
+		$options = $this->plugin->options;
+		if ( $options->addAtomic( 'sync_lock', (string) time() ) ) {
+			return true;
+		}
+		if ( (int) $options->get( 'sync_lock', 0 ) < time() - 600 ) {
+			$options->delete( 'sync_lock' );
+			return $options->addAtomic( 'sync_lock', (string) time() );
+		}
+		return false;
+	}
+
+	/**
+	 * Unpublish the old company's products after a company switch and forget the links.
+	 */
+	public function forgetCompany(): void {
+		foreach ( $this->mapping->all( 'product' ) as $map ) {
+			if ( 'publish' === get_post_status( $map['wp_id'] ) ) {
+				wp_update_post(
+					array(
+						'ID'          => $map['wp_id'],
+						'post_status' => 'draft',
+					)
+				);
+			}
+		}
+		$this->mapping->clear( 'product' );
+		$this->plugin->options->delete( 'sync_cursor_products' );
+		$this->plugin->options->delete( 'sync_paused' );
+		$this->plugin->logger->info( 'sync', 'Products from the previous company were moved to drafts' );
+	}
+
+	/**
+	 * Status of every product post, by id.
+	 *
+	 * @return array<int, string>
+	 */
+	private function postStatuses(): array {
+		global $wpdb;
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT ID, post_status FROM {$wpdb->posts} WHERE post_type = %s", self::POST_TYPE ), ARRAY_A ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$out  = array();
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$out[ (int) $row['ID'] ] = (string) $row['post_status'];
+		}
+		return $out;
+	}
+
+	/**
+	 * 1.x product ids to their newest post, for products not mapped yet.
+	 *
+	 * @return array<string, int>
+	 */
+	private function legacyIndex(): array {
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT pm.meta_value AS in_id, MAX(p.ID) AS id FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_key = 'product_id' AND p.post_type = %s GROUP BY pm.meta_value", self::POST_TYPE ), ARRAY_A );
+		$out  = array();
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$out[ (string) $row['in_id'] ] = (int) $row['id'];
+		}
+		return $out;
+	}
+
+	/**
+	 * Keep ids to the characters Invoice Ninja uses.
+	 *
+	 * @param string $id Id.
+	 */
+	public static function cleanId( string $id ): string {
+		return substr( (string) preg_replace( '/[^A-Za-z0-9_-]/', '', $id ), 0, 64 );
+	}
+
+	/**
+	 * Link 1.x product posts (meta product_id) into the mapping table. When 1.x left
+	 * several posts for one product, the newest is kept and the others become drafts.
 	 */
 	public function linkLegacyPosts(): int {
 		$linked = 0;
+		$by_id  = array();
 		$posts  = get_posts(
 			array(
 				'post_type'      => self::POST_TYPE,
 				'post_status'    => 'any',
 				'posts_per_page' => -1,
-				'fields'         => 'ids',
+				'orderby'        => 'ID',
+				'order'          => 'DESC',
 				'no_found_rows'  => true,
 			)
 		);
-		foreach ( $posts as $post_id ) {
-			$in_id = (string) get_post_meta( (int) $post_id, 'product_id', true );
-			if ( '' !== $in_id && null === $this->mapping->find( 'product', $in_id ) ) {
-				$this->mapping->save( 'product', $in_id, 'post', (int) $post_id, '' );
+		foreach ( $posts as $post ) {
+			$in_id = self::cleanId( (string) get_post_meta( $post->ID, 'product_id', true ) );
+			if ( '' === $in_id ) {
+				continue;
+			}
+			if ( isset( $by_id[ $in_id ] ) ) {
+				if ( 'draft' !== $post->post_status ) {
+					wp_update_post(
+						array(
+							'ID'          => $post->ID,
+							'post_status' => 'draft',
+						)
+					);
+				}
+				continue;
+			}
+			$by_id[ $in_id ] = $post->ID;
+			if ( null === $this->mapping->find( 'product', $in_id ) ) {
+				$this->mapping->save( 'product', $in_id, 'post', (int) $post->ID, '' );
 				++$linked;
 			}
 		}
@@ -228,7 +358,7 @@ final class ProductSync {
 			'post_status'  => $hidden ? 'draft' : 'publish',
 		);
 		$meta   = array(
-			'product_id'        => (string) ( $item['id'] ?? '' ),
+			'product_id'        => self::cleanId( (string) ( $item['id'] ?? '' ) ),
 			'price'             => $num( 'price' ),
 			'quantity'          => $num( 'quantity' ),
 			'max_quantity'      => $num( 'max_quantity' ),
@@ -260,8 +390,12 @@ final class ProductSync {
 	 *
 	 * @param int                  $post_id Existing post or 0.
 	 * @param array<string, mixed> $desired Desired state.
+	 * @param string|null          $status  Current status.
 	 */
-	private function write( int $post_id, array $desired ): int {
+	private function write( int $post_id, array $desired, ?string $status ): int {
+		if ( $post_id > 0 && in_array( $status, array( 'private', 'pending', 'future' ), true ) && 'publish' === $desired['post']['post_status'] ) {
+			unset( $desired['post']['post_status'] ); // Keep a status an admin chose.
+		}
 		$data = $desired['post'] + array(
 			'post_type'  => self::POST_TYPE,
 			'meta_input' => $desired['meta'],
@@ -281,26 +415,6 @@ final class ProductSync {
 	}
 
 	/**
-	 * A 1.x post for this product, if any.
-	 *
-	 * @param string $in_id Product id.
-	 */
-	private function legacyPostId( string $in_id ): int {
-		$ids = get_posts(
-			array(
-				'post_type'      => self::POST_TYPE,
-				'post_status'    => 'any',
-				'posts_per_page' => 1,
-				'fields'         => 'ids',
-				'no_found_rows'  => true,
-				'meta_key'       => 'product_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one-time lookup for 1.x posts.
-				'meta_value'     => $in_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-			)
-		);
-		return $ids ? (int) $ids[0] : 0;
-	}
-
-	/**
 	 * Queue the image download when the image changed.
 	 *
 	 * @param int    $post_id Post.
@@ -311,8 +425,10 @@ final class ProductSync {
 		if ( (string) $known === $url ) {
 			return;
 		}
-		if ( '' === $known && '' !== $url && has_post_thumbnail( $post_id ) ) {
-			update_post_meta( $post_id, '_invoiceninja_image_url', $url ); // 1.x already downloaded it.
+		if ( '' === $known && '' !== $url && has_post_thumbnail( $post_id ) && ! get_post_meta( $post_id, '_invoiceninja_attachment', true ) ) {
+			// 1.x already downloaded it: adopt it as ours, so a later image change replaces it.
+			update_post_meta( $post_id, '_invoiceninja_attachment', (int) get_post_thumbnail_id( $post_id ) );
+			update_post_meta( $post_id, '_invoiceninja_image_url', $url );
 			return;
 		}
 		$this->plugin->queue->push(
