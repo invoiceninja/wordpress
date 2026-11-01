@@ -1,13 +1,48 @@
-# Local + CI test stack. Run from the repo root:
-#   docker compose -f dev/docker-compose.yml up -d
-#   python3 tests/flows/run.py
+# Local + CI dev stack. Everything runs in Docker. The only published port is the
+# proxy's, and it is bound to this machine's loopback, so nothing is reachable from the network.
+#
+#   WordPress + mocked Invoice Ninja (what CI runs):
+#     docker compose -f dev/docker-compose.yml up -d --wait
+#     python3 tests/flows/run.py
+#
+#   With a real Invoice Ninja (official image), see dev/README.md:
+#     docker compose -f dev/docker-compose.yml --profile in up -d --wait
+#
+#   Tools (one-off containers):
+#     docker compose -f dev/docker-compose.yml run --rm composer install
+#     docker compose -f dev/docker-compose.yml run --rm php vendor/bin/phpunit
+#     docker compose -f dev/docker-compose.yml run --rm cli plugin list
 #
 # WP_IMAGE_TAG picks the PHP version (e.g. php8.1-apache, php8.4-apache).
 # WP_VERSION optionally pins the WordPress version (installed by tests/flows/run.py).
+#
+# Hostnames: the browser and the containers use the same URLs, http://wp.localhost:8089 and
+# http://in.localhost:8089. macOS and browsers resolve *.localhost to loopback. Inside containers,
+# cURL and Chromium also force *.localhost to loopback, so each app container gets a
+# "loopback" sidecar that forwards its 127.0.0.1:8089 to the proxy.
 
 name: invoiceninja-dev
 
+x-loopback: &loopback
+  image: alpine/socat:1.8.0.3
+  restart: unless-stopped
+  command: ["TCP-LISTEN:8089,bind=127.0.0.1,fork,reuseaddr", "TCP:proxy:8089"]
+
 services:
+  proxy:
+    image: nginx:1.27-alpine
+    ports:
+      - "127.0.0.1:${DEV_PORT:-8089}:8089"
+    volumes:
+      - ./proxy/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8089/proxy-health"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ---------- WordPress ----------
+
   db:
     image: mysql:8.0
     environment:
@@ -26,8 +61,6 @@ services:
     depends_on:
       db:
         condition: service_healthy
-    ports:
-      - "${WP_PORT:-8089}:80"
     environment:
       WORDPRESS_DB_HOST: db
       WORDPRESS_DB_USER: root
@@ -42,8 +75,78 @@ services:
       - wordpress:/var/www/html
       - ..:/var/www/html/wp-content/plugins/invoiceninja
       - ./mu-plugins:/var/www/html/wp-content/mu-plugins
+    healthcheck:
+      test: ["CMD-SHELL", "php -r 'exit(@fsockopen(\"127.0.0.1\", 80) ? 0 : 1);'"]
+      interval: 3s
+      timeout: 3s
+      retries: 40
+
+  wp-loopback:
+    <<: *loopback
+    network_mode: service:wordpress
+    depends_on: [wordpress]
+
+  # ---------- Invoice Ninja (official image), profile "in" ----------
+
+  in-app:
+    profiles: [in]
+    image: invoiceninja/invoiceninja-debian:${IN_TAG:-5.13.52}
+    env_file: ./in/in.env
+    depends_on:
+      in-db:
+        condition: service_healthy
+      in-redis:
+        condition: service_healthy
+    volumes:
+      - in_public:/var/www/html/public
+      - in_storage:/var/www/html/storage
+
+  in-loopback:
+    <<: *loopback
+    profiles: [in]
+    network_mode: service:in-app
+    depends_on: [in-app]
+
+  in-web:
+    profiles: [in]
+    image: nginx:1.27-alpine
+    depends_on:
+      in-app:
+        condition: service_healthy
+    volumes:
+      - ./in/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      - in_public:/var/www/html/public:ro
+      - in_storage:/var/www/html/storage:ro
+
+  in-db:
+    profiles: [in]
+    image: mysql:8.0
+    environment:
+      MYSQL_DATABASE: ninja
+      MYSQL_USER: ninja
+      MYSQL_PASSWORD: ninja
+      MYSQL_ROOT_PASSWORD: ninja-root
+    volumes:
+      - in_db:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "-uninja", "-pninja"]
+      interval: 3s
+      timeout: 3s
+      retries: 60
+
+  in-redis:
+    profiles: [in]
+    image: redis:7.4-alpine
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+
+  # ---------- Tools (run with `docker compose run --rm <tool> ...`) ----------
 
   cli:
+    profiles: [tools]
     image: wordpress:cli-${WP_CLI_PHP:-php8.3}
     depends_on:
       db:
@@ -62,14 +165,16 @@ services:
     command: ["--info"]
 
   composer:
-    image: composer:2
+    profiles: [tools]
+    image: composer:2.8
     working_dir: /app
     volumes:
       - ..:/app
     entrypoint: ["composer"]
 
   php:
-    image: composer:2
+    profiles: [tools]
+    image: composer:2.8
     working_dir: /app
     volumes:
       - ..:/app
@@ -77,3 +182,6 @@ services:
 
 volumes:
   wordpress:
+  in_public:
+  in_storage:
+  in_db:

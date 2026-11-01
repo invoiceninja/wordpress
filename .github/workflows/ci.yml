@@ -81,7 +81,7 @@ jobs:
       - name: Start WordPress + mocked Invoice Ninja
         run: |
           $COMPOSE pull --quiet
-          $COMPOSE up -d --wait db wordpress
+          $COMPOSE up -d --wait
       - name: Run end-to-end flows
         run: python3 tests/flows/run.py
       - name: Show logs on failure
