@@ -150,7 +150,7 @@ final class HttpClient {
 	 * @param bool                 $idempotent Whether to retry transient failures.
 	 * @throws ApiException When the call fails.
 	 */
-	public function request( string $method, string $path, array $query, ?array $body, float $budget, bool $idempotent ): Response {
+	public function request( string $method, string $path, array $query, ?array $body, float $budget, bool $idempotent, bool $raw = false ): Response {
 		if ( '' === $this->base || '' === $this->token ) {
 			throw new ApiException( ErrorKind::NotConfigured ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
@@ -170,7 +170,7 @@ final class HttpClient {
 				throw new ApiException( ErrorKind::Timeout, sprintf( 'time budget of %.1fs used up', $budget ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 			}
 			try {
-				return $this->once( $method, $url, $body, $remaining );
+				return $this->once( $method, $url, $body, $remaining, $raw );
 			} catch ( ApiException $e ) {
 				$retry = $idempotent
 					&& $attempt < 3
@@ -185,19 +185,36 @@ final class HttpClient {
 	}
 
 	/**
+	 * Download a file (a PDF), as it is.
+	 *
+	 * @param string $path   Path under /api/v1.
+	 * @param float  $budget Seconds.
+	 * @return array{body: string, type: string}
+	 * @throws ApiException When the call fails.
+	 */
+	public function download( string $path, float $budget = 20.0 ): array {
+		$response = $this->request( 'GET', $path, array(), null, $budget, true, true );
+		return array(
+			'body' => (string) ( $response->json['raw'] ?? '' ),
+			'type' => (string) ( $response->headers['content-type'] ?? 'application/octet-stream' ),
+		);
+	}
+
+	/**
 	 * One attempt.
 	 *
 	 * @param string            $method  Method.
 	 * @param string            $url     URL.
 	 * @param array<mixed>|null $body    Body.
 	 * @param float             $timeout Seconds.
+	 * @param bool              $raw_body Return the body as it is (a file), in json['raw'].
 	 * @throws ApiException When the call fails.
 	 */
-	private function once( string $method, string $url, ?array $body, float $timeout ): Response {
+	private function once( string $method, string $url, ?array $body, float $timeout, bool $raw_body = false ): Response {
 		$headers = array(
 			'X-API-TOKEN'       => $this->token,
 			'X-Requested-With'  => 'XMLHttpRequest',
-			'Accept'            => 'application/json',
+			'Accept'            => $raw_body ? '*/*' : 'application/json',
 			'X-CLIENT-PLATFORM' => 'WordPress',
 			'X-CLIENT-VERSION'  => defined( 'INVOICENINJA_VERSION' ) ? INVOICENINJA_VERSION : '2',
 		);
@@ -254,6 +271,9 @@ final class HttpClient {
 		}
 
 		$text = (string) wp_remote_retrieve_body( $raw );
+		if ( $raw_body && $status >= 200 && $status < 300 ) {
+			return new Response( $status, $headers, array( 'raw' => $text ) );
+		}
 		$json = json_decode( $text, true );
 
 		if ( $status >= 200 && $status < 300 ) {

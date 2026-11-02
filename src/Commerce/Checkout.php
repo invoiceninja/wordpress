@@ -102,6 +102,17 @@ final class Checkout {
 	}
 
 	/**
+	 * A logged-in customer ordering as their own, verified email needs no code.
+	 *
+	 * @param string $email Email.
+	 */
+	private function verifiedBuyer( string $email ): bool {
+		$user_id = self::userId();
+		$user    = $user_id > 0 ? get_userdata( $user_id ) : false;
+		return $user && strtolower( (string) $user->user_email ) === $email && (bool) apply_filters( 'invoiceninja_is_verified', false, $user_id );
+	}
+
+	/**
 	 * The address used for rate limits: IPv6 by /64, since one connection usually gets a
 	 * whole /64 to rotate through.
 	 *
@@ -187,7 +198,7 @@ final class Checkout {
 				'cart'    => $summary,
 			);
 		}
-		if ( $this->device->current( $email ) ) {
+		if ( $this->verifiedBuyer( $email ) || $this->device->current( $email ) ) {
 			return array(
 				'ok'   => true,
 				'next' => 'confirm',
@@ -267,7 +278,7 @@ final class Checkout {
 			);
 		}
 
-		if ( ! $this->device->current( $email ) ) {
+		if ( ! $this->verifiedBuyer( $email ) && ! $this->device->current( $email ) ) {
 			$result = $this->codes->verify( $email, $code, 'checkout', $ip );
 			if ( 'ok' !== $result ) {
 				$messages = array(
@@ -281,6 +292,14 @@ final class Checkout {
 					'message' => $messages[ $result ] ?? $messages['wrong'],
 				);
 			}
+			/**
+			 * Fires when an email code was typed correctly.
+			 *
+			 * @since 2.0.0
+			 * @param string $email   Email.
+			 * @param string $purpose checkout.
+			 */
+			do_action( 'invoiceninja_code_verified', $email, 'checkout' );
 			if ( $remember ) {
 				$this->device->remember( $email );
 			}

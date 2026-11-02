@@ -88,10 +88,28 @@
 		],
 	};
 
+	controls[ 'invoiceninja/account' ] = ( a, set ) => [
+		h( PanelBody, { key: 'p', title: __( 'Settings', 'invoiceninja' ) },
+			h( SelectControl, { label: __( 'Show', 'invoiceninja' ), value: a.mode, options: [
+				{ value: 'account', label: __( 'The account (invoices, quotes, payments…)', 'invoiceninja' ) },
+				{ value: 'link', label: __( 'A link to the billing portal', 'invoiceninja' ) },
+			], onChange: ( v ) => set( { mode: v } ), __nextHasNoMarginBottom: true } ),
+			a.mode === 'link' ? h( TextControl, { label: __( 'Link text', 'invoiceninja' ), value: a.label, placeholder: __( 'Billing portal', 'invoiceninja' ), onChange: ( v ) => set( { label: v } ), __nextHasNoMarginBottom: true } ) : null,
+			a.mode === 'link' ? h( SelectControl, { label: __( 'Style', 'invoiceninja' ), value: a.style, options: [
+				{ value: 'link', label: __( 'Link', 'invoiceninja' ) },
+				{ value: 'button', label: __( 'Button', 'invoiceninja' ) },
+			], onChange: ( v ) => set( { style: v } ), __nextHasNoMarginBottom: true } ) : null,
+			a.mode !== 'link' ? [ [ 'invoices', __( 'Invoices', 'invoiceninja' ) ], [ 'quotes', __( 'Quotes', 'invoiceninja' ) ], [ 'payments', __( 'Payments', 'invoiceninja' ) ], [ 'credits', __( 'Credits', 'invoiceninja' ) ], [ 'subscriptions', __( 'Subscriptions', 'invoiceninja' ) ] ].map( ( [ key, label ] ) => h( ToggleControl, {
+				key, label, checked: ( a.tabs || [] ).includes( key ), __nextHasNoMarginBottom: true,
+				onChange: ( on ) => set( { tabs: on ? ( a.tabs || [] ).concat( [ key ] ) : ( a.tabs || [] ).filter( ( x ) => x !== key ) } ),
+			} ) ) : null ),
+	];
+
 	// Blocks whose preview depends on the shopper (cart, order): a static placeholder.
 	const placeholders = {
 		'invoiceninja/checkout': __( 'Shoppers see their cart, then their details, the email code and the payment button here.', 'invoiceninja' ),
 		'invoiceninja/order-status': __( 'Shoppers see their order here when they open the link in their email.', 'invoiceninja' ),
+		'invoiceninja/pay-invoice': __( 'Customers enter an invoice number and email here, and get its payment link by email.', 'invoiceninja' ),
 	};
 
 	function edit( name ) {

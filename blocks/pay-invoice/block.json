@@ -1,0 +1,33 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/pay-invoice",
+	"title": "Pay Invoice",
+	"category": "invoiceninja",
+	"description": "Customers enter an invoice number and email, and get its payment link by email.",
+	"icon": "money-alt",
+	"keywords": [
+		"pay",
+		"invoice"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {},
+	"supports": {
+		"html": false,
+		"align": [
+			"wide",
+			"full"
+		],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	}
+}

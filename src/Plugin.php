@@ -79,6 +79,8 @@ final class Plugin {
 
 	public readonly \InvoiceNinja\Customers\ClientResolver $clients;
 
+	public readonly EmailCode $codes;
+
 	/**
 	 * Set while Settings > Store and the 1.x purchase option are being synced.
 	 */
@@ -106,13 +108,14 @@ final class Plugin {
 		$this->orders        = new Orders();
 		$this->cart          = new Cart( $this->secrets, $this->mapping );
 		$this->orderService  = new OrderService( $this, $this->orders );
+		$this->codes         = new EmailCode( $this->secrets, $this->mailer, $this->logger, $this->options );
 		$this->checkout      = new Checkout(
 			$this,
 			$this->cart,
 			$this->orders,
 			$this->orderService,
 			new OrderNumbers( $this->options, $this->secrets ),
-			new EmailCode( $this->secrets, $this->mailer, $this->logger, $this->options ),
+			$this->codes,
 			new DeviceRemember( $this->secrets ),
 			new StockCheck( $this, $this->cart, $this->mapping )
 		);
@@ -222,6 +225,7 @@ final class Plugin {
 	private function hooks(): void {
 		add_action( 'plugins_loaded', array( $this->installer, 'maybeUpgrade' ), 5 );
 		$this->store->register();
+		( new \InvoiceNinja\Privacy\Privacy( $this ) )->register();
 		foreach ( self::MODULES as $name => $class ) {
 			// @phpstan-ignore-next-line function.impossibleType, function.alreadyNarrowedType -- a module exists only when its files ship.
 			if ( class_exists( $class ) && is_subclass_of( $class, Module::class ) ) {

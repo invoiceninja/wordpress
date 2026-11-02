@@ -70,13 +70,12 @@ def cron_uses_prefixed_hook_and_clears_legacy_event_once():
 
 @test
 def logged_out_portal_redirects_to_login_without_client_lookup():
+    # 2.0: the 1.x shortcode links to the site's verified redirect
     browser = Browser()
     _, _, html = browser.get('/shop/')
+    check('?invoiceninja=portal' in html and 'key_login' not in html, 'the portal shortcode never prints a portal link', html[:400])
     reset_mock_log()
-    status, location, _ = browser.post('/shop/', {
-        'invoiceninja_client_portal': '1',
-        'invoiceninja_nonce': form_nonce(html, 'invoiceninja_client_portal'),
-    })
+    status, location, _ = browser.get('/?invoiceninja=portal')
     check(status in (301, 302) and 'wp-login.php' in (location or ''), 'should redirect to login', '%s %s' % (status, location))
     check(not api_calls(), 'no API calls expected', describe(api_calls()))
 
@@ -177,12 +176,14 @@ def multi_item_checkout_creates_one_invoice():
 
 @test
 def portal_sso_for_matching_contact():
+    # 2.0: only a verified email opens the portal, and only the user's own contact
+    wp_eval("$u = get_user_by('login', 'member'); delete_user_meta($u->ID, '_invoiceninja_verified_at'); delete_user_meta($u->ID, '_invoiceninja_client_id');")
     browser = Browser().login('member', 'pass')
-    _, _, html = browser.get('/shop/')
-    status, location, _ = browser.post('/shop/', {'invoiceninja_client_portal': '1',
-                                                  'invoiceninja_nonce': form_nonce(html, 'invoiceninja_client_portal')})
-    check(location == 'https://in.test/client/key_login/KEY_CLIENT_PLUS?client_hash=HASH',
-          'portal should log in the matching contact (case-insensitive)', '%s %s' % (status, location))
+    status, location, _ = browser.get('/?invoiceninja=portal')
+    check(status in (301, 302) and 'invoiceninja_verify=1' in (location or ''), 'an unverified email is sent to confirm it first', '%s %s' % (status, location))
+    wp_eval("$u = get_user_by('login', 'member'); InvoiceNinja\\Plugin::instance()->module('portal')->verification->mark($u->ID, 'admin');")
+    status, location, _ = browser.get('/?invoiceninja=portal')
+    check(location == 'https://in.test/client/key_login/KEY_CLIENT_PLUS', "a verified customer goes to their own contact's portal login", '%s %s' % (status, location))
 
 
 # ---------- connection / sync resilience ----------

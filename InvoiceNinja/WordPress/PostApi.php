@@ -387,10 +387,20 @@ class PostApi {
 			array(
 				'label' => 'Client Portal',
 				'sso'   => 'false',
+				'class' => '',
+				'style' => 'button',
 			),
 			$atts,
 			'invoiceninja_client_portal'
 		);
+
+		// 2.0: the portal opens only for logged-in customers with a verified email, through
+		// the site's own redirect (no portal link is printed into the page).
+		if ( \InvoiceNinja\Plugin::booted() ) {
+			$class = 'link' === $atts['style'] ? 'invoiceninja-portal-link' : 'wp-element-button invoiceninja-portal-link';
+			$class = trim( $class . ' ' . implode( ' ', array_map( 'sanitize_html_class', preg_split( '/\s+/', (string) $atts['class'] ) ) ) );
+			return '<a class="' . esc_attr( $class ) . '" href="' . esc_url( home_url( '/?invoiceninja=portal' ) ) . '">' . esc_html( $atts['label'] ) . '</a>';
+		}
 
 		if ( isset( $_SERVER['REQUEST_METHOD'] ) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['invoiceninja_client_portal'] ) ) {
 			if ( isset( $_POST['invoiceninja_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_client_portal' ) ) {

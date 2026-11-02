@@ -1,0 +1,83 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/account",
+	"title": "Account",
+	"category": "invoiceninja",
+	"description": "A customer's invoices, quotes, payments, credits and subscriptions, with Pay and PDF links.",
+	"icon": "admin-users",
+	"keywords": [
+		"portal",
+		"invoices",
+		"billing"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {
+		"mode": {
+			"type": "string",
+			"default": "account",
+			"enum": [
+				"account",
+				"link"
+			]
+		},
+		"tabs": {
+			"type": "array",
+			"default": [
+				"invoices",
+				"quotes",
+				"payments",
+				"credits",
+				"subscriptions"
+			]
+		},
+		"label": {
+			"type": "string",
+			"default": ""
+		},
+		"style": {
+			"type": "string",
+			"default": "link",
+			"enum": [
+				"link",
+				"button"
+			]
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": [
+			"wide",
+			"full"
+		],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	},
+	"variations": [
+		{
+			"name": "portal-link",
+			"title": "Portal Link",
+			"description": "A link or button to the customer's billing portal (only opens for verified customers).",
+			"icon": "external",
+			"attributes": {
+				"mode": "link"
+			},
+			"scope": [
+				"inserter",
+				"transform"
+			],
+			"isActive": [
+				"mode"
+			]
+		}
+	]
+}

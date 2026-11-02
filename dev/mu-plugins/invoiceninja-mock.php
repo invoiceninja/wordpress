@@ -68,6 +68,10 @@ add_action( 'generate_rewrite_rules', function () {
 } );
 
 add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
+    // A module's own mock (dev/mu-plugins/invoiceninja-mock-*.php, priority 5) already answered.
+    if ( false !== $pre ) {
+        return $pre;
+    }
     $method = isset( $args['method'] ) ? $args['method'] : 'GET';
     $body   = isset( $args['body'] ) && is_string( $args['body'] ) ? $args['body'] : null;
 
