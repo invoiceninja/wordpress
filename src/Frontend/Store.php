@@ -55,6 +55,8 @@ final class Store {
 		add_action( 'init', array( $this, 'registerAssets' ) );
 		add_action( 'init', array( $this, 'registerBlocks' ), 20 );
 		add_filter( 'block_categories_all', array( $this, 'category' ) );
+		add_action( 'enqueue_block_assets', array( $this, 'editorStyles' ) );
+		add_action( 'init', array( $this, 'productTemplate' ), 20 );
 		add_filter( 'the_content', array( $this, 'productContent' ), 9 );
 		add_action( 'template_redirect', array( $this, 'statusRedirect' ) );
 	}
@@ -131,6 +133,49 @@ final class Store {
 	}
 
 	/**
+	 * A product page template for block themes: image beside the title, price, Add to cart and
+	 * description, without the blog post byline. A theme's own single-invoiceninja_product wins,
+	 * and the legacy display keeps the theme's single template.
+	 */
+	public function productTemplate(): void {
+		if ( ! function_exists( 'register_block_template' ) || $this->legacy() ) {
+			return;
+		}
+		register_block_template(
+			'invoiceninja//single-' . ProductSync::POST_TYPE,
+			array(
+				'title'       => __( 'Invoice Ninja product', 'invoiceninja' ),
+				'description' => __( 'One product: image, price, Add to cart and description.', 'invoiceninja' ),
+				'post_types'  => array( ProductSync::POST_TYPE ),
+				'content'     => '<!-- wp:template-part {"slug":"header","tagName":"header"} /-->'
+					. '<!-- wp:group {"tagName":"main","style":{"spacing":{"padding":{"top":"var:preset|spacing|60","bottom":"var:preset|spacing|60"}}},"layout":{"type":"constrained"}} -->'
+					. '<main class="wp-block-group" style="padding-top:var(--wp--preset--spacing--60);padding-bottom:var(--wp--preset--spacing--60)">'
+					. '<!-- wp:columns {"align":"wide","style":{"spacing":{"blockGap":{"left":"var:preset|spacing|50"}}}} -->'
+					. '<div class="wp-block-columns alignwide">'
+					. '<!-- wp:column --><div class="wp-block-column"><!-- wp:post-featured-image {"aspectRatio":"1","style":{"border":{"radius":"8px"}}} /--></div><!-- /wp:column -->'
+					. '<!-- wp:column {"verticalAlignment":"center"} --><div class="wp-block-column is-vertically-aligned-center">'
+					. '<!-- wp:post-title {"level":1} /--><!-- wp:post-content {"layout":{"type":"default"}} /-->'
+					. '</div><!-- /wp:column --></div><!-- /wp:columns --></main><!-- /wp:group -->'
+					. '<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->',
+			)
+		);
+	}
+
+	/**
+	 * Our block styles inside the editor canvas, so the previews look like the site.
+	 */
+	public function editorStyles(): void {
+		if ( ! is_admin() ) {
+			return;
+		}
+		foreach ( array( self::HANDLE, 'invoiceninja-quote-form', 'invoiceninja-subscriptions' ) as $handle ) {
+			if ( wp_style_is( $handle, 'registered' ) ) {
+				wp_enqueue_style( $handle );
+			}
+		}
+	}
+
+	/**
 	 * Register every block with its server renderer, and the matching shortcodes.
 	 */
 	public function registerBlocks(): void {
@@ -155,7 +200,11 @@ final class Store {
 				register_block_type(
 					$base . $folder,
 					array(
-						'render_callback' => static fn( $attributes ) => (string) call_user_func( $render, is_array( $attributes ) ? $attributes : array() ),
+						// The block's own settings (alignment, spacing, colours) go on a wrapper.
+						'render_callback' => static function ( $attributes ) use ( $render ): string {
+							$html = (string) call_user_func( $render, is_array( $attributes ) ? $attributes : array() );
+							return '' === $html ? '' : '<div ' . get_block_wrapper_attributes() . '>' . $html . '</div>';
+						},
 						'editor_script'   => 'invoiceninja-blocks',
 					)
 				);
@@ -384,7 +433,8 @@ final class Store {
 	 * @param string $content Content.
 	 */
 	public function productContent( string $content ): string {
-		if ( $this->legacy() || ! is_singular( ProductSync::POST_TYPE ) || ! in_the_loop() || ! is_main_query() || has_block( 'invoiceninja/product' ) ) {
+		// Block themes render the content outside the loop, so compare with the page's own product.
+		if ( $this->legacy() || ! is_singular( ProductSync::POST_TYPE ) || (int) get_the_ID() !== (int) get_queried_object_id() || has_block( 'invoiceninja/product' ) ) {
 			return $content;
 		}
 		$id = (string) get_post_meta( (int) get_the_ID(), 'product_id', true );

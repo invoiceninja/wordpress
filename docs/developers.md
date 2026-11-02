@@ -107,6 +107,10 @@ Or in `theme.json`:
 }
 ```
 
+### Product pages
+
+With the Blocks display, block themes get an **Invoice Ninja product** template: the image beside the title, price, Add to cart and description. Edit it in **Appearance → Editor → Templates**, or ship your own `templates/single-invoiceninja_product.html` in the theme, which takes priority. A template that contains the Product block shows it once; otherwise the price and Add to cart are added above the description. Classic themes use their own `single.php`.
+
 ## Adding a module
 
 A module is a class implementing `InvoiceNinja\Module`, listed in `Plugin::MODULES`. It registers everything through the hooks above, plus `$plugin->store->add()` for blocks and shortcodes. See `src/Portal/PortalModule.php` for a complete example.

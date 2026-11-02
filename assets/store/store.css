@@ -92,7 +92,7 @@
 /* Add to cart */
 .invoiceninja-add { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.25rem 0 0; }
 .invoiceninja-add__qty { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9em; }
-.invoiceninja-add__qty input { inline-size: 5.5em; min-block-size: 2.75rem; }
+.invoiceninja-add__qty input { inline-size: 5.5em; min-block-size: 2.75rem; padding: 0.4em 0.6em; font: inherit; }
 .invoiceninja-add__button[disabled] { opacity: 0.6; cursor: not-allowed; }
 .invoiceninja-toast { margin: 0.5rem 0 0; padding: 0.6rem 0.9rem; border-radius: 0.5rem; background: var(--invoiceninja-surface); }
 .invoiceninja-toast.is-error { color: var(--invoiceninja-error); }

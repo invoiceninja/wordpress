@@ -157,8 +157,8 @@
 .in-orders tr.is-attention td:first-child { box-shadow: inset 4px 0 0 #d63638; }
 .in-orders .in-note { margin-top: 4px; font-size: 12px; color: #50575e; }
 .in-orders .in-note--error { color: #8a2424; }
-.in-row-actions { margin-top: 4px; font-size: 13px; }
-.in-row-actions .button-link, .in-row-actions a { font-size: 13px; }
+.in-row-actions { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; margin-top: 4px; font-size: 13px; line-height: 1.6; }
+.in-row-actions .button-link, .in-row-actions a, .in-row-actions .components-button.is-link { font-size: 13px; line-height: inherit; height: auto; min-height: 0; padding: 0; vertical-align: baseline; }
 .in-sep { color: #a7aaad; }
 .in-link-danger { color: #b32d2e !important; }
 .in-confirm-row td { background: #fcf9e8 !important; }

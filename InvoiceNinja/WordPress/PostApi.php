@@ -70,7 +70,8 @@ class PostApi {
 					'has_archive'  => true,
 					'menu_icon'    => 'dashicons-products',
 					'show_in_rest' => true,
-					'rewrite'      => [ 'slug' => sanitize_title( $slug ) ],
+					// WooCommerce owns /product/: two post types on one prefix make ours 404.
+					'rewrite'      => [ 'slug' => ( 'product' === sanitize_title( $slug ) && class_exists( 'WooCommerce' ) ) ? 'in-product' : sanitize_title( $slug ) ],
 					/*
 					'capabilities' => [
 						'edit_post' => 'edit_post',

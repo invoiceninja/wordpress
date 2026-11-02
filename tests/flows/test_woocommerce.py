@@ -68,7 +68,7 @@ def woo_ready(hpos=None):
     if hpos is not None:
         set_hpos(hpos)
     php("foreach (array('%s') as $h) { as_unschedule_all_actions($h); }"
-        "delete_option('in_mock_invoices'); delete_option('in_mock_payments'); delete_option('in_mock_lock_invoices');"
+        "delete_option('in_mock_invoices'); delete_option('in_mock_payments'); delete_option('in_mock_paid'); delete_option('in_mock_lock_invoices');"
         "delete_option('in_mock_woo_invoice_timeout'); delete_option('in_mock_payment_timeout'); delete_transient('invoiceninja_woo_lock_invoices');"
         "global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_woo\\\\_lock\\\\_%%'\");" % "','".join(HOOKS))
     reset_mock_log()

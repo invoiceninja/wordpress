@@ -44,6 +44,8 @@ def setup():
     # localhost looks like a copy, so orders are paused until confirmed
     lib.wp('invoiceninja', 'environment', 'confirm')
     # The 1.x flows run against the legacy display; 2.0 store flows switch to blocks themselves.
+    # Mock state other runs (or dev/showcase) may have left behind.
+    lib.wp_eval("foreach (array('in_mock_paid', 'in_mock_showcase') as $o) { delete_option($o); }")
     lib.wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('display' => 'legacy', 'mode' => 'cart', 'require_login' => false), 'modules' => array('woo' => false, 'store' => true, 'account' => true)));")
     # WooCommerce flows switch it on themselves; everything else expects the plugin's own store.
     lib.wp('plugin', 'deactivate', 'woocommerce', check_ok=False)
@@ -85,7 +87,11 @@ def main():
     print('Setting up WordPress at %s ...' % lib.BASE, flush=True)
     setup()
 
-    tests = [t for suite in SUITES for t in suite.TESTS if pattern in t.__name__]
+    # "suite:woocommerce" runs one file's tests; anything else matches test names.
+    if pattern.startswith('suite:'):
+        tests = [t for suite in SUITES if suite.__name__.endswith('test_' + pattern[6:]) for t in suite.TESTS]
+    else:
+        tests = [t for suite in SUITES for t in suite.TESTS if pattern in t.__name__]
     failures = []
     started = time.time()
     for fn in tests:
