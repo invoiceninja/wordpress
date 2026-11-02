@@ -158,9 +158,9 @@ final class Links {
 	 * @return int Users found.
 	 */
 	public function export(): int {
-		$total = count( $this->exportable( 0, 10000 ) );
+		$total = count( $this->exportable( array(), 10000 ) );
 		if ( $total > 0 ) {
-			$this->plugin->queue->push( 'invoiceninja_export_users', array( 'offset' => 0 ) );
+			$this->plugin->queue->push( 'invoiceninja_export_users', array( 'skip' => array() ) );
 		}
 		return $total;
 	}
@@ -168,11 +168,12 @@ final class Links {
 	/**
 	 * Background job: one batch of the export.
 	 *
-	 * @param array<string, mixed> $payload {offset}.
+	 * @param array<string, mixed> $payload {skip}: users that failed, left out of later batches.
 	 */
 	public function exportJob( array $payload ): void {
-		$offset = (int) ( $payload['offset'] ?? 0 );
-		$users  = $this->exportable( $offset, 50 );
+		// Linked users drop out of the query, so each batch starts from the top, minus failures.
+		$skip  = array_map( 'intval', (array) ( $payload['skip'] ?? array() ) );
+		$users = $this->exportable( $skip, 50 );
 		foreach ( $users as $user_id ) {
 			try {
 				$this->linkJob( array( 'user_id' => $user_id ) );
@@ -182,9 +183,12 @@ final class Links {
 					return;
 				}
 			}
+			if ( null === $this->get( $user_id ) ) {
+				$skip[] = $user_id;
+			}
 		}
-		if ( 50 === count( $users ) ) {
-			$this->plugin->queue->push( 'invoiceninja_export_users', array( 'offset' => $offset + 50 ), 30 );
+		if ( 50 === count( $users ) && count( $skip ) < 5000 ) {
+			$this->plugin->queue->push( 'invoiceninja_export_users', array( 'skip' => $skip ), 30 );
 		} else {
 			$this->plugin->logger->info( 'customers', 'Customer export finished' );
 		}
@@ -193,18 +197,18 @@ final class Links {
 	/**
 	 * Users in the included roles without a link.
 	 *
-	 * @param int $offset Offset.
-	 * @param int $limit  Limit.
+	 * @param list<int> $skip  Users to leave out (they failed).
+	 * @param int       $limit Limit.
 	 * @return list<int>
 	 */
-	private function exportable( int $offset, int $limit ): array {
+	private function exportable( array $skip, int $limit ): array {
 		$roles = $this->roles();
 		$query = new \WP_User_Query(
 			array(
 				'role__in'    => $roles ? $roles : array( 'customer', 'subscriber' ),
 				'fields'      => 'ID',
 				'number'      => $limit,
-				'offset'      => $offset,
+				'exclude'     => $skip,
 				'orderby'     => 'ID',
 				'meta_query'  => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- background export only.
 					array(

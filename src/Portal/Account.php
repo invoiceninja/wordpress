@@ -461,7 +461,17 @@ final class Account {
 		$user_id = Checkout::userId();
 		$back    = (string) ( $this->plugin->store->pageUrl( 'account' ) ?: home_url( '/' ) );
 		if ( 0 === $user_id ) {
-			wp_safe_redirect( wp_login_url( home_url( add_query_arg( array() ) ) ) );
+			$return = add_query_arg(
+				array_filter(
+					array(
+						'invoiceninja' => $action,
+						'type'         => $type,
+						'id'           => $id,
+					)
+				),
+				home_url( '/' )
+			);
+			wp_safe_redirect( wp_login_url( $return ) );
 			exit;
 		}
 		if ( ! $this->verification->isVerified( $user_id ) ) {

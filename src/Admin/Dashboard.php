@@ -51,7 +51,7 @@ final class Dashboard {
 		$rows = (array) $wpdb->get_results( $wpdb->prepare( "SELECT status, COUNT(*) AS n, SUM(total) AS amount FROM {$table} WHERE created_at >= %s GROUP BY status", $since ), ARRAY_A );
 		$open = (array) $wpdb->get_results( "SELECT status, COUNT(*) AS n FROM {$table} WHERE status IN ('attention', 'queued', 'placing', 'awaiting_payment') GROUP BY status", ARRAY_A );
 		// phpcs:enable
-		$by   = array();
+		$by = array();
 		foreach ( $rows as $row ) {
 			$by[ (string) $row['status'] ] = array(
 				'count'  => (int) $row['n'],
@@ -159,7 +159,7 @@ final class Dashboard {
 		global $wpdb;
 		$table = Orders::table();
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery -- our own table.
-		$rows = (array) $wpdb->get_results( $wpdb->prepare( "SELECT status, COUNT(*) AS n, SUM(total) AS amount FROM {$table} WHERE created_at >= %s GROUP BY status", gmdate( 'Y-m-d H:i:s', time() - 7 * DAY_IN_SECONDS ) ), ARRAY_A );
+		$rows  = (array) $wpdb->get_results( $wpdb->prepare( "SELECT status, COUNT(*) AS n, SUM(total) AS amount FROM {$table} WHERE created_at >= %s GROUP BY status", gmdate( 'Y-m-d H:i:s', time() - 7 * DAY_IN_SECONDS ) ), ARRAY_A );
 		$count = array_sum( array_map( 'intval', array_column( $rows, 'n' ) ) );
 		$paid  = 0.0;
 		foreach ( $rows as $row ) {

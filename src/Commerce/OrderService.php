@@ -457,7 +457,7 @@ final class OrderService {
 	 */
 	private function failed( array $order, ApiException $e, bool $inline, HttpClient $client ): array {
 		// The invoice may exist even though we didn't hear back: look before anything else.
-		if ( in_array( $e->kind, array( ErrorKind::Timeout, ErrorKind::Duplicate, ErrorKind::Server, ErrorKind::Transport ), true ) ) {
+		if ( $e->kind->outcomeUnknown() ) {
 			try {
 				$order    = (array) $this->orders->find( (int) $order['id'] );
 				$existing = '' !== (string) $order['client_id'] ? $this->findExisting( $client, $order, (string) $order['client_id'] ) : null;

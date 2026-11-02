@@ -34,6 +34,14 @@ enum ErrorKind: string {
 	case Locked          = 'locked';
 
 	/**
+	 * Whether a create or update may have happened even though it failed: look the record
+	 * up before trying again, or a retry could make a duplicate.
+	 */
+	public function outcomeUnknown(): bool {
+		return in_array( $this, array( self::Timeout, self::Duplicate, self::Server, self::Transport ), true );
+	}
+
+	/**
 	 * Whether trying again later can succeed without anyone changing anything.
 	 */
 	public function retryable(): bool {

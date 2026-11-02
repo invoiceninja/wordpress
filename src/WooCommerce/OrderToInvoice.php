@@ -120,7 +120,7 @@ final class OrderToInvoice {
 		$order_id = (int) ( $payload['order_id'] ?? 0 );
 		$run      = (string) ( $payload['backfill'] ?? '' );
 		try {
-			$this->sync( $order_id, '' !== $run );
+			$this->sync( $order_id, '' !== $run, $run );
 		} catch ( ApiException $e ) {
 			if ( '' !== $run && ! $e->kind->retryable() ) {
 				do_action( 'invoiceninja_woo_backfill_item_done', $order_id, $run ); // Done, if not well: it shows on the order.
@@ -157,19 +157,21 @@ final class OrderToInvoice {
 	/**
 	 * Make sure the order has an up-to-date, sent invoice.
 	 *
-	 * @param int  $order_id Order id.
-	 * @param bool $quiet    No admin emails (backfill).
+	 * @param int    $order_id Order id.
+	 * @param bool   $quiet    No admin emails (backfill).
+	 * @param string $run      Backfill run id, kept when the job is queued again.
 	 * @return array<string, mixed>|null The invoice, or null when there's none (yet).
 	 * @throws ApiException When Invoice Ninja should be asked again later.
 	 */
-	public function sync( int $order_id, bool $quiet = false ): ?array {
-		$result = null;
+	public function sync( int $order_id, bool $quiet = false, string $run = '' ): ?array {
+		$result  = null;
+		$payload = array( 'order_id' => $order_id ) + ( '' !== $run ? array( 'backfill' => $run ) : array() );
 		$this->withLock(
 			$order_id,
-			function () use ( $order_id, $quiet, &$result ): void {
-				$result = $this->syncLocked( $order_id, $quiet );
+			function () use ( $order_id, $quiet, $payload, &$result ): void {
+				$result = $this->syncLocked( $order_id, $quiet, $payload );
 			},
-			fn() => $this->plugin->queue->push( self::HOOK_SYNC, array( 'order_id' => $order_id ), 30, true )
+			fn() => $this->plugin->queue->push( self::HOOK_SYNC, $payload, 30, true )
 		);
 		return $result;
 	}
@@ -210,19 +212,20 @@ final class OrderToInvoice {
 	/**
 	 * The sync itself.
 	 *
-	 * @param int  $order_id Order id.
-	 * @param bool $quiet    No admin emails.
+	 * @param int                  $order_id Order id.
+	 * @param bool                 $quiet    No admin emails.
+	 * @param array<string, mixed> $payload  The job payload, for queueing it again.
 	 * @return array<string, mixed>|null
 	 * @throws ApiException When Invoice Ninja should be asked again later.
 	 */
-	private function syncLocked( int $order_id, bool $quiet ): ?array {
+	private function syncLocked( int $order_id, bool $quiet, array $payload = array() ): ?array {
 		$order = wc_get_order( $order_id );
 		if ( ! $order instanceof \WC_Order || in_array( $order->get_status(), self::NOT_YET, true ) ) {
 			return null;
 		}
 		if ( ! $this->plugin->environment->writesAllowed() ) {
 			OrderMeta::set( $order, array( OrderMeta::STATUS => 'paused' ) );
-			$this->plugin->queue->push( self::HOOK_SYNC, array( 'order_id' => $order_id ), 900, true );
+			$this->plugin->queue->push( self::HOOK_SYNC, $payload ? $payload : array( 'order_id' => $order_id ), 900, true );
 			return null;
 		}
 		$client = $this->plugin->api();
@@ -266,7 +269,7 @@ final class OrderToInvoice {
 				$invoice = $client->post( 'invoices', $this->body( $order, $found['client_id'], $check['lines'] ), array(), 15.0 )->data();
 			} catch ( ApiException $e ) {
 				// It may have been created even though we didn't hear back.
-				if ( ! in_array( $e->kind, array( ErrorKind::Timeout, ErrorKind::Duplicate, ErrorKind::Server, ErrorKind::Transport ), true ) ) {
+				if ( ! $e->kind->outcomeUnknown() ) {
 					throw $e;
 				}
 				$invoice = $this->findExisting( $client, $order, $found['client_id'] );
@@ -437,12 +440,24 @@ final class OrderToInvoice {
 		}
 		if ( '4' === $status || (float) ( $invoice['paid_to_date'] ?? 0 ) > 0 ) {
 			// Paid: changing it would leave the payment over or under the total. Flag it instead.
-			OrderMeta::set( $order, array( OrderMeta::LOCKED => 'paid' ) );
+			OrderMeta::set(
+				$order,
+				array(
+					OrderMeta::LOCKED => 'paid',
+					OrderMeta::HASH   => LineItems::hash( $lines ),
+				)
+			); // Noted once per change.
 			$order->add_order_note( __( "This order changed after it was paid, so its invoice in Invoice Ninja wasn't updated. Adjust it there if needed.", 'invoiceninja' ) );
 			return $invoice;
 		}
 		if ( $this->locked( $client, $invoice ) ) {
-			OrderMeta::set( $order, array( OrderMeta::LOCKED => 'locked' ) );
+			OrderMeta::set(
+				$order,
+				array(
+					OrderMeta::LOCKED => 'locked',
+					OrderMeta::HASH   => LineItems::hash( $lines ),
+				)
+			); // Noted once per change.
 			$order->add_order_note( __( "This order changed, but Invoice Ninja locks sent invoices, so the invoice wasn't updated. Adjust it there if needed.", 'invoiceninja' ) );
 			return $invoice;
 		}
@@ -451,7 +466,13 @@ final class OrderToInvoice {
 			$invoice = $client->put( 'invoices/' . rawurlencode( $id ), array( 'line_items' => $check['lines'] ), array(), 15.0 )->data();
 		} catch ( ApiException $e ) {
 			if ( ErrorKind::Validation === $e->kind && isset( $e->errors['number'] ) ) {
-				OrderMeta::set( $order, array( OrderMeta::LOCKED => 'locked' ) );
+				OrderMeta::set(
+					$order,
+					array(
+						OrderMeta::LOCKED => 'locked',
+						OrderMeta::HASH   => LineItems::hash( $lines ),
+					)
+				); // Noted once per change.
 				$order->add_order_note( __( "This order changed, but Invoice Ninja locks sent invoices, so the invoice wasn't updated. Adjust it there if needed.", 'invoiceninja' ) );
 				return $invoice;
 			}
@@ -706,7 +727,8 @@ final class OrderToInvoice {
 	 */
 	public function clientFor( HttpClient $client, \WC_Order $order ): ?array {
 		$known = OrderMeta::text( $order, OrderMeta::CLIENT_ID );
-		if ( '' !== $known ) {
+		// A currency mismatch keeps its client id for the admin to see, never to invoice.
+		if ( '' !== $known && 'currency' !== OrderMeta::text( $order, OrderMeta::ERROR ) ) {
 			return array(
 				'client_id'  => $known,
 				'contact_id' => OrderMeta::text( $order, OrderMeta::CONTACT_ID ),
@@ -731,9 +753,8 @@ final class OrderToInvoice {
 			OrderMeta::set(
 				$order,
 				array(
-					OrderMeta::STATUS    => 'failed',
-					OrderMeta::ERROR     => 'currency',
-					OrderMeta::CLIENT_ID => $found['client_id'],
+					OrderMeta::STATUS => 'failed',
+					OrderMeta::ERROR  => 'currency',
 				)
 			);
 			$this->plugin->logger->log( LogLevel::Error, 'woocommerce', sprintf( "WooCommerce order %s is in %s, but the matching Invoice Ninja client uses another currency, so it wasn't invoiced", $order->get_order_number(), $order->get_currency() ), array(), 'woo_order', (string) $order->get_id() );
@@ -747,11 +768,11 @@ final class OrderToInvoice {
 			)
 		);
 		$user_id = (int) $order->get_customer_id();
-		if ( $user_id > 0 && '' === (string) get_user_meta( $user_id, '_invoiceninja_client_id', true ) ) {
+		if ( $user_id > 0 && '' === (string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ) ) {
 			$user = get_userdata( $user_id );
 			if ( $user && strtolower( (string) $user->user_email ) === $email ) {
-				update_user_meta( $user_id, '_invoiceninja_client_id', $found['client_id'] );
-				update_user_meta( $user_id, '_invoiceninja_contact_id', $found['contact_id'] );
+				update_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, sanitize_text_field( $found['client_id'] ) );
+				update_user_meta( $user_id, \InvoiceNinja\Portal\Links::CONTACT, sanitize_text_field( $found['contact_id'] ) );
 			}
 		}
 		return array(

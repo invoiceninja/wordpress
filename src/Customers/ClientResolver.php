@@ -95,10 +95,14 @@ final class ClientResolver {
 				),
 			),
 		);
-		foreach ( array( 'address1', 'address2', 'city', 'state', 'postal_code', 'country_id', 'currency_id', 'phone', 'vat_number' ) as $field ) {
+		foreach ( array( 'address1', 'address2', 'city', 'state', 'postal_code', 'country_id', 'phone', 'vat_number' ) as $field ) {
 			if ( isset( $details[ $field ] ) && '' !== (string) $details[ $field ] ) {
 				$body[ $field ] = (string) $details[ $field ];
 			}
+		}
+		// Invoice Ninja keeps a client's currency in its settings.
+		if ( ! empty( $details['currency_id'] ) ) {
+			$body['settings'] = array( 'currency_id' => (string) $details['currency_id'] );
 		}
 		if ( isset( $details['client'] ) && is_array( $details['client'] ) ) {
 			$body += $details['client'];

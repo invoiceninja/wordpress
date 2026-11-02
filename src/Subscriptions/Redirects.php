@@ -82,7 +82,7 @@ final class Redirects {
 			$this->fail( __( 'Too many requests. Please try again in a few minutes.', 'invoiceninja' ), 429 );
 		}
 		$user_id = get_current_user_id();
-		$client  = $user_id > 0 ? (string) get_user_meta( $user_id, '_invoiceninja_client_id', true ) : '';
+		$client  = $user_id > 0 ? (string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ) : '';
 		$this->pending( (string) $sub['id'], self::verified( $user_id ) ? $client : '', 'purchase' );
 
 		$page = (string) $sub['purchase_page'];
@@ -129,7 +129,7 @@ final class Redirects {
 		if ( ! in_array( $do, array( 'change', 'cancel', 'payment_method' ), true ) || ! self::verified( $user_id ) || $this->limited( 'manage' ) ) {
 			$this->fail( __( 'Please confirm your email on your Account page first.', 'invoiceninja' ), 403 );
 		}
-		$client = (string) get_user_meta( $user_id, '_invoiceninja_client_id', true );
+		$client = (string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true );
 		$link   = $this->contactLink( $user_id );
 		if ( '' === $client || null === $link ) {
 			$this->fail( __( 'Your billing details are temporarily unavailable. Please try again later.', 'invoiceninja' ), 503 );
@@ -159,8 +159,8 @@ final class Redirects {
 	 * @param int $user_id User.
 	 */
 	public function contactLink( int $user_id ): ?string {
-		$client  = Events::cleanId( get_user_meta( $user_id, '_invoiceninja_client_id', true ) );
-		$contact = Events::cleanId( get_user_meta( $user_id, '_invoiceninja_contact_id', true ) );
+		$client  = Events::cleanId( get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ) );
+		$contact = Events::cleanId( get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CONTACT, true ) );
 		if ( '' === $client || '' === $contact ) {
 			return null;
 		}

@@ -446,7 +446,7 @@ final class Lifecycle {
 	private function userFor( string $client_id ): int {
 		$users = get_users(
 			array(
-				'meta_key'    => '_invoiceninja_client_id', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one indexed lookup per event.
+				'meta_key'    => \InvoiceNinja\Portal\Links::CLIENT, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one indexed lookup per event.
 				'meta_value'  => $client_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
 				'number'      => 1,
 				'fields'      => 'ID',

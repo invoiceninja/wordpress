@@ -264,7 +264,7 @@ final class Payments {
 			$payment = $client->post( 'payments', $body, array( 'email_receipt' => 'false' ), 15.0 )->data();
 		} catch ( ApiException $e ) {
 			$duplicate = ErrorKind::Validation === $e->kind && isset( $e->errors['idempotency_key'] );
-			$unknown   = in_array( $e->kind, array( ErrorKind::Timeout, ErrorKind::Duplicate, ErrorKind::Server, ErrorKind::Transport ), true );
+			$unknown   = $e->kind->outcomeUnknown();
 			$payment   = $duplicate || $unknown ? $this->findPayment( $client, $client_id, $key, $invoice_id ) : null;
 			if ( null === $payment ) {
 				OrderMeta::set( $order, array( OrderMeta::ERROR => $duplicate ? 'payment_key_taken' : 'payment:' . $e->kind->value ) );
@@ -448,7 +448,7 @@ final class Payments {
 			$before = (float) ( $client->get( 'payments/' . rawurlencode( $payment_id ), array(), 10.0 )->data()['refunded'] ?? 0 );
 			$client->post( 'payments/refund', $body, array(), 15.0 );
 		} catch ( ApiException $e ) {
-			if ( ! in_array( $e->kind, array( ErrorKind::Timeout, ErrorKind::Duplicate, ErrorKind::Server, ErrorKind::Transport ), true ) || ! isset( $before ) ) {
+			if ( ! $e->kind->outcomeUnknown() || ! isset( $before ) ) {
 				OrderMeta::set( $order, array( OrderMeta::ERROR => 'refund:' . $e->kind->value ) );
 				$this->plugin->logger->log( LogLevel::Error, 'woocommerce', sprintf( "WooCommerce order %s: the refund couldn't be recorded: %s", $order->get_order_number(), $e->kind->title() ), array( 'technical' => $e->technical ), 'woo_order', (string) $order_id );
 				throw $e;

@@ -112,7 +112,7 @@ final class Privacy {
 				'data'        => array(
 					array(
 						'name'  => __( 'Client linked', 'invoiceninja' ),
-						'value' => '' !== (string) get_user_meta( $user->ID, '_invoiceninja_client_id', true ) ? __( 'Yes', 'invoiceninja' ) : __( 'No', 'invoiceninja' ),
+						'value' => '' !== (string) get_user_meta( $user->ID, \InvoiceNinja\Portal\Links::CLIENT, true ) ? __( 'Yes', 'invoiceninja' ) : __( 'No', 'invoiceninja' ),
 					),
 					array(
 						'name'  => __( 'Email verified on', 'invoiceninja' ),
@@ -153,7 +153,7 @@ final class Privacy {
 		}
 		$user = get_user_by( 'email', $email );
 		if ( $user ) {
-			foreach ( array( '_invoiceninja_client_id', '_invoiceninja_contact_id', '_invoiceninja_verified_at', '_invoiceninja_verified_email_hash', '_invoiceninja_verified_by' ) as $key ) {
+			foreach ( array( \InvoiceNinja\Portal\Links::CLIENT, \InvoiceNinja\Portal\Links::CONTACT, '_invoiceninja_verified_at', '_invoiceninja_verified_email_hash', '_invoiceninja_verified_by' ) as $key ) {
 				$removed = delete_user_meta( $user->ID, $key ) || $removed;
 			}
 		}

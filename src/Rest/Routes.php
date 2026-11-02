@@ -103,7 +103,9 @@ final class Routes {
 			'view'        => static fn(): bool => current_user_can( Capabilities::VIEW ),
 			'manage'      => static fn(): bool => current_user_can( Capabilities::MANAGE ),
 			'manage_site' => static fn(): bool => current_user_can( 'manage_options' ),
-			'logged_in'   => static fn(): bool => \InvoiceNinja\Commerce\Checkout::userId() > 0,
+			// Logged in by cookie without a REST nonce (pages stay cacheable), so the request must
+			// also come from this site's own pages, like the public store writes.
+			'logged_in'   => fn( \WP_REST_Request $request ): bool => \InvoiceNinja\Commerce\Checkout::userId() > 0 && $this->sameSite( $request ),
 			'same_site'   => array( $this, 'sameSite' ),
 			'public'      => '__return_true',
 		);

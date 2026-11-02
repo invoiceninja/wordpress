@@ -241,7 +241,7 @@ final class QuoteCreator {
 		try {
 			return $client->post( 'quotes', $body, array(), 10.0 )->data();
 		} catch ( ApiException $e ) {
-			if ( in_array( $e->kind, array( ErrorKind::Timeout, ErrorKind::Duplicate, ErrorKind::Server, ErrorKind::Transport ), true ) ) {
+			if ( $e->kind->outcomeUnknown() ) {
 				// It may exist even though we didn't hear back.
 				try {
 					$found = $this->findExisting( $client, $marker, $client_id );
