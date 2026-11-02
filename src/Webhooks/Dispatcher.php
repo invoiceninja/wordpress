@@ -102,13 +102,11 @@ final class Dispatcher {
 	 */
 	public function refreshOrders( array $invoice_ids ): void {
 		foreach ( array_slice( $invoice_ids, 0, 50 ) as $invoice_id ) {
-			$order = $this->plugin->orders->findBy( 'invoice_id', $invoice_id );
-			if ( null === $order || 'awaiting_payment' !== $order['status'] ) {
-				continue;
+			foreach ( $this->plugin->orders->awaitingForInvoice( (string) $invoice_id ) as $order ) {
+				// The live check is throttled for shoppers; a webhook is a reason to look now.
+				delete_transient( 'invoiceninja_order_check_' . $order['id'] );
+				$this->plugin->orderService->refreshStatus( $order );
 			}
-			// The live check is throttled for shoppers; a webhook is a reason to look now.
-			delete_transient( 'invoiceninja_order_check_' . $order['id'] );
-			$this->plugin->orderService->refreshStatus( $order );
 		}
 	}
 }

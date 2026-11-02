@@ -1,7 +1,7 @@
 <?php
 /**
  * Plugin Name: Invoice Ninja mock — portal routes
- * Description: Dev only. One client with its contact's portal link, account tabs and PDFs.
+ * Description: Dev only. Account tabs (quotes, payments, credits) and invoice PDFs.
  */
 
 add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
@@ -16,16 +16,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
     $json = function ( $body ) {
         return [ 'headers' => [ 'x-app-version' => get_option( 'in_mock_version', '5.13.52' ), 'content-type' => 'application/json' ], 'body' => wp_json_encode( $body ), 'response' => [ 'code' => 200, 'message' => 'OK' ], 'cookies' => [], 'filename' => null ];
     };
-    if ( preg_match( '#^clients/([A-Za-z0-9_]+)$#', $route, $m ) ) {
-        if ( function_exists( 'in_mock_log' ) ) {
-            in_mock_log( [ 'event' => 'http', 'method' => 'GET', 'url' => $url, 'body' => null, 'token' => '', 'redirection' => 0 ] );
-        }
-        return $json( [ 'data' => [ 'id' => $m[1], 'contacts' => [
-            [ 'id' => 'OTHERCONTACT', 'email' => 'someone@else.test', 'link' => 'https://in.test/client/key_login/OTHER' ],
-            [ 'id' => 'C1', 'email' => (string) ( array_search( $m[1], function_exists( 'in_mock_clients' ) ? in_mock_clients() : [], true ) ?: 'member@x.com' ), 'link' => 'https://in.test/client/key_login/KEY_' . $m[1] ],
-        ] ] ] );
-    }
-    if ( preg_match( '#^(quotes|payments|credits)\?#', $route ) ) {
+    // clients/{id} (with each contact's link) comes from invoiceninja-mock-webhooks.php.
+    // Payment lists come from the WooCommerce mock; quotes and credits are empty here.
+    if ( preg_match( '#^(quotes|credits)\?#', $route ) ) {
         return $json( [ 'data' => [], 'meta' => [ 'pagination' => [ 'total_pages' => 1 ] ] ] );
     }
     if ( preg_match( '#^invoice/([A-Za-z0-9]+)/download$#', $route ) ) {

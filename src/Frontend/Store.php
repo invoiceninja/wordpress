@@ -81,7 +81,8 @@ final class Store {
 		 * @since 2.0.0
 		 * @param bool $enabled Enabled.
 		 */
-		return (bool) apply_filters( 'invoiceninja_store_enabled', true );
+		$on = ! Plugin::booted() || (bool) Plugin::instance()->options->setting( 'modules.store' );
+		return (bool) apply_filters( 'invoiceninja_store_enabled', $on );
 	}
 
 	/**

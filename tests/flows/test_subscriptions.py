@@ -146,6 +146,9 @@ def subscribe_sends_guests_to_prefilled_purchase_page_and_verified_users_through
     wp('user', 'meta', 'update', uid, '_invoiceninja_client_id', 'CLIENT_PLUS')
     wp('user', 'meta', 'update', uid, '_invoiceninja_contact_id', 'C1')
     wp('user', 'meta', 'update', uid, 'in_mock_verified', '1')
+    # The Portal module's own verification (left by other flows) must not count for the unverified step.
+    for key in ('_invoiceninja_verified_at', '_invoiceninja_verified_email_hash', '_invoiceninja_verified_by'):
+        wp('user', 'meta', 'delete', uid, key, check_ok=False)
     try:
         member = Browser().login('member', 'pass')
         reset_mock_log()
@@ -198,7 +201,8 @@ def opting_in_sets_and_restores_webhook_configuration():
 
     status, r = b.api('POST', '/admin/subscriptions/SUBW', {'connected': True})
     check(status == 409 and r['code'] == 'other_wordpress', 'refused: it reports to another WordPress site', r)
-    check('live.example.com' in mock_config('SUBW')['post_purchase_url'], 'and left alone')
+    left = mock_config('SUBW')
+    check((left is None or 'live.example.com' in left['post_purchase_url']) and not [c for c in api_calls() if c['method'] == 'PUT' and c['url'].endswith('/subscriptions/SUBW')], 'and left alone', left)
 
     status, r = b.api('POST', '/admin/subscriptions/SUBM', {'connected': False})
     check(status == 200 and mock_config('SUBM') == LEGACY, 'opt-out restores the original', mock_config('SUBM'))

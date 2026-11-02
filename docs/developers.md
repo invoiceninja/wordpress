@@ -38,6 +38,27 @@ The hook API follows semantic versioning: names and payload shapes don't change 
 | `invoiceninja_pre_resolve_host` | `array\|null $ips, string $host` | Override DNS for the private-network check (tests) |
 | `invoiceninja_repair` | `array $done` | Add steps to Status → Fix problems |
 
+### Module hooks
+
+| Hook | Type | Arguments | Notes |
+|---|---|---|---|
+| `invoiceninja_webhook_<entity>_<event>` | action | `array $entity, int $event_id` | After the entity was fetched again from Invoice Ninja, e.g. `invoiceninja_webhook_payment_created`, `invoiceninja_webhook_quote_approved`, `invoiceninja_webhook_invoice_late` |
+| `invoiceninja_webhook` | action | `string $entity, string $event, array $data` | Every webhook, after the fetch |
+| `invoiceninja_polling` | action | | Webhooks aren't available (e.g. a site Invoice Ninja can't reach), so the plugin polls instead |
+| `invoiceninja_subscription_purchased`, `_trial`, `_plan_changed`, `_paid`, `_cancelled`, `_suspended`, `_resumed` | action | `array $payload, array $raw` | Subscription lifecycle; the payload matches the relay's (see `docs/hosting.md`) |
+| `invoiceninja_subscriptions_synced` | action | `array $subscriptions` | Subscriptions refreshed from Invoice Ninja |
+| `invoiceninja_subscription_eligible` | filter | `bool\|string $eligible, string $subscription_id, array $buyer` | Answer Invoice Ninja's `is_eligible` callback; return true or a refusal message (fails open) |
+| `invoiceninja_relay_allow_private` | filter | `bool $allow, string $url` | Let the provisioning relay post to a private address |
+| `invoiceninja_lead_received` / `invoiceninja_lead_quoted` | action | `array $lead` / `array $lead, array $quote` | A quote request was saved, or became a quote |
+| `invoiceninja_captcha` | filter | `bool $ok, array $input, string $form` | Add a CAPTCHA to the Quote Request Form |
+| `invoiceninja_quote_request_spam` | filter | `bool $spam, array $fields` | Your own spam check |
+| `invoiceninja_quote_form_min_seconds` | filter | `int $seconds` | Minimum time to fill the form |
+| `invoiceninja_quote_tags` / `invoiceninja_quote_request_body` | filter | `array $names, array $lead` / `array $body, array $lead` | Change the quote's tags or body |
+| `invoiceninja_woo_invoice_created` | action | `int $order_id, array $invoice` | A WooCommerce order's invoice was created |
+| `invoiceninja_woo_invoice_body` | filter | `array $body, WC_Order $order` | Change the invoice sent for a WooCommerce order |
+| `invoiceninja_woo_pay_on_delivery_methods` | filter | `list<string> $methods` | Payment methods only paid on completion (default: cod) |
+| `invoiceninja_woo_account_endpoint` | filter | `string $slug` | The My Account "Invoices & billing" endpoint |
+
 ## REST API
 
 Everything is under `/wp-json/invoiceninja/v1`.
@@ -55,7 +76,11 @@ wp invoiceninja connect <url> < token.txt
 wp invoiceninja disconnect
 wp invoiceninja environment confirm|pause
 wp invoiceninja verify-users --role=<role> [--yes]
+wp invoiceninja webhooks status|register|delete
+wp invoiceninja woo backfill --from=<date> --to=<date> [--dry-run] [--status]
 ```
+
+Subscriptions provisioning (signed relay, payload schema, sample receivers): see `hosting.md`.
 
 ## Theming
 

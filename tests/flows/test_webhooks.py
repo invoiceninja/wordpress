@@ -251,6 +251,6 @@ def a_payment_event_marks_the_order_paid():
 @test
 def quote_approved_fires_the_contract_action():
     ready()
-    out = wp_eval("$got = ''; add_action('invoiceninja_webhook_quote_approved', function ($q, $e) use (&$got) { $got = $q['id'] . ':' . $e; });"
+    out = wp_eval("$got = ''; add_action('invoiceninja_webhook_quote_approved', function ($q, $e) use (&$got) { $got = $q['id'] . ':' . $e; }, 10, 2);"
                   "InvoiceNinja\\Plugin::instance()->module('webhooks')->dispatcher->handle(array('event' => 21, 'id' => 'Q7')); echo $got;")
     check(out == 'Q7:21', 'invoiceninja_webhook_quote_approved fired with the fetched quote', out)

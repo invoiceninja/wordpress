@@ -185,8 +185,38 @@
 							h( StatusIcon, { kind: t.kind } ),
 							h( 'div', { className: 'in-grow' }, h( 'strong', null, t.title ), h( 'div', { className: 'in-muted' }, t.body ) ),
 							t.external ? h( External, { className: 'button', href: t.href }, t.action ) : h( 'a', { className: 'button', href: t.href }, t.action ) ) ) ) ) : null,
-					h( HomeStats ) ),
+					h( HomeStats ),
+					boot.can.manage ? h( Features ) : null ),
 				h( 'aside', { className: 'in-aside' }, h( ConnectionCard, { connection } ) ) ) );
+	}
+
+	function Features() {
+		const [ modules, setModules ] = useState( ( boot.settings && boot.settings.modules ) || {} );
+		const [ message, setMessage ] = useState( '' );
+		const list = [
+			[ 'store', __( 'Store', 'invoiceninja' ), __( 'Products, cart, checkout and Order Status.', 'invoiceninja' ) ],
+			[ 'account', __( 'Customer account', 'invoiceninja' ), __( 'Invoices, quotes, payments and the billing portal for customers.', 'invoiceninja' ) ],
+			[ 'quote_form', __( 'Quote Request Form', 'invoiceninja' ), __( 'Requests become draft quotes in Invoice Ninja.', 'invoiceninja' ) ],
+			[ 'subs', __( 'Subscriptions', 'invoiceninja' ), __( 'Pricing tables and subscribe buttons for your Invoice Ninja subscriptions.', 'invoiceninja' ) ],
+		].concat( boot.wooActive ? [ [ 'woo', __( 'WooCommerce invoicing', 'invoiceninja' ), __( 'Every WooCommerce order becomes an invoice. The plugin’s own cart and checkout step aside.', 'invoiceninja' ) ] ] : [] );
+		const toggle = async ( key, on ) => {
+			const next = Object.assign( {}, modules, { [ key ]: on } );
+			setModules( next );
+			setMessage( '' );
+			try {
+				const saved = await api( '/settings', { method: 'POST', data: { modules: next } } );
+				boot.settings = saved;
+				setMessage( __( 'Saved. Reload the page to see menus and tabs for the features you turned on.', 'invoiceninja' ) );
+			} catch ( e ) {
+				setMessage( errorText( e ) );
+			}
+		};
+		return h( Card, { title: __( 'Features', 'invoiceninja' ) },
+			h( 'ul', { className: 'in-list' }, list.map( ( [ key, label, help ] ) => h( 'li', { key, className: 'in-list__item' },
+				h( 'label', { className: 'in-check' },
+					h( 'input', { type: 'checkbox', checked: !! modules[ key ], onChange: ( e ) => toggle( key, e.target.checked ) } ),
+					h( 'span', null, h( 'strong', null, label ), h( 'span', { className: 'in-muted' }, help ) ) ) ) ) ),
+			message ? h( 'p', { role: 'status', className: 'in-muted' }, message ) : null );
 	}
 
 	function HomeStats() {

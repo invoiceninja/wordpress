@@ -121,7 +121,8 @@ function in_mock_forms_route( $method, $url, $body, $token ) {
 
 	if ( preg_match( '#^quotes/([A-Za-z0-9]+)$#', $path, $m ) && $method === 'GET' ) {
 		$quotes = get_option( 'in_mock_quotes', array() );
-		return isset( $quotes[ $m[1] ] ) ? in_mock_forms_reply( array( 'data' => $quotes[ $m[1] ] ) ) : in_mock_forms_reply( array( 'message' => 'Not found' ), 404 );
+		// Quotes this mock didn't create belong to the other mocks (e.g. the webhooks mock).
+		return isset( $quotes[ $m[1] ] ) ? in_mock_forms_reply( array( 'data' => $quotes[ $m[1] ] ) ) : false;
 	}
 
 	return false;

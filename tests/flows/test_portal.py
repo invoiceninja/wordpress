@@ -112,4 +112,4 @@ def pay_invoice_emails_the_link_with_the_same_reply_either_way():
     _, z = Browser().api('POST', '/pay-invoice', {'number': number, 'email': 'wrong@x.com'})
     check(a == z == {'ok': True}, 'the same reply', (a, z))
     sent = mails('a+b@x.com')
-    check(len(sent) == 1 and 'INVITE' in sent[0]['body'], 'the payment link goes to the email on the invoice', describe(sent))
+    check(len(sent) == 1 and 'INVITE' in sent[0]['body'], 'the payment link goes to the email on the invoice', (sent, describe(api_calls())))

@@ -103,7 +103,7 @@ final class Events {
 	 * @param mixed $id Raw id.
 	 */
 	public static function cleanId( mixed $id ): string {
-		return is_scalar( $id ) ? substr( (string) preg_replace( '/[^A-Za-z0-9]/', '', (string) $id ), 0, 64 ) : '';
+		return is_scalar( $id ) ? substr( (string) preg_replace( '/[^A-Za-z0-9_-]/', '', (string) $id ), 0, 64 ) : '';
 	}
 
 	/**

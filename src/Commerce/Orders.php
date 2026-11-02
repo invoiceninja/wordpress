@@ -201,6 +201,20 @@ final class Orders {
 	}
 
 	/**
+	 * Orders awaiting payment on an invoice.
+	 *
+	 * @param string $invoice_id Invoice Ninja invoice id.
+	 * @return list<array<string, mixed>>
+	 */
+	public function awaitingForInvoice( string $invoice_id ): array {
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE invoice_id = %s AND status = 'awaiting_payment' ORDER BY id DESC LIMIT 20", $invoice_id ), ARRAY_A );
+		return array_map( array( self::class, 'hydrate' ), is_array( $rows ) ? $rows : array() );
+	}
+
+	/**
 	 * Find by id.
 	 *
 	 * @param int $id Id.

@@ -379,7 +379,7 @@ def checkout(s, email, **extra):
 def store_ready():
     b = admin()
     connect(b)
-    b.api('POST', '/settings', {'store': {'mode': 'cart', 'require_login': False}})
+    b.api('POST', '/settings', {'store': {'mode': 'cart', 'require_login': False}, 'modules': {'woo': False}})
     wp('invoiceninja', 'environment', 'confirm')
     sync(b)
     wp('option', 'delete', 'in_mock_invoices', check_ok=False)

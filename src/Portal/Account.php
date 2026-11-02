@@ -38,8 +38,10 @@ final class Account {
 	 * Register hooks.
 	 */
 	public function register(): void {
-		$this->plugin->store->add( 'account', 'invoiceninja_account', array( $this, 'render' ) );
-		$this->plugin->store->add( 'pay-invoice', 'invoiceninja_pay_invoice', array( $this, 'renderPayInvoice' ) );
+		if ( $this->plugin->options->setting( 'modules.account' ) ) {
+			$this->plugin->store->add( 'account', 'invoiceninja_account', array( $this, 'render' ) );
+			$this->plugin->store->add( 'pay-invoice', 'invoiceninja_pay_invoice', array( $this, 'renderPayInvoice' ) );
+		}
 		add_shortcode( 'invoiceninja_client_portal_url', static fn(): string => esc_url( home_url( '/?invoiceninja=portal' ) ) );
 		add_action( 'template_redirect', array( $this, 'redirect' ), 5 );
 		add_action( 'invoiceninja_rest_routes', array( $this, 'routes' ) );
