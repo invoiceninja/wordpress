@@ -140,16 +140,29 @@ final class Cart {
 	/**
 	 * Empty the cart.
 	 *
-	 * @param string $id Cart id.
+	 * @param string $id       Cart id.
+	 * @param int    $order_id The order it became, so a resubmit after a lost reply finds it.
 	 */
-	public function clear( string $id ): void {
+	public function clear( string $id, int $order_id = 0 ): void {
 		delete_transient( 'invoiceninja_cart_' . $id );
+		if ( $order_id > 0 ) {
+			set_transient( 'invoiceninja_cart_done_' . $id, $order_id, 15 * MINUTE_IN_SECONDS );
+		}
 		$this->cookie( self::COUNT_COOKIE, '0', false );
 		// Forget the id: the next add starts a new cart (and a new order token).
 		if ( ! headers_sent() ) {
 			setcookie( self::COOKIE, '', time() - HOUR_IN_SECONDS, COOKIEPATH ? COOKIEPATH : '/', COOKIE_DOMAIN ? COOKIE_DOMAIN : '', is_ssl(), true );
 		}
 		unset( $_COOKIE[ self::COOKIE ] );
+	}
+
+	/**
+	 * The order a cart just became, if it was checked out in the last 15 minutes.
+	 *
+	 * @param string $id Cart id.
+	 */
+	public function orderFor( string $id ): int {
+		return (int) get_transient( 'invoiceninja_cart_done_' . $id );
 	}
 
 	/**
@@ -268,24 +281,23 @@ final class Cart {
 	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>}
 	 */
 	public function reconcile( string $id, bool $only = false ): array {
-		$items = $this->items( $id );
+		$items   = $this->items( $id );
+		$trimmed = '';
 		if ( $only && count( $items ) > 1 ) {
-			$last  = (string) array_key_last( $items );
-			$items = array( $last => $items[ $last ] );
-			set_transient( 'invoiceninja_cart_' . $id, $items, self::TTL );
-			$summary            = $this->summary( $items );
-			$summary['changed'] = array_merge( $summary['changed'], array( $last ) );
-			$this->cookie( self::COUNT_COOKIE, (string) array_sum( $items ), false );
-			return $summary;
+			$trimmed = (string) array_key_last( $items );
+			$items   = array( $trimmed => $items[ $trimmed ] );
 		}
 		$summary = $this->summary( $items );
+		if ( '' !== $trimmed ) {
+			$summary['changed'][] = $trimmed;
+		}
 		if ( $summary['changed'] ) {
-			$items = array();
+			$saved = array();
 			foreach ( $summary['lines'] as $line ) {
-				$items[ (string) $line['product'] ] = (int) $line['quantity'];
+				$saved[ (string) $line['product'] ] = (int) $line['quantity'];
 			}
-			set_transient( 'invoiceninja_cart_' . $id, $items, self::TTL );
-			$this->cookie( self::COUNT_COOKIE, (string) array_sum( $items ), false );
+			set_transient( 'invoiceninja_cart_' . $id, $saved, self::TTL );
+			$this->cookie( self::COUNT_COOKIE, (string) array_sum( $saved ), false );
 		}
 		return $summary;
 	}

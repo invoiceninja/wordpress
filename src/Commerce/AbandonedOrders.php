@@ -93,14 +93,14 @@ final class AbandonedOrders {
 					$this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'cancelled', array( 'note' => 'invoice_gone' ) );
 					continue;
 				}
-				$tries = (int) $order['attempts'] + 1;
-				$this->orders->update(
-					(int) $order['id'],
-					array(
-						'attempts' => $tries,
-						'note'     => $tries >= 3 ? 'cleanup_failed' : (string) $order['note'],
-					)
-				);
+				$failures                       = (array) $this->plugin->options->get( 'abandoned_failures', array() );
+				$tries                          = (int) ( $failures[ (int) $order['id'] ] ?? 0 ) + 1;
+				$failures[ (int) $order['id'] ] = $tries;
+				if ( $tries >= 3 ) {
+					unset( $failures[ (int) $order['id'] ] );
+					$this->orders->update( (int) $order['id'], array( 'note' => 'cleanup_failed' ) );
+				}
+				$this->plugin->options->set( 'abandoned_failures', array_slice( $failures, -200, null, true ) );
 				$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Warning, 'checkout', sprintf( "The unpaid-orders cleanup couldn't close order %s: %s", $order['number'], $e->kind->title() ), array( 'kind' => $e->kind->value ), 'order', (string) $order['number'] );
 			}
 		}

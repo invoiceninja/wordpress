@@ -40,7 +40,7 @@ final class Queue {
 	 * @param string       $hook    Hook name, e.g. invoiceninja_sync_products.
 	 * @param array<mixed> $payload Payload (stored as JSON; no secrets).
 	 * @param int          $delay   Seconds from now.
-	 * @param bool         $unique  Skip if the same hook is already pending.
+	 * @param bool         $unique  Skip if the same job is already waiting to run (a running job may queue its own follow-up).
 	 * @param int          $attempt Attempt number.
 	 */
 	public function push( string $hook, array $payload = array(), int $delay = 0, bool $unique = true, int $attempt = 1 ): int {
@@ -53,12 +53,33 @@ final class Queue {
 				'attempt' => $attempt,
 			),
 		);
-		if ( $unique && as_has_scheduled_action( $hook, $args, self::GROUP ) ) {
+		if ( $unique && self::pending( $hook, $args ) ) {
 			return 0;
 		}
 		return $delay > 0
 			? (int) as_schedule_single_action( time() + $delay, $hook, $args, self::GROUP )
 			: (int) as_enqueue_async_action( $hook, $args, self::GROUP );
+	}
+
+	/**
+	 * Whether the same job is waiting to run. Action Scheduler's own check also counts the
+	 * job that's running now, which would stop a job from scheduling its next round.
+	 *
+	 * @param string       $hook Hook.
+	 * @param array<mixed> $args Args.
+	 */
+	private static function pending( string $hook, array $args ): bool {
+		return (bool) as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'args'     => $args,
+				'group'    => self::GROUP,
+				'status'   => 'pending', // ActionScheduler_Store::STATUS_PENDING.
+				'per_page' => 1,
+				'orderby'  => 'none',
+			),
+			'ids'
+		);
 	}
 
 	/**

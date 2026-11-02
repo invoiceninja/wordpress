@@ -772,3 +772,42 @@ def store_mode_and_login_requirement_are_enforced():
         check(status == 400, 'unknown mode refused', (status, r))
     finally:
         b.api('POST', '/settings', {'store': {'mode': 'cart', 'require_login': False}})
+
+
+@test
+def ship_review_regressions():
+    store_ready()
+    b = admin()
+    # A resubmit after a lost reply gets the same order, not "your cart is empty"
+    import copy
+    s = shopper()
+    email = 'lost.reply@example.com'
+    s.api('POST', '/checkout/start', {'email': email})
+    saved = [copy.copy(c) for c in s.jar]
+    status, first = s.api('POST', '/checkout/confirm', {'email': email, 'code': last_code(email)})
+    check(status == 200 and first['ok'], 'order placed', first)
+    for c in saved:
+        s.jar.set_cookie(c)  # as if the reply (and its cookies) never arrived
+    status, again = s.api('POST', '/checkout/confirm', {'email': email, 'code': last_code(email)})
+    check(status == 200 and again['number'] == first['number'], 'the resubmit returns the same order', again)
+    check(wp_eval("echo count(array_filter(get_option('in_mock_invoices', array()), function($i) { return $i['po_number'] === '%s'; }));" % first['number']) == '1', 'and no second invoice')
+    # A job can schedule its own next round while it runs
+    out = wp_eval("$q = InvoiceNinja\\Plugin::instance()->queue; add_action('in_test_self', function () use ($q) { echo $q->push('in_test_self', array(), 60, true) > 0 ? 'queued' : 'skipped'; });"
+                  "$q->push('in_test_self', array(), 0, true); $ids = as_get_scheduled_actions(array('hook' => 'in_test_self', 'status' => 'pending'), 'ids');"
+                  "ActionScheduler::runner()->process_action(reset($ids)); as_unschedule_all_actions('in_test_self');")
+    check(out == 'queued', 'a running job may queue its follow-up', out)
+    # Saving the legacy settings form on a fresh 2.0 store doesn't turn the store off
+    wp('option', 'delete', 'invoiceninja_online_purchases', check_ok=False)
+    _, _, html = b.get('/wp-admin/admin.php?page=invoiceninja-legacy')
+    check('name="invoiceninja_online_purchases" value="multiple"' in html, 'the 1.x form carries the current Store mode', html[html.find('online_purchases') - 80:html.find('online_purchases') + 120])
+    # Admin cancel when the invoice was deleted in Invoice Ninja
+    _, r = checkout(shopper(), 'gone.admin@example.com')
+    oid, inv = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['id'], ' ', $o['invoice_id'];" % r['number']).split()
+    wp_eval("$i = get_option('in_mock_invoices'); unset($i['%s']); update_option('in_mock_invoices', $i);" % inv)
+    status, r = b.api('POST', '/admin/orders/%s/cancel' % oid, {})
+    check(status == 200 and r['status'] == 'cancelled', 'an order whose invoice was deleted in Invoice Ninja can be cancelled', (status, r))
+    # A 2.0 site (not from 1.x) keeps its store open through migration 7
+    out = wp_eval("update_option('invoiceninja_schema_version', 6); delete_option('invoiceninja_online_purchases'); update_option('invoiceninja_upgraded_from', '');"
+                  "InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('mode' => 'cart', 'require_login' => false)));"
+                  "InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade(); echo InvoiceNinja\\Plugin::instance()->options->setting('store.mode');")
+    check(out == 'cart', 'a connected 2.0 store is not mistaken for a 1.x upgrade', out)

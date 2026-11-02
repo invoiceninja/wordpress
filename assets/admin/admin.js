@@ -669,7 +669,12 @@
 			setMessage( '' );
 			try {
 				// Only this tab's settings: the other tab may have changed meanwhile, and shop managers can't send email settings.
-				const data = section === 'store' ? { store: s.store } : Object.assign( {}, s, { store: undefined } );
+				// A hidden, cleared days field isn't the admin's change: send the saved value back.
+				const store = Object.assign( {}, s.store );
+				if ( ! store.abandoned_enabled && ! ( parseInt( store.abandoned_days, 10 ) >= 1 ) ) {
+					store.abandoned_days = ( boot.settings.store && boot.settings.store.abandoned_days ) || 14;
+				}
+				const data = section === 'store' ? { store } : Object.assign( {}, s, { store: undefined } );
 				const saved = await api( '/settings', { method: 'POST', data } );
 				setS( saved );
 				boot.settings = saved;

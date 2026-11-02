@@ -242,6 +242,13 @@ final class Checkout {
 		}
 		$details = $this->accountEmail( $details );
 		$email   = EmailCode::normalize( $details['email'] ?? '' );
+		// The same browser sending again after its reply was lost (its code is used up by now):
+		// give it the order it already placed. Needs this browser's signed cart cookie and the same email.
+		$cart_id = $this->cart->currentId();
+		$done    = null !== $cart_id ? $this->orders->find( $this->cart->orderFor( $cart_id ) ) : null;
+		if ( null !== $done && $done['email'] === $email && null !== $cart_id && ! $this->cart->items( $cart_id ) ) {
+			return array( 'ok' => true ) + $this->publicView( $done, true );
+		}
 		if ( ! $this->device->current( $email ) ) {
 			$result = $this->codes->verify( $email, $code, 'checkout', $ip );
 			if ( 'ok' !== $result ) {
@@ -261,7 +268,6 @@ final class Checkout {
 			}
 		}
 
-		$cart_id = $this->cart->currentId();
 		$summary = null === $cart_id ? $this->cart->summary( array() ) : $this->cart->reconcile( $cart_id, $this->buyNow() );
 		if ( ! $summary['lines'] || null === $cart_id ) {
 			return array(
@@ -280,8 +286,13 @@ final class Checkout {
 		}
 
 		// Same cart, same email, same contents: a double submit gets the same order.
-		$token = substr( hash( 'sha256', $cart_id . '|' . $email . '|' . wp_json_encode( $summary['lines'] ) ), 0, 32 );
-		$order = $this->orders->findBy( 'token', $token );
+		// Only what's bought, not stock limits that can move between two clicks.
+		$bought = array_map(
+			static fn( array $line ): array => array( $line['product'], $line['quantity'], $line['price'] ),
+			$summary['lines']
+		);
+		$token  = substr( hash( 'sha256', $cart_id . '|' . $email . '|' . wp_json_encode( $bought ) ), 0, 32 );
+		$order  = $this->orders->findBy( 'token', $token );
 		if ( null === $order ) {
 			try {
 				$order = $this->orders->create(
@@ -313,7 +324,7 @@ final class Checkout {
 			}
 		}
 		// A new cart id, so buying the same items again later is a new order.
-		$this->cart->clear( $cart_id );
+		$this->cart->clear( $cart_id, (int) $order['id'] );
 		return array( 'ok' => true ) + $this->publicView( $order, true );
 	}
 
@@ -399,7 +410,7 @@ final class Checkout {
 			$body    = '<p>' . esc_html__( 'Thanks for your order. Pay now to complete it.', 'invoiceninja' ) . '</p>' . $table
 				. '<p><a href="' . esc_url( (string) $order['pay_link'] ) . '" style="display:inline-block;background:#2271b1;color:#ffffff;padding:12px 20px;border-radius:4px;text-decoration:none;font-weight:600">' . esc_html__( 'Continue to secure payment', 'invoiceninja' ) . '</a></p>'
 				. '<p style="color:#50575e;font-size:13px">' . esc_html__( "You'll pay on our secure payment page. Afterwards you can close it; your receipt comes by email.", 'invoiceninja' ) . ' <a href="' . $status . '">' . esc_html__( 'Order status', 'invoiceninja' ) . '</a></p>';
-		} elseif ( 'attention' === $order['status'] ) {
+		} elseif ( 'attention' === $order['status'] || 'awaiting_payment' === $order['status'] ) {
 			/* translators: %s: order number */
 			$subject = sprintf( __( "We've received order #%s", 'invoiceninja' ), $order['number'] );
 			$body    = '<p>' . esc_html__( "We've received your order and will email you about payment shortly. Nothing has been charged.", 'invoiceninja' ) . '</p>' . $table

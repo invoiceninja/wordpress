@@ -125,8 +125,9 @@ final class Installer {
 				// 1.x purchase modes. Login stays required: 1.0.15 required it for every purchase.
 				$legacy = get_option( 'invoiceninja_online_purchases', false );
 				if ( false === $legacy ) {
-					if ( ! $this->hasLegacyData() ) {
-						return; // A new install: keep the defaults.
+					// Only a site that came from 1.x (2.0 also keeps its token in invoiceninja_api_token).
+					if ( '1.x' !== $this->options->get( 'upgraded_from', '' ) ) {
+						return;
 					}
 					$legacy = 'disabled'; // 1.x's default: it never sold online.
 				}

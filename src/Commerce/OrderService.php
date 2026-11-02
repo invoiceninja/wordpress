@@ -77,6 +77,10 @@ final class OrderService {
 		if ( null === $order || ! in_array( $order['status'], array( 'queued', 'placing' ), true ) ) {
 			return;
 		}
+		if ( ! $this->plugin->environment->writesAllowed() ) {
+			$this->place( $order, false ); // Re-queues for later without counting an attempt: nothing was asked.
+			return;
+		}
 		$attempts = (int) $order['attempts'] + 1;
 		$this->orders->update( (int) $order['id'], array( 'attempts' => $attempts ) );
 		if ( $attempts > \InvoiceNinja\Core\RetryPolicy::maxAttempts() ) {
@@ -134,7 +138,18 @@ final class OrderService {
 				}
 			}
 		} else {
-			$invoice  = $client->get( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ), array(), 10.0 )->data();
+			try {
+				$invoice = $client->get( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ), array(), 10.0 )->data();
+			} catch ( ApiException $e ) {
+				if ( ErrorKind::NotFound !== $e->kind ) {
+					throw $e;
+				}
+				// Deleted in Invoice Ninja: there's nothing left to pay or cancel there.
+				if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => 'invoice_gone' ) ) ) {
+					throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
+				}
+				return (array) $this->orders->find( (int) $order['id'] );
+			}
 			$status   = (string) ( $invoice['status_id'] ?? '' );
 			$credited = isset( $invoice['balance'], $invoice['amount'] ) && round( (float) $invoice['balance'], 2 ) < round( (float) $invoice['amount'], 2 ) && '5' !== $status;
 			if ( '4' === $status || (float) ( $invoice['paid_to_date'] ?? 0 ) > 0 || $credited ) {
@@ -445,6 +460,9 @@ final class OrderService {
 		}
 		$order = (array) $this->orders->find( (int) $order['id'] );
 		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s: invoice %s created', $order['number'], $order['invoice_number'] ), array(), 'order', (string) $order['number'] );
+		if ( '' === $link ) {
+			do_action( 'invoiceninja_order_needs_attention', $order ); // The buyer has no link to pay with; an admin sends the invoice.
+		}
 		/**
 		 * Fires when an order's invoice was created.
 		 *
