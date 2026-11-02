@@ -51,3 +51,4 @@ wp-config.php
 # Tests
 .phpunit.result.cache
 __pycache__/
+.claude/
