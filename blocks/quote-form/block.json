@@ -1,0 +1,107 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/quote-form",
+	"title": "Quote Request Form",
+	"category": "invoiceninja",
+	"description": "A form that turns each request into a draft quote in Invoice Ninja.",
+	"icon": "feedback",
+	"keywords": [
+		"quote",
+		"contact",
+		"lead",
+		"form"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {
+		"heading": {
+			"type": "string",
+			"default": ""
+		},
+		"submitLabel": {
+			"type": "string",
+			"default": ""
+		},
+		"showFirstName": {
+			"type": "boolean",
+			"default": true
+		},
+		"requireFirstName": {
+			"type": "boolean",
+			"default": true
+		},
+		"showLastName": {
+			"type": "boolean",
+			"default": true
+		},
+		"requireLastName": {
+			"type": "boolean",
+			"default": false
+		},
+		"showPhone": {
+			"type": "boolean",
+			"default": true
+		},
+		"requirePhone": {
+			"type": "boolean",
+			"default": false
+		},
+		"showProduct": {
+			"type": "boolean",
+			"default": true
+		},
+		"requireProduct": {
+			"type": "boolean",
+			"default": false
+		},
+		"showMessage": {
+			"type": "boolean",
+			"default": true
+		},
+		"requireMessage": {
+			"type": "boolean",
+			"default": true
+		},
+		"products": {
+			"type": "array",
+			"default": [],
+			"items": {
+				"type": "string"
+			}
+		},
+		"privacyPage": {
+			"type": "integer",
+			"default": 0
+		},
+		"requirePrivacy": {
+			"type": "boolean",
+			"default": true
+		},
+		"termsPage": {
+			"type": "integer",
+			"default": 0
+		},
+		"requireTerms": {
+			"type": "boolean",
+			"default": false
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": [
+			"wide",
+			"full"
+		],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	}
+}

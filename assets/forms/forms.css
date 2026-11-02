@@ -1,0 +1,36 @@
+/**
+ * Invoice Ninja Quote Request Form. Builds on the store styles (fields, notices, buttons)
+ * and inherits the theme's fonts and colours. Override any --invoiceninja-* property.
+ */
+.invoiceninja-quote-form {
+	--invoiceninja-gap: 1.25rem;
+	--invoiceninja-border: color-mix(in srgb, currentColor 18%, transparent);
+	--invoiceninja-muted: color-mix(in srgb, currentColor 70%, transparent);
+	--invoiceninja-surface: color-mix(in srgb, currentColor 5%, transparent);
+	--invoiceninja-error: #b32d2e;
+	--invoiceninja-success: #1e7a3c;
+	box-sizing: border-box;
+	max-inline-size: 40rem;
+}
+.invoiceninja-quote-form__form { display: flex; flex-direction: column; gap: var(--invoiceninja-gap); }
+.invoiceninja-quote-form .invoiceninja-field select,
+.invoiceninja-quote-form .invoiceninja-field textarea { font: inherit; min-block-size: 2.75rem; }
+.invoiceninja-quote-form .invoiceninja-field textarea { resize: vertical; }
+.invoiceninja-quote-form .invoiceninja-check { margin: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 0 0.5rem; }
+.invoiceninja-quote-form .invoiceninja-check input { inline-size: 1.25rem; block-size: 1.25rem; margin: 0; }
+.invoiceninja-quote-form .invoiceninja-check label { display: inline; min-block-size: 0; }
+.invoiceninja-quote-form .invoiceninja-check .invoiceninja-field__error { flex-basis: 100%; }
+.invoiceninja-field__error { color: var(--invoiceninja-error); font-weight: 600; font-size: 0.95em; }
+.invoiceninja-field__error::before { content: "! "; }
+.invoiceninja-quote-form .is-invalid input,
+.invoiceninja-quote-form .is-invalid select,
+.invoiceninja-quote-form .is-invalid textarea { outline: 2px solid var(--invoiceninja-error); outline-offset: 1px; }
+.invoiceninja-quote-form__summary h3,
+.invoiceninja-quote-form__done h3 { margin: 0 0 0.5rem; font-size: 1.1em; }
+.invoiceninja-quote-form__summary ul { margin: 0; padding-inline-start: 1.25rem; }
+.invoiceninja-quote-form__summary a { color: inherit; }
+.invoiceninja-notice--success { border-inline-start-color: var(--invoiceninja-success); }
+.invoiceninja-quote-form__summary:focus,
+.invoiceninja-quote-form__done:focus { outline: 2px solid currentColor; outline-offset: 2px; }
+.invoiceninja-quote-form .invoiceninja-muted { color: var(--invoiceninja-muted); margin: 0; }
+.invoiceninja-quote-form .invoiceninja-actions { margin: 0; }
