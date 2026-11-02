@@ -17,6 +17,7 @@ use InvoiceNinja\Commerce\Checkout;
 use InvoiceNinja\Commerce\OrderNumbers;
 use InvoiceNinja\Commerce\Orders;
 use InvoiceNinja\Commerce\OrderService;
+use InvoiceNinja\Commerce\StockCheck;
 use InvoiceNinja\Verification\DeviceRemember;
 use InvoiceNinja\Verification\EmailCode;
 use InvoiceNinja\CLI\Command;
@@ -98,7 +99,8 @@ final class Plugin {
 			$this->orderService,
 			new OrderNumbers( $this->options, $this->secrets ),
 			new EmailCode( $this->secrets, $this->mailer, $this->logger, $this->options ),
-			new DeviceRemember( $this->secrets )
+			new DeviceRemember( $this->secrets ),
+			new StockCheck( $this, $this->cart, $this->mapping )
 		);
 		$this->diagnostics   = new Diagnostics( $this );
 	}

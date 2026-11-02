@@ -152,7 +152,7 @@ final class Cart {
 	 * Priced lines from the synced products. Unavailable products are dropped.
 	 *
 	 * @param array<string, int> $items Items.
-	 * @return array{lines: list<array<string, mixed>>, total: float, count: int, changed: list<string>}
+	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>}
 	 */
 	public function summary( array $items ): array {
 		$lines    = array();
@@ -220,13 +220,7 @@ final class Cart {
 		if ( $limit > 0 ) {
 			$max = min( $max, $limit );
 		}
-		/**
-		 * Whether stock limits apply (Invoice Ninja's "track inventory").
-		 *
-		 * @since 2.0.0
-		 * @param bool $track Track inventory.
-		 */
-		if ( apply_filters( 'invoiceninja_track_inventory', $this->tracksInventory() ) ) {
+		if ( $this->tracksStock() ) {
 			$max = min( $max, max( 0, (int) get_post_meta( $post_id, 'in_stock_quantity', true ) ) );
 		}
 		return array(
@@ -248,11 +242,37 @@ final class Cart {
 	}
 
 	/**
-	 * Whether the connected company tracks inventory.
+	 * Whether stock limits apply: the connected company tracks inventory.
 	 */
-	private function tracksInventory(): bool {
+	public function tracksStock(): bool {
 		$state = get_option( 'invoiceninja_connection', array() );
-		return is_array( $state ) && ! empty( $state['company']['track_inventory'] );
+		/**
+		 * Whether stock limits apply (Invoice Ninja's "track inventory").
+		 *
+		 * @since 2.0.0
+		 * @param bool $track Track inventory.
+		 */
+		return (bool) apply_filters( 'invoiceninja_track_inventory', is_array( $state ) && ! empty( $state['company']['track_inventory'] ) );
+	}
+
+	/**
+	 * Bring the stored cart in line with what can be bought now (lower quantities, drop
+	 * unavailable products), so "we've updated your cart" is true.
+	 *
+	 * @param string $id Cart id.
+	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>}
+	 */
+	public function reconcile( string $id ): array {
+		$summary = $this->summary( $this->items( $id ) );
+		if ( $summary['changed'] ) {
+			$items = array();
+			foreach ( $summary['lines'] as $line ) {
+				$items[ (string) $line['product'] ] = (int) $line['quantity'];
+			}
+			set_transient( 'invoiceninja_cart_' . $id, $items, self::TTL );
+			$this->cookie( self::COUNT_COOKIE, (string) array_sum( $items ), false );
+		}
+		return $summary;
 	}
 
 	/**

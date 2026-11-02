@@ -32,6 +32,7 @@ final class Checkout {
 	 * @param OrderNumbers   $numbers Numbers.
 	 * @param EmailCode      $codes   Email codes.
 	 * @param DeviceRemember $device  Remembered devices.
+	 * @param StockCheck     $stock   Live stock check.
 	 */
 	public function __construct(
 		private Plugin $plugin,
@@ -41,6 +42,7 @@ final class Checkout {
 		private OrderNumbers $numbers,
 		private EmailCode $codes,
 		private DeviceRemember $device,
+		private StockCheck $stock,
 	) {}
 
 	/**
@@ -69,12 +71,33 @@ final class Checkout {
 				'message' => $reason,
 			);
 		}
-		$summary = $this->cart->summary( $this->cart->items( $this->cart->currentId() ) );
-		if ( ! $summary['lines'] ) {
+		$email = EmailCode::normalize( $details['email'] ?? '' );
+		if ( ! is_email( $email ) ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'invalid_email',
+				'message' => __( 'Enter a valid email address.', 'invoiceninja' ),
+			);
+		}
+		$cart_id = $this->cart->currentId();
+		if ( null === $cart_id || ! $this->cart->items( $cart_id ) ) {
 			return array(
 				'ok'      => false,
 				'code'    => 'empty_cart',
 				'message' => __( 'Your cart is empty.', 'invoiceninja' ),
+			);
+		}
+		// Stock right now, before the code is sent (limited per address: each check calls Invoice Ninja).
+		if ( $this->plugin->options->increment( 'ctr_stock_' . substr( md5( $ip ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) <= 60 ) {
+			$this->stock->refresh( $this->cart->items( $cart_id ) );
+		}
+		$summary = $this->cart->reconcile( $cart_id );
+		if ( ! $summary['lines'] ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'cart_changed',
+				'message' => __( 'Everything in your cart has sold out, so your cart is now empty.', 'invoiceninja' ),
+				'cart'    => $summary,
 			);
 		}
 		if ( $summary['changed'] ) {
@@ -83,14 +106,6 @@ final class Checkout {
 				'code'    => 'cart_changed',
 				'message' => __( "Some items changed or sold out, so we've updated your cart. Please check it before continuing.", 'invoiceninja' ),
 				'cart'    => $summary,
-			);
-		}
-		$email = EmailCode::normalize( $details['email'] ?? '' );
-		if ( ! is_email( $email ) ) {
-			return array(
-				'ok'      => false,
-				'code'    => 'invalid_email',
-				'message' => __( 'Enter a valid email address.', 'invoiceninja' ),
 			);
 		}
 		if ( $this->device->current( $email ) ) {
@@ -163,7 +178,7 @@ final class Checkout {
 		}
 
 		$cart_id = $this->cart->currentId();
-		$summary = $this->cart->summary( $this->cart->items( $cart_id ) );
+		$summary = null === $cart_id ? $this->cart->summary( array() ) : $this->cart->reconcile( $cart_id );
 		if ( ! $summary['lines'] || null === $cart_id ) {
 			return array(
 				'ok'      => false,

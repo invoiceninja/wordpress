@@ -6,6 +6,8 @@
  * Scenario options (set with wp-cli, e.g. `wp option update in_mock_mode down`):
  *   in_mock_mode            up (default) | down (connection error) | empty (no products)
  *   in_mock_track_inventory 0 (default) | 1
+ *   in_mock_live_stock      "P1:1" stock returned by GET products/{id} (changed since the sync)
+ *   in_mock_slow_stock      1: GET products/{id} times out
  *
  * Never load this on a real site: it is only mounted by dev/docker-compose.yml.
  */
@@ -117,6 +119,21 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             'currencies' => [ [ 'id' => '1', 'code' => 'USD', 'symbol' => '$', 'precision' => 2, 'thousand_separator' => ',', 'decimal_separator' => '.', 'swap_currency_symbol' => false ] ],
             'countries'  => [ [ 'id' => '840', 'swap_currency_symbol' => false, 'thousand_separator' => '', 'decimal_separator' => '' ] ],
         ] );
+    }
+
+    // One product: in_mock_live_stock ("P1:1,P2:0") is stock that changed since the last sync
+    if ( preg_match( '#^products/([A-Za-z0-9]+)$#', $route, $pm ) && $method === 'GET' ) {
+        if ( get_option( 'in_mock_slow_stock' ) ) {
+            return new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 1500 milliseconds' );
+        }
+        $product = in_mock_product( $pm[1], $pm[1] === 'P1' ? 'Widget' : 'Gadget', $pm[1] === 'P1' ? 10 : 25.5, $pm[1] === 'P1' ? 5 : 0, $pm[1] === 'P1' ? 3 : 0 );
+        foreach ( array_filter( explode( ',', (string) get_option( 'in_mock_live_stock', '' ) ) ) as $pair ) {
+            [ $id, $stock ] = array_pad( explode( ':', $pair ), 2, '0' );
+            if ( $id === $pm[1] ) {
+                $product['in_stock_quantity'] = (int) $stock;
+            }
+        }
+        return in_mock_response( [ 'data' => $product ] );
     }
 
     if ( strpos( $route, 'products' ) === 0 ) {

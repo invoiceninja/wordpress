@@ -608,3 +608,40 @@ def admin_orders_list_resend_retry_and_cancel():
     check(status == 404, 'unknown order', status)
     status, _, html = b.get('/wp-admin/admin.php?page=invoiceninja-orders')
     check(status == 200 and 'data-screen="orders"' in html, 'orders screen renders', status)
+
+
+@test
+def stock_is_checked_live_before_the_code():
+    store_ready()
+    b = admin()
+    option('in_mock_track_inventory', '1')
+    b.api('POST', '/connection/refresh', {})
+    # Start from Invoice Ninja's numbers even if an earlier run left a live value behind
+    wp_eval("$p = InvoiceNinja\\Plugin::instance(); $m = $p->mapping->find('product', 'P1'); $p->mapping->save('product', 'P1', 'post', $m['wp_id'], '');")
+    sync(b)
+    try:
+        s = Browser()
+        _, r = s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 3})
+        check(r['quantity'] == 3, 'three in stock at the last sync', r)
+        option('in_mock_live_stock', 'P1:1')
+        reset_mock_log()
+        status, r = s.api('POST', '/checkout/start', {'email': 'stock.buyer@example.com'})
+        check(status == 422 and r['code'] == 'cart_changed' and r['cart']['lines'][0]['quantity'] == 1, 'only one left now: the cart is lowered before the code', (status, r))
+        check(not mails('stock.buyer@example.com'), 'no code sent until the buyer has seen the new total')
+        status, r = s.api('POST', '/checkout/start', {'email': 'stock.buyer@example.com'})
+        check(status == 200 and r['next'] == 'code', 'continuing works: the lowered cart was saved', (status, r))
+        _, cart = s.api('GET', '/cart')
+        check(cart['count'] == 1, 'cart shows the new quantity', cart)
+        # Invoice Ninja too slow to answer: the synced numbers apply and checkout goes on
+        s2 = Browser()
+        s2.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+        option('in_mock_slow_stock', '1')
+        status, r = s2.api('POST', '/checkout/start', {'email': 'slow.stock@example.com'})
+        check(status == 200 and r['next'] == 'code', 'a slow stock check never blocks checkout', (status, r))
+    finally:
+        for name in ('in_mock_live_stock', 'in_mock_slow_stock'):
+            wp('option', 'delete', name, check_ok=False)
+        option('in_mock_track_inventory', '0')
+        b.api('POST', '/connection/refresh', {})
+        r = sync(b)
+    check(meta(product_ids()['Widget'][0], 'in_stock_quantity') == '3', 'the next sync restores the stock from Invoice Ninja', r)
