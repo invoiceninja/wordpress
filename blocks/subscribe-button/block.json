@@ -1,0 +1,47 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/subscribe-button",
+	"title": "Subscribe Button",
+	"category": "invoiceninja",
+	"description": "A button that starts one Invoice Ninja subscription. Logged-in customers with a confirmed email arrive already signed in.",
+	"icon": "update",
+	"keywords": [
+		"subscription",
+		"recurring",
+		"button"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {
+		"subscriptionId": {
+			"type": "string",
+			"default": ""
+		},
+		"label": {
+			"type": "string",
+			"default": ""
+		},
+		"showPrice": {
+			"type": "boolean",
+			"default": false
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": [
+			"wide",
+			"full"
+		],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	}
+}
