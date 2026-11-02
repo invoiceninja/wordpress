@@ -171,8 +171,8 @@
 		return h( Fragment, null,
 			h( 'h1', null, __( 'Invoice Ninja', 'invoiceninja' ) ),
 			boot.upgradedFrom === '1.x' ? h( Notice, { type: 'info', title: __( 'Welcome to Invoice Ninja 2.0', 'invoiceninja' ) },
-				h( 'p', null, __( 'Your shop looks the same: the 1.x products and settings are under Products & Settings (legacy) until the new store arrives.', 'invoiceninja' ), ' ',
-					h( 'a', { href: boot.urls.legacy }, __( 'Open Products & Settings', 'invoiceninja' ) ) ) ) : null,
+				h( 'p', null, __( 'Your shop looks the same until you switch to the new blocks.', 'invoiceninja' ), ' ',
+					h( 'a', { href: boot.urls.home.replace( 'page=invoiceninja', 'page=invoiceninja-welcome' ) }, __( 'What’s new in 2.0', 'invoiceninja' ) ) ) ) : null,
 			h( 'div', { className: 'in-columns' },
 				h( 'div', { className: 'in-main' },
 					problems.length ? h( Card, { title: sprintf( /* translators: %d: number */ __( 'Needs your attention (%d)', 'invoiceninja' ), problems.length ), headerExtra: h( 'a', { href: boot.urls.status }, __( 'View checks', 'invoiceninja' ) ) },
@@ -185,9 +185,38 @@
 							h( StatusIcon, { kind: t.kind } ),
 							h( 'div', { className: 'in-grow' }, h( 'strong', null, t.title ), h( 'div', { className: 'in-muted' }, t.body ) ),
 							t.external ? h( External, { className: 'button', href: t.href }, t.action ) : h( 'a', { className: 'button', href: t.href }, t.action ) ) ) ) ) : null,
-					h( Card, { title: __( 'Coming next', 'invoiceninja' ) },
-						h( 'p', { className: 'in-muted' }, __( 'This alpha connects your site and checks it. The store, customer account, quotes and subscriptions arrive in the next alphas.', 'invoiceninja' ) ) ) ),
+					h( HomeStats ) ),
 				h( 'aside', { className: 'in-aside' }, h( ConnectionCard, { connection } ) ) ) );
+	}
+
+	function HomeStats() {
+		const [ s, setS ] = useState( null );
+		useEffect( () => {
+			api( '/admin/stats' ).then( setS ).catch( () => setS( false ) );
+		}, [] );
+		if ( ! s ) {
+			return s === false ? null : h( Card, null, h( 'p', { className: 'in-muted' }, __( 'Loading…', 'invoiceninja' ) ) );
+		}
+		const missing = [ [ 'shop', __( 'Shop', 'invoiceninja' ) ], [ 'checkout', __( 'Checkout', 'invoiceninja' ) ], [ 'status', __( 'Order Status', 'invoiceninja' ) ] ].filter( ( [ k ] ) => ! s.pages[ k ] );
+		const stat = ( label, value, href ) => h( 'div', { className: 'in-stat' }, h( 'span', { className: 'in-stat__value' }, value ), href ? h( 'a', { href }, label ) : h( 'span', { className: 'in-muted' }, label ) );
+		return h( Fragment, null,
+			s.display === 'blocks' && missing.length ? h( Card, { title: __( 'Finish your store', 'invoiceninja' ) },
+				h( 'p', null, sprintf( /* translators: %s: page names */ __( 'These store pages don’t exist yet: %s.', 'invoiceninja' ), missing.map( ( m ) => m[ 1 ] ).join( ', ' ) ) ),
+				h( 'p', null, h( 'a', { className: 'button', href: boot.urls.settings + '&tab=store' }, __( 'Create pages', 'invoiceninja' ) ) ) ) : null,
+			h( Card, { title: __( 'Last 30 days', 'invoiceninja' ), headerExtra: h( 'a', { href: boot.urls.orders }, __( 'All orders', 'invoiceninja' ) ) },
+				h( 'div', { className: 'in-stats' },
+					stat( __( 'Orders', 'invoiceninja' ), String( s.orders ) ),
+					stat( __( 'Paid', 'invoiceninja' ), s.paid ),
+					stat( __( 'Waiting for payment', 'invoiceninja' ), String( s.awaiting ), boot.urls.orders + '&status=awaiting_payment' ),
+					stat( __( 'Need attention', 'invoiceninja' ), String( s.attention ), boot.urls.orders + '&status=attention' ) ),
+				s.latest.length ? h( 'table', { className: 'widefat striped' },
+					h( 'thead', null, h( 'tr', null, [ __( 'Order', 'invoiceninja' ), __( 'Customer', 'invoiceninja' ), __( 'Status', 'invoiceninja' ), __( 'Total', 'invoiceninja' ) ].map( ( l ) => h( 'th', { key: l, scope: 'col' }, l ) ) ) ),
+					h( 'tbody', null, s.latest.map( ( o ) => h( 'tr', { key: o.id },
+						h( 'td', null, h( 'a', { href: boot.urls.orders + '&s=' + encodeURIComponent( o.number ) }, o.number ) ),
+						h( 'td', null, o.email ),
+						h( 'td', null, h( Pill, { tone: ( ORDER_STATUS[ o.status ] || [ 'neutral' ] )[ 0 ] }, ( ORDER_STATUS[ o.status ] || [ null, o.status ] )[ 1 ] ) ),
+						h( 'td', null, o.total ) ) ) ) )
+					: h( 'p', { className: 'in-muted' }, s.pages.shop ? __( 'No orders yet. Place a test order from your Shop page to check everything works.', 'invoiceninja' ) : __( 'No orders yet.', 'invoiceninja' ) ) ) );
 	}
 
 	// ---------- Setup wizard ----------

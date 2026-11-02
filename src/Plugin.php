@@ -226,6 +226,7 @@ final class Plugin {
 		add_action( 'plugins_loaded', array( $this->installer, 'maybeUpgrade' ), 5 );
 		$this->store->register();
 		( new \InvoiceNinja\Privacy\Privacy( $this ) )->register();
+		( new \InvoiceNinja\Admin\Dashboard( $this ) )->register();
 		foreach ( self::MODULES as $name => $class ) {
 			// @phpstan-ignore-next-line function.impossibleType, function.alreadyNarrowedType -- a module exists only when its files ship.
 			if ( class_exists( $class ) && is_subclass_of( $class, Module::class ) ) {

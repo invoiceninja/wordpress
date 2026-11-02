@@ -14,3 +14,4 @@ assets/images/screenshot.png
 phpcs.xml.dist
 phpstan.neon.dist
 .wordpress-org
+docs

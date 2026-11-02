@@ -170,3 +170,8 @@
 }
 
 .in-lead { font-size: 15px; max-width: 760px; }
+
+.in-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; margin-bottom: 16px; }
+@media (max-width: 782px) { .in-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+.in-stat { display: flex; flex-direction: column; gap: 2px; padding: 12px; border: 1px solid #dcdcde; border-radius: 4px; }
+.in-stat__value { font-size: 20px; font-weight: 600; }
