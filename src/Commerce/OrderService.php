@@ -223,7 +223,7 @@ final class OrderService {
 				return $invoice;
 			}
 		}
-		throw new ApiException( ErrorKind::InvalidResponse, $delete ? "Invoice Ninja didn't delete the invoice" : "Invoice Ninja didn't cancel the invoice" );
+		throw new ApiException( ErrorKind::InvalidResponse, $delete ? "Invoice Ninja didn't delete the invoice" : "Invoice Ninja didn't cancel the invoice" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 	}
 
 	/**

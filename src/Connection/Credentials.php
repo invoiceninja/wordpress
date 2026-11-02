@@ -133,10 +133,10 @@ final class Credentials {
 	public function client( bool $allow_private = false ): HttpClient {
 		$token = $this->token();
 		if ( null === $token ) {
-			throw new ApiException( ErrorKind::TokenUnreadable );
+			throw new ApiException( ErrorKind::TokenUnreadable ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
 		if ( '' === $this->url() || '' === $token ) {
-			throw new ApiException( ErrorKind::NotConfigured );
+			throw new ApiException( ErrorKind::NotConfigured ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
 		return new HttpClient( $this->url(), $token, $allow_private );
 	}

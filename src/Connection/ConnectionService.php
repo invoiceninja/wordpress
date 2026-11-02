@@ -260,7 +260,7 @@ final class ConnectionService {
 	public function guardCompany( array $state, array $company ): void {
 		$old = (string) ( $state['company']['id'] ?? '' );
 		if ( '' !== $old && (string) ( $company['id'] ?? '' ) !== $old ) {
-			throw new ApiException( ErrorKind::CompanyChanged, sprintf( 'connected to %s, token returns %s', $old, (string) ( $company['id'] ?? '' ) ) );
+			throw new ApiException( ErrorKind::CompanyChanged, sprintf( 'connected to %s, token returns %s', $old, (string) ( $company['id'] ?? '' ) ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
 	}
 

@@ -146,3 +146,5 @@ jobs:
       - uses: wordpress/plugin-check-action@v1
         with:
           build-dir: build/invoiceninja
+          # While 2.0 is in alpha, readme.txt keeps Stable tag: 1.0.16 so WordPress.org keeps serving 1.0.16.
+          ignore-codes: stable_tag_mismatch

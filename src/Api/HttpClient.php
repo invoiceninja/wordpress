@@ -152,7 +152,7 @@ final class HttpClient {
 	 */
 	public function request( string $method, string $path, array $query, ?array $body, float $budget, bool $idempotent ): Response {
 		if ( '' === $this->base || '' === $this->token ) {
-			throw new ApiException( ErrorKind::NotConfigured );
+			throw new ApiException( ErrorKind::NotConfigured ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
 		$this->guardPrivateHost();
 
@@ -167,7 +167,7 @@ final class HttpClient {
 			++$attempt;
 			$remaining = $deadline - microtime( true );
 			if ( $remaining < 0.5 ) {
-				throw new ApiException( ErrorKind::Timeout, sprintf( 'time budget of %.1fs used up', $budget ) );
+				throw new ApiException( ErrorKind::Timeout, sprintf( 'time budget of %.1fs used up', $budget ) ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 			}
 			try {
 				return $this->once( $method, $url, $body, $remaining );
@@ -234,7 +234,7 @@ final class HttpClient {
 			}
 		}
 		if ( is_wp_error( $raw ) ) {
-			throw self::transportError( $raw->get_error_message() );
+			throw self::transportError( $raw->get_error_message() ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
 
 		$status      = (int) wp_remote_retrieve_response_code( $raw );
@@ -258,12 +258,12 @@ final class HttpClient {
 
 		if ( $status >= 200 && $status < 300 ) {
 			if ( ! is_array( $json ) ) {
-				throw new ApiException( ErrorKind::InvalidResponse, sprintf( '%d %s, not JSON', $status, $headers['content-type'] ?? 'unknown type' ), $status );
+				throw new ApiException( ErrorKind::InvalidResponse, sprintf( '%d %s, not JSON', $status, $headers['content-type'] ?? 'unknown type' ), $status ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 			}
 			return new Response( $status, $headers, $json );
 		}
 
-		throw self::statusError( $status, is_array( $json ) ? $json : array(), $headers );
+		throw self::statusError( $status, is_array( $json ) ? $json : array(), $headers ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 	}
 
 	/**
@@ -340,7 +340,7 @@ final class HttpClient {
 		$host = BaseUrl::host( $this->base );
 		$ips  = self::resolve( $host );
 		if ( self::isPrivateSet( $host, $ips ) ) {
-			throw new ApiException( ErrorKind::PrivateHost, $host . ' resolves to a private or reserved address' );
+			throw new ApiException( ErrorKind::PrivateHost, $host . ' resolves to a private or reserved address' ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
 		if ( $ips && ! filter_var( trim( $host, '[]' ), FILTER_VALIDATE_IP ) ) {
 			$this->pinned = array( $host, $ips[0] );
