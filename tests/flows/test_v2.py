@@ -442,6 +442,10 @@ def guest_checkout_with_email_code():
     wp_eval("update_option('in_mock_paid', array('%s')); $o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); delete_transient('invoiceninja_order_check_' . $o['id']);" % (inv, r['number']))
     status, o = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
     check(o['status'] == 'paid', 'payment detected', o)
+    # Buying the same items again from the same browser is a new order
+    s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 2})
+    _, again = s.api('POST', '/checkout/confirm', {'email': email, 'first_name': 'Gina', 'last_name': 'Guest'})
+    check(again['ok'] and again['number'] != r['number'], 'a repeat purchase is a new order', again)
     # Remembered device skips the code next time
     s2 = s
     s2.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
@@ -482,6 +486,28 @@ def invoice_ninja_down_queues_the_order():
 
 
 @test
+def buyer_only_gets_their_own_portal_link():
+    store_ready()
+    option('in_mock_other_contact_first', '1')
+    try:
+        status, r = checkout(shopper(), 'a+b@x.com')
+    finally:
+        wp('option', 'delete', 'in_mock_other_contact_first')
+    check(status == 200 and r['status'] == 'awaiting_payment', 'order placed for an existing client', r)
+    check('OTHER' not in r['pay_link'] and r['pay_link'].endswith('INVITE1'), "the buyer's own invitation, never another contact's", r['pay_link'])
+
+
+@test
+def cancelled_invoice_is_not_paid():
+    store_ready()
+    status, r = checkout(shopper(), 'cancel.buyer@example.com')
+    wp_eval("$i = get_option('in_mock_invoices'); foreach ($i as &$x) { $x['status_id'] = '5'; $x['balance'] = 0; } update_option('in_mock_invoices', $i);")
+    key = r['status_url'].split('key=')[1]
+    _, o = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
+    check(o['status'] != 'paid', 'a cancelled invoice (no balance) is not treated as paid', o)
+
+
+@test
 def paused_site_takes_no_orders():
     store_ready()
     wp('invoiceninja', 'environment', 'pause')
@@ -491,3 +517,9 @@ def paused_site_takes_no_orders():
         check(status == 422 and r['code'] == 'unavailable', 'checkout closed on a paused site', r)
     finally:
         wp('invoiceninja', 'environment', 'confirm')
+
+
+@test
+def atomic_counters_count_from_one():
+    out = wp_eval("$o = InvoiceNinja\\Plugin::instance()->options; delete_option('invoiceninja_ctr_test_1'); echo $o->increment('ctr_test_1'), ',', $o->increment('ctr_test_1'), ',', $o->increment('ctr_test_1');")
+    check(out == '1,2,3', 'counter increments from 1', out)

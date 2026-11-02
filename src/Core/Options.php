@@ -95,6 +95,50 @@ final class Options {
 	}
 
 	/**
+	 * Atomically add one to a counter and return the new value (one SQL statement, so
+	 * parallel requests can't read the same value). Counters are named with a time bucket
+	 * and pruned daily.
+	 *
+	 * @param string $key Key without the prefix (e.g. ctr_code_ab12_483920).
+	 */
+	public function increment( string $key ): int {
+		global $wpdb;
+		$name = self::PREFIX . $key;
+		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'query' ) || ! isset( $wpdb->options ) ) {
+			$value = (int) get_option( $name, 0 ) + 1;
+			update_option( $name, $value, false );
+			return $value;
+		}
+		// The first caller creates the row with 1; everyone else increments it in one UPDATE.
+		// (LAST_INSERT_ID(expr) on an INSERT would return the new row's auto-increment id instead.)
+		if ( $this->addAtomic( $key, '1' ) ) {
+			return 1;
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = LAST_INSERT_ID(option_value + 1) WHERE option_name = %s", $name ) );
+		$value = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		wp_cache_delete( $name, 'options' );
+		return max( 1, $value );
+	}
+
+	/**
+	 * Delete counters from earlier time buckets.
+	 *
+	 * @param int $keep_hours Keep this many recent hours.
+	 */
+	public function pruneCounters( int $keep_hours = 2 ): void {
+		global $wpdb;
+		$cutoff = (int) floor( time() / HOUR_IN_SECONDS ) - $keep_hours;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s LIMIT 5000", $wpdb->esc_like( self::PREFIX . 'ctr_' ) . '%' ) );
+		foreach ( (array) $names as $name ) {
+			if ( preg_match( '/_(\d+)$/', (string) $name, $m ) && (int) $m[1] < $cutoff ) {
+				delete_option( (string) $name );
+			}
+		}
+	}
+
+	/**
 	 * Delete a raw option.
 	 *
 	 * @param string $key Key without the prefix.

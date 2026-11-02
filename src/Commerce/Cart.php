@@ -52,6 +52,16 @@ final class Cart {
 			return $id;
 		}
 		$id = bin2hex( random_bytes( 16 ) );
+		/**
+		 * The shopper's IP for rate limits (filter it when a trusted proxy is in front).
+		 *
+		 * @since 2.0.0
+		 * @param string $ip IP.
+		 */
+		$ip = (string) apply_filters( 'invoiceninja_client_ip', isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' );
+		if ( \InvoiceNinja\Plugin::booted() && \InvoiceNinja\Plugin::instance()->options->increment( 'ctr_cart_' . substr( md5( $ip ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > 200 ) {
+			throw new \RuntimeException( 'Too many carts from this address' );
+		}
 		$this->cookie( self::COOKIE, $id . '.' . self::sign( $id, $this->secrets->get( 'cart_secret' ) ), true );
 		$_COOKIE[ self::COOKIE ] = $id . '.' . self::sign( $id, $this->secrets->get( 'cart_secret' ) );
 		return $id;
@@ -131,6 +141,11 @@ final class Cart {
 	public function clear( string $id ): void {
 		delete_transient( 'invoiceninja_cart_' . $id );
 		$this->cookie( self::COUNT_COOKIE, '0', false );
+		// Forget the id: the next add starts a new cart (and a new order token).
+		if ( ! headers_sent() ) {
+			setcookie( self::COOKIE, '', time() - HOUR_IN_SECONDS, COOKIEPATH ? COOKIEPATH : '/', COOKIE_DOMAIN ? COOKIE_DOMAIN : '', is_ssl(), true );
+		}
+		unset( $_COOKIE[ self::COOKIE ] );
 	}
 
 	/**
@@ -140,9 +155,11 @@ final class Cart {
 	 * @return array{lines: list<array<string, mixed>>, total: float, count: int, changed: list<string>}
 	 */
 	public function summary( array $items ): array {
-		$lines   = array();
-		$total   = 0.0;
-		$changed = array();
+		$lines    = array();
+		$total    = 0.0;
+		$subtotal = 0.0;
+		$taxes    = 0.0;
+		$changed  = array();
 		foreach ( $items as $product => $quantity ) {
 			$info = $this->product( (string) $product );
 			if ( null === $info ) {
@@ -157,25 +174,32 @@ final class Cart {
 			if ( $qty !== (int) $quantity ) {
 				$changed[] = (string) $product;
 			}
-			$line    = round( $info['price'] * $qty, 2 );
-			$total  += $line;
-			$lines[] = array(
-				'product'    => (string) $product,
-				'post_id'    => $info['post_id'],
-				'title'      => $info['title'],
-				'notes'      => $info['notes'],
-				'price'      => $info['price'],
-				'quantity'   => $qty,
-				'max'        => $info['max'],
-				'line_total' => $line,
-				'tax'        => $info['tax'],
+			$line      = round( $info['price'] * $qty, 2 );
+			$rate      = (float) $info['tax']['tax_rate1'] + (float) $info['tax']['tax_rate2'] + (float) $info['tax']['tax_rate3'];
+			$tax       = round( $line * $rate / 100, 2 );
+			$subtotal += $line;
+			$taxes    += $tax;
+			$total    += $line + $tax;
+			$lines[]   = array(
+				'product'     => (string) $product,
+				'post_id'     => $info['post_id'],
+				'title'       => $info['title'],
+				'product_key' => $info['product_key'],
+				'notes'       => $info['notes'],
+				'price'       => $info['price'],
+				'quantity'    => $qty,
+				'max'         => $info['max'],
+				'line_total'  => $line,
+				'tax'         => $info['tax'],
 			);
 		}
 		return array(
-			'lines'   => $lines,
-			'total'   => round( $total, 2 ),
-			'count'   => (int) array_sum( array_column( $lines, 'quantity' ) ),
-			'changed' => $changed,
+			'lines'    => $lines,
+			'subtotal' => round( $subtotal, 2 ),
+			'tax'      => round( $taxes, 2 ),
+			'total'    => round( $total, 2 ),
+			'count'    => (int) array_sum( array_column( $lines, 'quantity' ) ),
+			'changed'  => $changed,
 		);
 	}
 
@@ -183,11 +207,11 @@ final class Cart {
 	 * Price and limits of a published, synced product.
 	 *
 	 * @param string $product Invoice Ninja product id.
-	 * @return array{post_id: int, title: string, notes: string, price: float, max: int, tax: array<string, mixed>}|null
+	 * @return array{post_id: int, title: string, product_key: string, notes: string, price: float, max: int, tax: array<string, mixed>}|null
 	 */
 	public function product( string $product ): ?array {
 		$map = $this->mapping->find( 'product', $product );
-		if ( null === $map || 'publish' !== get_post_status( $map['wp_id'] ) ) {
+		if ( null === $map || 'publish' !== get_post_status( $map['wp_id'] ) || post_password_required( $map['wp_id'] ) ) {
 			return null;
 		}
 		$post_id = $map['wp_id'];
@@ -206,12 +230,13 @@ final class Cart {
 			$max = min( $max, max( 0, (int) get_post_meta( $post_id, 'in_stock_quantity', true ) ) );
 		}
 		return array(
-			'post_id' => $post_id,
-			'title'   => get_the_title( $post_id ),
-			'notes'   => wp_strip_all_tags( (string) get_post_field( 'post_content', $post_id ) ),
-			'price'   => (float) get_post_meta( $post_id, 'price', true ),
-			'max'     => $max,
-			'tax'     => array(
+			'post_id'     => $post_id,
+			'title'       => (string) get_post_field( 'post_title', $post_id, 'raw' ),
+			'product_key' => (string) ( get_post_meta( $post_id, 'product_key', true ) ?: get_post_field( 'post_title', $post_id, 'raw' ) ),
+			'notes'       => wp_strip_all_tags( (string) get_post_field( 'post_content', $post_id ) ),
+			'price'       => (float) get_post_meta( $post_id, 'price', true ),
+			'max'         => $max,
+			'tax'         => array(
 				'tax_name1' => (string) get_post_meta( $post_id, 'tax_name1', true ),
 				'tax_rate1' => (float) get_post_meta( $post_id, 'tax_rate1', true ),
 				'tax_name2' => (string) get_post_meta( $post_id, 'tax_name2', true ),

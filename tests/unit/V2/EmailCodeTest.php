@@ -17,7 +17,7 @@ class EmailCodeTest extends TestCase
         global $wpdb;
         $wpdb    = new class { public $prefix = 'wp_'; public function insert() { return 1; } };
         $options = new Options();
-        return new EmailCode( new Secrets( $options ), new Mailer( $options ), new Logger( $options ) );
+        return new EmailCode( new Secrets( $options ), new Mailer( $options ), new Logger( $options ), $options );
     }
 
     private function sentCode(): string
@@ -75,6 +75,18 @@ class EmailCodeTest extends TestCase
         }
         $this->assertSame( 'limited', $last['status'] );
         $this->assertSame( 'invalid', $codes->send( 'not-an-email', '1.2.3.4' )['status'] );
+    }
+
+    public function testParallelGuessesAreCappedPerEmail()
+    {
+        $codes = $this->service();
+        $codes->send( 'jane@example.com', '1.2.3.4' );
+        $code = $this->sentCode();
+        // Wrong guesses from many IPs: the per-email cap still holds
+        for ( $i = 0; $i < EmailCode::GUESSES_PER_EMAIL_HOUR; $i++ ) {
+            $codes->verify( 'jane@example.com', '999999' === $code ? '888888' : '999999', 'checkout', "10.0.0.$i" );
+        }
+        $this->assertSame( 'locked', $codes->verify( 'jane@example.com', $code, 'checkout', '10.0.1.1' ) );
     }
 
     public function testRememberedDeviceIsTiedToTheEmail()

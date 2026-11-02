@@ -142,7 +142,8 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
     }
 
     if ( strpos( $route, 'clients?email=' ) === 0 ) {
-        $email   = rawurldecode( substr( $route, strlen( 'clients?email=' ) ) );
+        parse_str( (string) parse_url( $url, PHP_URL_QUERY ), $cq );
+        $email   = (string) ( $cq['email'] ?? '' );
         $clients = in_mock_clients();
 
         if ( $email === '' ) {
@@ -181,11 +182,16 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         foreach ( $data['line_items'] ?? [] as $line ) {
             $amount += (float) $line['cost'] * (float) $line['quantity'];
         }
+        $client_id = (string) ( $data['client_id'] ?? '' );
+        $contact   = $client_id === 'NEWCLIENT' ? 'NC1' : 'C1';
+        $mine      = [ 'key' => 'INVITE' . $n, 'client_contact_id' => $contact, 'link' => 'https://in.test/client/invoice/INVITE' . $n ];
+        $other     = [ 'key' => 'OTHER' . $n, 'client_contact_id' => 'OTHERCONTACT', 'link' => 'https://in.test/client/invoice/OTHER' . $n ];
         $invoice = [
-            'id' => $n === 1 ? 'INV1' : 'INV' . $n, 'number' => sprintf( '%04d', $n ), 'client_id' => $data['client_id'] ?? '',
-            'po_number' => $data['po_number'] ?? '', 'amount' => $amount, 'balance' => $amount, 'status_id' => '2',
-            'line_items' => $data['line_items'] ?? [],
-            'invitations' => [ [ 'key' => 'INVITE' . $n, 'link' => 'https://in.test/client/invoice/INVITE' . $n ] ],
+            'id' => $n === 1 ? 'INV1' : 'INV' . $n, 'number' => sprintf( '%04d', $n ), 'client_id' => $client_id,
+            'po_number' => $data['po_number'] ?? '', 'amount' => $amount, 'balance' => $amount, 'paid_to_date' => 0, 'status_id' => '2',
+            'created_at' => time(), 'line_items' => $data['line_items'] ?? [],
+            // Another contact's invitation first, like a client whose primary contact isn't the buyer
+            'invitations' => get_option( 'in_mock_other_contact_first' ) ? [ $other, $mine ] : [ $mine, $other ],
         ];
         $invoices[ $invoice['id'] ] = $invoice;
         update_option( 'in_mock_invoices', $invoices, false );
@@ -198,8 +204,12 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
 
     if ( strpos( $route, 'invoices?' ) === 0 && $method === 'GET' ) {
         parse_str( (string) parse_url( $url, PHP_URL_QUERY ), $q );
+        // Like the real API: no po_number filter; `filter` is a LIKE search, client_id narrows to a client
         $found = array_values( array_filter( get_option( 'in_mock_invoices', [] ), function ( $inv ) use ( $q ) {
-            return ! isset( $q['po_number'] ) || $inv['po_number'] === $q['po_number'];
+            if ( isset( $q['client_id'] ) && $inv['client_id'] !== $q['client_id'] ) {
+                return false;
+            }
+            return ! isset( $q['filter'] ) || stripos( $inv['po_number'] . ' ' . $inv['number'], $q['filter'] ) !== false;
         } ) );
         return in_mock_response( [ 'data' => $found, 'meta' => [ 'pagination' => [ 'total_pages' => 1 ] ] ] );
     }
@@ -211,8 +221,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         }
         $invoice = $invoices[ $m[1] ];
         if ( in_array( $invoice['id'], (array) get_option( 'in_mock_paid', [] ), true ) ) {
-            $invoice['status_id'] = '4';
-            $invoice['balance']   = 0;
+            $invoice['status_id']    = '4';
+            $invoice['balance']      = 0;
+            $invoice['paid_to_date'] = $invoice['amount'];
         }
         return in_mock_response( [ 'data' => $invoice ] );
     }

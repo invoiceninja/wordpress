@@ -130,9 +130,10 @@ final class Checkout {
 	 * @param array<string, string> $details  email, first_name, last_name, phone.
 	 * @param string                $code     Code (empty when the device is remembered).
 	 * @param bool                  $remember Remember this device.
+	 * @param string                $ip       Shopper IP.
 	 * @return array<string, mixed>
 	 */
-	public function confirm( array $details, string $code, bool $remember ): array {
+	public function confirm( array $details, string $code, bool $remember, string $ip = '' ): array {
 		$reason = $this->unavailable();
 		if ( null !== $reason ) {
 			return array(
@@ -143,7 +144,7 @@ final class Checkout {
 		}
 		$email = EmailCode::normalize( $details['email'] ?? '' );
 		if ( ! $this->device->current( $email ) ) {
-			$result = $this->codes->verify( $email, $code, 'checkout' );
+			$result = $this->codes->verify( $email, $code, 'checkout', $ip );
 			if ( 'ok' !== $result ) {
 				$messages = array(
 					'wrong'   => __( "That code isn't right. Check the email and try again.", 'invoiceninja' ),
@@ -170,32 +171,49 @@ final class Checkout {
 				'message' => __( 'Your cart is empty.', 'invoiceninja' ),
 			);
 		}
+		if ( $summary['changed'] ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'cart_changed',
+				'message' => __( "Some items changed or sold out, so we've updated your cart. Please check it before continuing.", 'invoiceninja' ),
+				'cart'    => $summary,
+			);
+		}
 
 		// Same cart, same email, same contents: a double submit gets the same order.
 		$token = substr( hash( 'sha256', $cart_id . '|' . $email . '|' . wp_json_encode( $summary['lines'] ) ), 0, 32 );
 		$order = $this->orders->findBy( 'token', $token );
 		if ( null === $order ) {
-			$order = $this->orders->create(
-				array(
-					'number'   => $this->numbers->next(),
-					'token'    => $token,
-					'email'    => $email,
-					'user_id'  => get_current_user_id(),
-					'customer' => array(
-						'first_name' => sanitize_text_field( $details['first_name'] ?? '' ),
-						'last_name'  => sanitize_text_field( $details['last_name'] ?? '' ),
-						'phone'      => sanitize_text_field( $details['phone'] ?? '' ),
-					),
-					'items'    => $summary['lines'],
-					'total'    => $summary['total'],
-				)
-			);
+			try {
+				$order = $this->orders->create(
+					array(
+						'number'   => $this->numbers->next(),
+						'token'    => $token,
+						'email'    => $email,
+						'user_id'  => get_current_user_id(),
+						'customer' => array(
+							'first_name' => sanitize_text_field( $details['first_name'] ?? '' ),
+							'last_name'  => sanitize_text_field( $details['last_name'] ?? '' ),
+							'phone'      => sanitize_text_field( $details['phone'] ?? '' ),
+						),
+						'items'    => $summary['lines'],
+						'total'    => $summary['total'],
+					)
+				);
+			} catch ( \RuntimeException $e ) {
+				return array(
+					'ok'      => false,
+					'code'    => 'save_failed',
+					'message' => __( "We couldn't save your order. Please try again.", 'invoiceninja' ),
+				);
+			}
 			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s received', $order['number'] ), array(), 'order', (string) $order['number'] );
 			$order = $this->service->place( $order, true );
-			if ( 'queued' === $order['status'] ) {
+			if ( in_array( $order['status'], array( 'queued', 'attention' ), true ) ) {
 				$this->emailBuyer( $order ); // "Received"; the payment link follows once it's placed.
 			}
 		}
+		// A new cart id, so buying the same items again later is a new order.
 		$this->cart->clear( $cart_id );
 		return array( 'ok' => true ) + $this->publicView( $order, true );
 	}
@@ -251,13 +269,8 @@ final class Checkout {
 	 * @param array<string, mixed> $order Order.
 	 */
 	public function statusUrl( array $order ): string {
-		return add_query_arg(
-			array(
-				'invoiceninja_order' => rawurlencode( (string) $order['number'] ),
-				'key'                => $this->key( (string) $order['number'] ),
-			),
-			home_url( '/' )
-		);
+		// The key sits in the fragment, which browsers never send to servers, logs, analytics or caches.
+		return add_query_arg( 'invoiceninja_order', rawurlencode( (string) $order['number'] ), home_url( '/' ) ) . '#key=' . $this->key( (string) $order['number'] );
 	}
 
 	/**
@@ -278,7 +291,7 @@ final class Checkout {
 		$status = esc_url( $this->statusUrl( $order ) );
 		$lines  = '';
 		foreach ( (array) $order['items'] as $item ) {
-			$lines .= '<tr><td style="padding:4px 0">' . esc_html( (string) $item['title'] ) . ' × ' . (int) $item['quantity'] . '</td><td style="padding:4px 0;text-align:right">' . esc_html( number_format( (float) $item['line_total'], 2 ) ) . '</td></tr>';
+			$lines .= '<tr><td style="padding:4px 0">' . esc_html( wp_specialchars_decode( (string) $item['title'], ENT_QUOTES ) ) . ' × ' . (int) $item['quantity'] . '</td><td style="padding:4px 0;text-align:right">' . esc_html( number_format( (float) $item['line_total'], 2 ) ) . '</td></tr>';
 		}
 		$table = '<table style="width:100%;border-collapse:collapse;border:1px solid #dcdcde;margin:12px 0" cellpadding="8">' . $lines . '<tr><td style="font-weight:600;border-top:1px solid #dcdcde">' . esc_html__( 'Total', 'invoiceninja' ) . '</td><td style="font-weight:600;text-align:right;border-top:1px solid #dcdcde">' . esc_html( number_format( (float) $order['total'], 2 ) ) . '</td></tr></table>';
 		if ( 'awaiting_payment' === $order['status'] && '' !== (string) $order['pay_link'] ) {
@@ -287,6 +300,11 @@ final class Checkout {
 			$body    = '<p>' . esc_html__( 'Thanks for your order. Pay now to complete it.', 'invoiceninja' ) . '</p>' . $table
 				. '<p><a href="' . esc_url( (string) $order['pay_link'] ) . '" style="display:inline-block;background:#2271b1;color:#ffffff;padding:12px 20px;border-radius:4px;text-decoration:none;font-weight:600">' . esc_html__( 'Continue to secure payment', 'invoiceninja' ) . '</a></p>'
 				. '<p style="color:#50575e;font-size:13px">' . esc_html__( "You'll pay on our secure payment page. Afterwards you can close it; your receipt comes by email.", 'invoiceninja' ) . ' <a href="' . $status . '">' . esc_html__( 'Order status', 'invoiceninja' ) . '</a></p>';
+		} elseif ( 'attention' === $order['status'] ) {
+			/* translators: %s: order number */
+			$subject = sprintf( __( "We've received order #%s", 'invoiceninja' ), $order['number'] );
+			$body    = '<p>' . esc_html__( "We've received your order and will email you about payment shortly. Nothing has been charged.", 'invoiceninja' ) . '</p>' . $table
+				. '<p><a href="' . $status . '">' . esc_html__( 'Order status', 'invoiceninja' ) . '</a></p>';
 		} else {
 			/* translators: %s: order number */
 			$subject = sprintf( __( "We've received order #%s", 'invoiceninja' ), $order['number'] );

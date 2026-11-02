@@ -107,8 +107,17 @@ final class Routes {
 		if ( '' === $source ) {
 			$source = (string) ( $request->get_header( 'referer' ) ?? '' );
 		}
-		$host = strtolower( (string) wp_parse_url( $source, PHP_URL_HOST ) );
-		return '' !== $host && strtolower( (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ) ) === $host;
+		$origin = static function ( string $url ): string {
+			$parts = wp_parse_url( $url );
+			if ( ! is_array( $parts ) || empty( $parts['host'] ) ) {
+				return '';
+			}
+			$scheme = strtolower( (string) ( $parts['scheme'] ?? 'http' ) );
+			$port   = (int) ( $parts['port'] ?? ( 'https' === $scheme ? 443 : 80 ) );
+			return strtolower( (string) $parts['host'] ) . ':' . $port;
+		};
+		$from   = $origin( $source );
+		return '' !== $from && ( $origin( (string) home_url() ) === $from || $origin( (string) site_url() ) === $from );
 	}
 
 	/**
@@ -126,8 +135,12 @@ final class Routes {
 	 * @param \WP_REST_Request $request Request.
 	 */
 	public function setCartItem( \WP_REST_Request $request ): \WP_REST_Response {
-		$cart   = $this->plugin->cart;
-		$id     = $cart->ensureId();
+		$cart = $this->plugin->cart;
+		try {
+			$id = $cart->ensureId();
+		} catch ( \RuntimeException $e ) {
+			return $this->error( 'rate_limited', __( 'Too many requests. Please try again later.', 'invoiceninja' ), 429 );
+		}
 		$result = $cart->set( $id, (string) $request->get_param( 'product' ), (int) $request->get_param( 'quantity' ) );
 		return new \WP_REST_Response( $result + array( 'cart' => $cart->summary( $cart->items( $id ) ) ) );
 	}
@@ -148,7 +161,7 @@ final class Routes {
 	 * @param \WP_REST_Request $request Request.
 	 */
 	public function checkoutConfirm( \WP_REST_Request $request ): \WP_REST_Response {
-		$result = $this->plugin->checkout->confirm( $this->buyer( $request ), (string) $request->get_param( 'code' ), (bool) $request->get_param( 'remember' ) );
+		$result = $this->plugin->checkout->confirm( $this->buyer( $request ), (string) $request->get_param( 'code' ), (bool) $request->get_param( 'remember' ), self::ip() );
 		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
 	}
 
@@ -159,7 +172,9 @@ final class Routes {
 	 */
 	public function orderStatus( \WP_REST_Request $request ): \WP_REST_Response {
 		nocache_headers();
-		$order = $this->plugin->checkout->status( (string) $request->get_param( 'number' ), (string) $request->get_param( 'key' ) );
+		$key   = (string) ( $request->get_header( 'x-order-key' ) ?? '' );
+		$key   = '' !== $key ? $key : (string) $request->get_param( 'key' );
+		$order = $this->plugin->checkout->status( (string) $request->get_param( 'number' ), $key );
 		return null === $order
 			? $this->error( 'not_found', __( "We couldn't find that order. Check the link in your email.", 'invoiceninja' ), 404 )
 			: new \WP_REST_Response( $order );
@@ -184,7 +199,8 @@ final class Routes {
 	 * The shopper's IP, for rate limits only.
 	 */
 	private static function ip(): string {
-		return isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '';
+		/** This filter is documented in src/Commerce/Cart.php */
+		return (string) apply_filters( 'invoiceninja_client_ip', isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' );
 	}
 
 	/**

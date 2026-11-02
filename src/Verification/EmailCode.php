@@ -11,6 +11,7 @@ namespace InvoiceNinja\Verification;
 
 use InvoiceNinja\Core\Logger;
 use InvoiceNinja\Core\Mailer;
+use InvoiceNinja\Core\Options;
 use InvoiceNinja\Core\Secrets;
 
 /**
@@ -33,14 +34,19 @@ final class EmailCode {
 
 	public const PER_IP_HOUR = 20;
 
+	public const GUESSES_PER_EMAIL_HOUR = 10;
+
+	public const GUESSES_PER_IP_HOUR = 30;
+
 	/**
 	 * Constructor.
 	 *
 	 * @param Secrets $secrets Secrets.
 	 * @param Mailer  $mailer  Mailer.
 	 * @param Logger  $logger  Logger.
+	 * @param Options $options Options (atomic counters).
 	 */
-	public function __construct( private Secrets $secrets, private Mailer $mailer, private Logger $logger ) {}
+	public function __construct( private Secrets $secrets, private Mailer $mailer, private Logger $logger, private Options $options ) {}
 
 	/**
 	 * Send a code.
@@ -66,7 +72,8 @@ final class EmailCode {
 				'retry_after' => (int) $record['sent_at'] + self::RESEND_AFTER - time(),
 			);
 		}
-		if ( ! $this->allow( 'e' . $key, self::PER_EMAIL_HOUR ) || ! $this->allow( 'i' . $this->hash( $ip ), self::PER_IP_HOUR ) ) {
+		// IP first, so a blocked IP doesn't use up the victim's hourly email allowance.
+		if ( ! $this->allow( 'i' . $this->hash( $ip ), self::PER_IP_HOUR ) || ! $this->allow( 'e' . $key, self::PER_EMAIL_HOUR ) ) {
 			$this->logger->warning( 'email', 'Email code rate limit reached' );
 			return array(
 				'status'      => 'limited',
@@ -117,10 +124,17 @@ final class EmailCode {
 	 * @param string $email   Email.
 	 * @param string $code    Code as typed (spaces allowed).
 	 * @param string $purpose checkout or portal.
+	 * @param string $ip      Requester IP.
 	 * @return string ok, wrong, expired or locked.
 	 */
-	public function verify( string $email, string $code, string $purpose = 'checkout' ): string {
-		$key    = $this->key( self::normalize( $email ), $purpose );
+	public function verify( string $email, string $code, string $purpose = 'checkout', string $ip = '' ): string {
+		$key = $this->key( self::normalize( $email ), $purpose );
+		// Atomic caps: parallel guesses each take a number, so racing requests can't share one attempt.
+		$hour = (int) floor( time() / HOUR_IN_SECONDS );
+		if ( $this->options->increment( 'ctr_guess_' . substr( $key, 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_EMAIL_HOUR
+			|| ( '' !== $ip && $this->options->increment( 'ctr_guessip_' . substr( $this->hash( $ip ), 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_IP_HOUR ) ) {
+			return 'locked';
+		}
 		$name   = 'invoiceninja_code_' . $key;
 		$record = get_transient( $name );
 		if ( ! is_array( $record ) ) {
@@ -152,19 +166,13 @@ final class EmailCode {
 	}
 
 	/**
-	 * Count an action against an hourly limit.
+	 * Count an action against an hourly limit (atomically).
 	 *
 	 * @param string $bucket Bucket.
 	 * @param int    $limit  Limit.
 	 */
 	private function allow( string $bucket, int $limit ): bool {
-		$name  = 'invoiceninja_rl_' . substr( $bucket, 0, 40 );
-		$count = (int) get_transient( $name );
-		if ( $count >= $limit ) {
-			return false;
-		}
-		set_transient( $name, $count + 1, HOUR_IN_SECONDS );
-		return true;
+		return $this->options->increment( 'ctr_send_' . substr( $bucket, 0, 24 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) <= $limit;
 	}
 
 	/**

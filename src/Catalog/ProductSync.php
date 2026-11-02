@@ -359,6 +359,7 @@ final class ProductSync {
 		);
 		$meta   = array(
 			'product_id'        => self::cleanId( (string) ( $item['id'] ?? '' ) ),
+			'product_key'       => sanitize_text_field( (string) ( $item['product_key'] ?? '' ) ),
 			'price'             => $num( 'price' ),
 			'quantity'          => $num( 'quantity' ),
 			'max_quantity'      => $num( 'max_quantity' ),

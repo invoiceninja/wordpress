@@ -21,7 +21,7 @@ final class Orders {
 
 	public const TABLE = 'invoiceninja_orders';
 
-	public const STATUSES = array( 'queued', 'awaiting_payment', 'paid', 'cancelled', 'attention' );
+	public const STATUSES = array( 'queued', 'placing', 'awaiting_payment', 'paid', 'cancelled', 'attention' );
 
 	/**
 	 * Full table name.
@@ -132,6 +132,20 @@ final class Orders {
 		}
 		$fields['updated_at'] = gmdate( 'Y-m-d H:i:s' );
 		$wpdb->update( self::table(), $fields, array( 'id' => $id ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+	}
+
+	/**
+	 * Claim a queued order for placing, so only one request or job creates its invoice.
+	 * A claim older than five minutes is considered abandoned.
+	 *
+	 * @param int $id Order id.
+	 */
+	public function claim( int $id ): bool {
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET status = 'placing', updated_at = %s WHERE id = %d AND ( status = 'queued' OR ( status = 'placing' AND updated_at < %s ) )", gmdate( 'Y-m-d H:i:s' ), $id, gmdate( 'Y-m-d H:i:s', time() - 300 ) ) );
+		return 1 === (int) $wpdb->rows_affected;
 	}
 
 	/**

@@ -42,17 +42,24 @@ final class OrderService {
 	 * @throws ApiException When the order should be retried later (background jobs only).
 	 */
 	public function place( array $order, bool $inline = true ): array {
-		if ( 'queued' !== $order['status'] ) {
+		if ( ! in_array( $order['status'], array( 'queued', 'placing' ), true ) ) {
 			return $order;
 		}
 		if ( ! $this->plugin->environment->writesAllowed() ) {
 			$this->orders->update( (int) $order['id'], array( 'note' => 'Orders are paused on this site' ) );
+			$this->plugin->queue->push( 'invoiceninja_place_order', array( 'order_id' => (int) $order['id'] ), 900, true );
+			return (array) $this->orders->find( (int) $order['id'] );
+		}
+		// Only one request or job may place an order (double clicks, retries during a slow response).
+		if ( ! $this->orders->claim( (int) $order['id'] ) ) {
 			return (array) $this->orders->find( (int) $order['id'] );
 		}
 		$client = $this->client();
 		try {
-			$existing = $this->findByPoNumber( $client, (string) $order['number'] );
-			$invoice  = $existing ?? $this->createInvoice( $client, $order, $this->clientFor( $client, $order ) );
+			$client_id = $this->clientFor( $client, $order );
+			$order     = (array) $this->orders->find( (int) $order['id'] );
+			$existing  = $this->findExisting( $client, $order, $client_id );
+			$invoice   = $existing ?? $this->createInvoice( $client, $order, $client_id );
 		} catch ( ApiException $e ) {
 			return $this->failed( $order, $e, $inline, $client );
 		}
@@ -67,14 +74,24 @@ final class OrderService {
 	 */
 	public function retry( array $payload ): void {
 		$order = $this->orders->find( (int) ( $payload['order_id'] ?? 0 ) );
-		if ( null === $order || 'queued' !== $order['status'] ) {
+		if ( null === $order || ! in_array( $order['status'], array( 'queued', 'placing' ), true ) ) {
 			return;
 		}
-		$this->orders->update( (int) $order['id'], array( 'attempts' => (int) $order['attempts'] + 1 ) );
-		$placed = $this->place( $order, false );
-		if ( 'queued' === $placed['status'] && $this->plugin->environment->writesAllowed() ) {
-			throw new ApiException( ErrorKind::Transport, 'order still queued' );
+		$attempts = (int) $order['attempts'] + 1;
+		$this->orders->update( (int) $order['id'], array( 'attempts' => $attempts ) );
+		if ( $attempts > \InvoiceNinja\Core\RetryPolicy::maxAttempts() ) {
+			$this->orders->update(
+				(int) $order['id'],
+				array(
+					'status' => 'attention',
+					'note'   => "Couldn't reach Invoice Ninja after several hours",
+				)
+			);
+			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Error, 'checkout', sprintf( "Order %s couldn't be sent to Invoice Ninja after %d attempts", $order['number'], $attempts - 1 ), array(), 'order', (string) $order['number'] );
+			do_action( 'invoiceninja_order_needs_attention', (array) $this->orders->find( (int) $order['id'] ) );
+			return;
 		}
+		$this->place( $order, false );
 	}
 
 	/**
@@ -97,7 +114,9 @@ final class OrderService {
 		} catch ( ApiException $e ) {
 			return $order;
 		}
-		if ( '4' === (string) ( $invoice['status_id'] ?? '' ) || ( isset( $invoice['balance'] ) && (float) $invoice['balance'] <= 0 && (float) ( $invoice['amount'] ?? 0 ) > 0 ) ) {
+		$status_id = (string) ( $invoice['status_id'] ?? '' );
+		// Paid only when Invoice Ninja says so; cancelled (5) and reversed (6) invoices also have no balance.
+		if ( '4' === $status_id || ( ! in_array( $status_id, array( '5', '6' ), true ) && (float) ( $invoice['amount'] ?? 0 ) > 0 && (float) ( $invoice['paid_to_date'] ?? 0 ) >= (float) $invoice['amount'] ) ) {
 			$this->orders->update(
 				(int) $order['id'],
 				array(
@@ -119,17 +138,39 @@ final class OrderService {
 	}
 
 	/**
-	 * An invoice already created for this order, if any.
+	 * An invoice already created for this order, if any. Invoice Ninja has no exact
+	 * po_number filter, so search with `filter` within the client and check the result:
+	 * same po_number, same client, created after this order.
 	 *
-	 * @param HttpClient $client Client.
-	 * @param string     $number Order number.
+	 * @param HttpClient           $client    Client.
+	 * @param array<string, mixed> $order     Order.
+	 * @param string               $client_id Invoice Ninja client id.
 	 * @return array<string, mixed>|null
 	 */
-	private function findByPoNumber( HttpClient $client, string $number ): ?array {
-		foreach ( $client->get( 'invoices', array( 'po_number' => $number ), 5.0 )->data() as $invoice ) {
-			if ( is_array( $invoice ) && (string) ( $invoice['po_number'] ?? '' ) === $number && empty( $invoice['is_deleted'] ) ) {
-				return $invoice;
+	private function findExisting( HttpClient $client, array $order, string $client_id ): ?array {
+		$number  = (string) $order['number'];
+		$created = (int) strtotime( (string) $order['created_at'] . ' UTC' ) - 300;
+		$found   = $client->get(
+			'invoices',
+			array(
+				'filter'    => $number,
+				'client_id' => $client_id,
+				'per_page'  => 50,
+				'sort'      => 'id|desc',
+			),
+			5.0
+		)->data();
+		foreach ( $found as $invoice ) {
+			if ( ! is_array( $invoice ) || (string) ( $invoice['po_number'] ?? '' ) !== $number || ! empty( $invoice['is_deleted'] ) ) {
+				continue;
 			}
+			if ( (string) ( $invoice['client_id'] ?? '' ) !== $client_id ) {
+				continue;
+			}
+			if ( isset( $invoice['created_at'] ) && (int) $invoice['created_at'] < $created ) {
+				continue; // An older invoice with a reused number (e.g. after a reinstall) is not ours.
+			}
+			return $invoice;
 		}
 		return null;
 	}
@@ -145,10 +186,17 @@ final class OrderService {
 			return (string) $order['client_id'];
 		}
 		$email = strtolower( (string) $order['email'] );
-		foreach ( $client->get( 'clients', array( 'email' => $email ), 5.0 )->data() as $candidate ) {
+		foreach ( $client->get(
+			'clients',
+			array(
+				'email'  => $email,
+				'status' => 'active,archived',
+			),
+			5.0
+		)->data() as $candidate ) {
 			foreach ( (array) ( $candidate['contacts'] ?? array() ) as $contact ) {
 				if ( is_array( $contact ) && strtolower( (string) ( $contact['email'] ?? '' ) ) === $email && empty( $candidate['is_deleted'] ) ) {
-					$this->orders->update( (int) $order['id'], array( 'client_id' => (string) $candidate['id'] ) );
+					$this->remember( $order, (string) $candidate['id'], (string) ( $contact['id'] ?? '' ) );
 					return (string) $candidate['id'];
 				}
 			}
@@ -171,9 +219,28 @@ final class OrderService {
 			array(),
 			5.0
 		)->data();
-		$this->orders->update( (int) $order['id'], array( 'client_id' => (string) $created['id'] ) );
+		$this->remember( $order, (string) $created['id'], (string) ( $created['contacts'][0]['id'] ?? '' ) );
 		$this->plugin->logger->info( 'checkout', sprintf( 'Created an Invoice Ninja client for %s', $email ) );
 		return (string) $created['id'];
+	}
+
+	/**
+	 * Store the matched client and the buyer's own contact.
+	 *
+	 * @param array<string, mixed> $order      Order.
+	 * @param string               $client_id  Client id.
+	 * @param string               $contact_id Contact id.
+	 */
+	private function remember( array $order, string $client_id, string $contact_id ): void {
+		$customer               = (array) $order['customer'];
+		$customer['contact_id'] = $contact_id;
+		$this->orders->update(
+			(int) $order['id'],
+			array(
+				'client_id' => $client_id,
+				'customer'  => $customer,
+			)
+		);
 	}
 
 	/**
@@ -188,7 +255,7 @@ final class OrderService {
 		$lines = array();
 		foreach ( (array) $order['items'] as $item ) {
 			$lines[] = array(
-				'product_key' => (string) $item['title'],
+				'product_key' => (string) ( $item['product_key'] ?? $item['title'] ),
 				'notes'       => (string) ( $item['notes'] ?? '' ),
 				'cost'        => (float) $item['price'],
 				'quantity'    => (int) $item['quantity'],
@@ -214,7 +281,14 @@ final class OrderService {
 	 * @return array<string, mixed>
 	 */
 	private function placed( array $order, array $invoice ): array {
-		$link = (string) ( $invoice['invitations'][0]['link'] ?? '' );
+		// Only the buyer's own invitation: another contact's link would log the buyer in as them.
+		$contact = (string) ( $order['customer']['contact_id'] ?? '' );
+		$link    = '';
+		foreach ( (array) ( $invoice['invitations'] ?? array() ) as $invitation ) {
+			if ( is_array( $invitation ) && '' !== $contact && (string) ( $invitation['client_contact_id'] ?? '' ) === $contact ) {
+				$link = (string) ( $invitation['link'] ?? '' );
+			}
+		}
 		$this->orders->update(
 			(int) $order['id'],
 			array(
@@ -252,7 +326,8 @@ final class OrderService {
 		// The invoice may exist even though we didn't hear back: look before anything else.
 		if ( in_array( $e->kind, array( ErrorKind::Timeout, ErrorKind::Duplicate, ErrorKind::Server, ErrorKind::Transport ), true ) ) {
 			try {
-				$existing = $this->findByPoNumber( $client, (string) $order['number'] );
+				$order    = (array) $this->orders->find( (int) $order['id'] );
+				$existing = '' !== (string) $order['client_id'] ? $this->findExisting( $client, $order, (string) $order['client_id'] ) : null;
 				if ( null !== $existing ) {
 					return $this->placed( $order, $existing );
 				}
@@ -261,7 +336,13 @@ final class OrderService {
 			}
 		}
 		if ( $e->kind->retryable() ) {
-			$this->orders->update( (int) $order['id'], array( 'note' => $e->kind->title() ) );
+			$this->orders->update(
+				(int) $order['id'],
+				array(
+					'status' => 'queued',
+					'note'   => $e->kind->title(),
+				)
+			);
 			if ( $inline ) {
 				$this->plugin->queue->push( 'invoiceninja_place_order', array( 'order_id' => (int) $order['id'] ), 60, true );
 				$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Warning, 'checkout', sprintf( 'Order %s saved while Invoice Ninja was unavailable; it will be sent shortly', $order['number'] ), array( 'kind' => $e->kind->value ), 'order', (string) $order['number'] );
@@ -277,6 +358,8 @@ final class OrderService {
 			)
 		);
 		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Error, 'checkout', sprintf( "Order %s couldn't be invoiced: %s", $order['number'], $e->kind->title() ), array( 'technical' => $e->technical ), 'order', (string) $order['number'] );
-		return (array) $this->orders->find( (int) $order['id'] );
+		$order = (array) $this->orders->find( (int) $order['id'] );
+		do_action( 'invoiceninja_order_needs_attention', $order );
+		return $order;
 	}
 }

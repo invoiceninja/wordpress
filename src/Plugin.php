@@ -97,7 +97,7 @@ final class Plugin {
 			$this->orders,
 			$this->orderService,
 			new OrderNumbers( $this->options, $this->secrets ),
-			new EmailCode( $this->secrets, $this->mailer, $this->logger ),
+			new EmailCode( $this->secrets, $this->mailer, $this->logger, $this->options ),
 			new DeviceRemember( $this->secrets )
 		);
 		$this->diagnostics   = new Diagnostics( $this );
@@ -181,6 +181,7 @@ final class Plugin {
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
 		$this->queue->handle( 'invoiceninja_place_order', array( $this->orderService, 'retry' ) );
 		add_action( 'invoiceninja_order_placed', array( $this->checkout, 'emailBuyer' ) );
+		add_action( 'invoiceninja_order_needs_attention', array( $this->notifications, 'orderNeedsAttention' ) );
 		$this->queue->handle( 'invoiceninja_sideload_image', array( new ImageSideloader( $this ), 'handle' ) );
 		add_action(
 			'invoiceninja_connected',
@@ -210,6 +211,7 @@ final class Plugin {
 	 */
 	public function daily(): void {
 		$this->logger->prune();
+		$this->options->pruneCounters();
 		if ( $this->credentials->hasToken() ) {
 			$was = $this->state->get()['status'];
 			$ok  = $this->connection->refresh();
