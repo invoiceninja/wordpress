@@ -1,0 +1,55 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/pricing-table",
+	"title": "Pricing Table",
+	"category": "invoiceninja",
+	"description": "Your Invoice Ninja subscriptions side by side, each with a Subscribe button. Pair monthly plans with yearly ones to show a toggle.",
+	"icon": "money-alt",
+	"keywords": [
+		"subscription",
+		"plans",
+		"pricing"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {
+		"ids": {
+			"type": "string",
+			"default": ""
+		},
+		"yearly": {
+			"type": "string",
+			"default": ""
+		},
+		"highlight": {
+			"type": "string",
+			"default": ""
+		},
+		"buttonLabel": {
+			"type": "string",
+			"default": ""
+		},
+		"showTrial": {
+			"type": "boolean",
+			"default": true
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": [
+			"wide",
+			"full"
+		],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	}
+}

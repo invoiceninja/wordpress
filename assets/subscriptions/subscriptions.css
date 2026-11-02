@@ -1,0 +1,79 @@
+/**
+ * Invoice Ninja subscriptions: Pricing Table, Subscribe Button and the return page.
+ * Inherits the theme's fonts, colours and buttons; override any --invoiceninja-* property.
+ */
+.invoiceninja-pricing,
+.invoiceninja-subscribe-block,
+.invoiceninja-subreturn {
+	--invoiceninja-gap: 1.5rem;
+	--invoiceninja-radius: 0.75rem;
+	--invoiceninja-border: color-mix(in srgb, currentColor 18%, transparent);
+	--invoiceninja-muted: color-mix(in srgb, currentColor 70%, transparent);
+	--invoiceninja-surface: color-mix(in srgb, currentColor 5%, transparent);
+	box-sizing: border-box;
+}
+
+.invoiceninja-pricing__toggle {
+	display: inline-flex;
+	gap: 0.25rem;
+	padding: 0.25rem;
+	margin-block-end: var(--invoiceninja-gap);
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: 999px;
+}
+.invoiceninja-pricing__toggle[hidden] { display: none; }
+.invoiceninja-pricing__period {
+	min-block-size: 2.75rem;
+	padding: 0.4rem 1.1rem;
+	border: 0;
+	border-radius: 999px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.invoiceninja-pricing__period[aria-pressed="true"] {
+	background: var(--invoiceninja-surface);
+	font-weight: 600;
+	outline: 2px solid currentColor;
+	outline-offset: -2px;
+}
+.invoiceninja-pricing__period:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+
+.invoiceninja-pricing__plans {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: grid;
+	gap: var(--invoiceninja-gap);
+	grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr));
+}
+@media (min-width: 782px) {
+	.invoiceninja-pricing__plans { grid-template-columns: repeat(var(--invoiceninja-columns, 3), minmax(0, 1fr)); }
+}
+.invoiceninja-pricing.is-single .invoiceninja-pricing__plans { max-inline-size: 24rem; margin-inline: auto; grid-template-columns: 1fr; }
+
+.invoiceninja-plan {
+	display: flex;
+	flex-direction: column;
+	padding: var(--invoiceninja-gap);
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: var(--invoiceninja-radius);
+}
+.invoiceninja-plan.is-featured { border-width: 2px; border-color: currentColor; }
+.invoiceninja-plan__body { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
+.invoiceninja-plan__body[hidden] { display: none; }
+.invoiceninja-plan__badge { margin: 0; font-size: 0.85em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.invoiceninja-plan__name { margin: 0; font-size: 1.25em; }
+.invoiceninja-plan__price { margin: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: baseline; }
+.invoiceninja-plan__price .invoiceninja-price { font-size: 1.75em; font-weight: 700; }
+.invoiceninja-plan__per,
+.invoiceninja-plan__trial { color: var(--invoiceninja-muted); }
+.invoiceninja-plan__trial { margin: 0; }
+.invoiceninja-plan__action { margin: auto 0 0; padding-block-start: 0.75rem; }
+.invoiceninja-plan__action .wp-element-button { display: block; text-align: center; }
+
+.invoiceninja-subscribe-block { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+
+.invoiceninja-subreturn { max-inline-size: 40rem; margin: 3rem auto; text-align: center; }
+.invoiceninja-subreturn__links { display: flex; flex-wrap: wrap; gap: 1rem; justify-content: center; align-items: center; }
