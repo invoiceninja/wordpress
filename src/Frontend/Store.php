@@ -71,6 +71,20 @@ final class Store {
 	}
 
 	/**
+	 * Whether the plugin's own cart and checkout run (WooCommerce mode turns them off).
+	 */
+	public static function enabled(): bool {
+		/**
+		 * Whether the plugin's own cart and checkout run. The WooCommerce module returns
+		 * false: WooCommerce runs the store.
+		 *
+		 * @since 2.0.0
+		 * @param bool $enabled Enabled.
+		 */
+		return (bool) apply_filters( 'invoiceninja_store_enabled', true );
+	}
+
+	/**
 	 * Whether the 1.x products page and cart are shown instead of the blocks.
 	 */
 	public function legacy(): bool {
@@ -511,7 +525,7 @@ final class Store {
 	 */
 	private function button( string $id, array $info, bool $quantity, string $label = '' ): string {
 		$mode = (string) $this->plugin->options->setting( 'store.mode' );
-		if ( 'off' === $mode ) {
+		if ( 'off' === $mode || ! self::enabled() ) {
 			return '';
 		}
 		if ( $info['max'] < 1 ) {
@@ -581,7 +595,7 @@ final class Store {
 	 * @param array<string, mixed> $a label.
 	 */
 	public function miniCart( array $a ): string {
-		if ( 'off' === $this->plugin->options->setting( 'store.mode' ) ) {
+		if ( 'off' === $this->plugin->options->setting( 'store.mode' ) || ! self::enabled() ) {
 			return '';
 		}
 		$this->enqueue();
@@ -601,6 +615,9 @@ final class Store {
 	 */
 	public function checkout( array $a ): string {
 		unset( $a );
+		if ( ! self::enabled() ) {
+			return current_user_can( \InvoiceNinja\Core\Capabilities::MANAGE ) ? '<div class="invoiceninja-notice invoiceninja-notice--admin"><strong>' . esc_html__( 'Only you can see this.', 'invoiceninja' ) . '</strong> ' . esc_html__( 'WooCommerce runs your store, so this checkout is hidden. Customers check out with WooCommerce.', 'invoiceninja' ) . '</div>' : '';
+		}
 		$state = $this->placeholder();
 		if ( null !== $state ) {
 			return $state;

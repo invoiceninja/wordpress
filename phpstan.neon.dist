@@ -6,6 +6,7 @@ parameters:
 		- src
 	scanFiles:
 		- vendor/php-stubs/wp-cli-stubs/wp-cli-stubs.php
+		- vendor/php-stubs/woocommerce-stubs/woocommerce-stubs.php
 		- tests/phpstan/stubs.php
 	bootstrapFiles:
 		- tests/phpstan/bootstrap.php

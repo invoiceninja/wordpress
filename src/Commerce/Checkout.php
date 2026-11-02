@@ -51,7 +51,7 @@ final class Checkout {
 	 * @return array<string, mixed>|null The error reply, or null to continue.
 	 */
 	private function gate(): ?array {
-		if ( 'off' === $this->plugin->options->setting( 'store.mode' ) ) {
+		if ( 'off' === $this->plugin->options->setting( 'store.mode' ) || ! \InvoiceNinja\Frontend\Store::enabled() ) {
 			return array(
 				'ok'      => false,
 				'code'    => 'store_off',
