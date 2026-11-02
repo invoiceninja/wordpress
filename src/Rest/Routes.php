@@ -207,8 +207,7 @@ final class Routes {
 	 * The shopper's IP, for rate limits only.
 	 */
 	private static function ip(): string {
-		/** This filter is documented in src/Commerce/Cart.php */
-		return (string) apply_filters( 'invoiceninja_client_ip', isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' );
+		return Plugin::clientIp();
 	}
 
 	/**

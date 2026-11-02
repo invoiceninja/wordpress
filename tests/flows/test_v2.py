@@ -811,3 +811,41 @@ def ship_review_regressions():
                   "InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('mode' => 'cart', 'require_login' => false)));"
                   "InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade(); echo InvoiceNinja\\Plugin::instance()->options->setting('store.mode');")
     check(out == 'cart', 'a connected 2.0 store is not mistaken for a 1.x upgrade', out)
+
+
+@test
+def final_review_regressions():
+    store_ready()
+    b = admin()
+    # Queued filter: the total matches the rows
+    option('in_mock_mode', 'down')
+    try:
+        _, q = checkout(shopper(), 'queued.count@example.com')
+    finally:
+        option('in_mock_mode', 'up')
+    _, r = b.api('GET', '/admin/orders?status=queued')
+    check(r['total'] == len(r['items']), 'queued count matches its list', (r['total'], len(r['items'])))
+    # An order whose placing request died can be cancelled, and the daily sweep re-queues it
+    oid = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('status' => 'placing', 'updated_at' => gmdate('Y-m-d H:i:s', time() - 900)), array('id' => $o['id'])); echo $o['id'];" % q['number'])
+    check(wp_eval("echo implode(',', InvoiceNinja\\Plugin::instance()->orders->staleClaims());").split(',').count(oid) == 1, 'the stuck order is found by the sweep')
+    status, r = b.api('POST', '/admin/orders/%s/cancel' % oid, {})
+    check(status == 200 and r['status'] == 'cancelled', 'a stuck placing order can be cancelled', (status, r))
+    # A changed cart at confirm keeps the code usable
+    s = shopper()
+    email = 'keep.code@example.com'
+    s.api('POST', '/checkout/start', {'email': email})
+    code = last_code(email)
+    wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); update_post_meta($m['wp_id'], 'max_quantity', 1);")
+    try:
+        status, r = s.api('POST', '/checkout/confirm', {'email': email, 'code': code})
+        check(status == 422 and r['code'] == 'cart_changed', 'cart changed before the code is checked', (status, r))
+        status, r = s.api('POST', '/checkout/confirm', {'email': email, 'code': code})
+        check(status == 200 and r['ok'], 'the same code still works after reviewing the cart', (status, r))
+    finally:
+        wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); update_post_meta($m['wp_id'], 'max_quantity', 5);")
+    # Shop managers can save Advanced settings (the JS leaves out admin-only keys; the server accepts the rest)
+    wp_eval("get_role('shop_manager') || add_role('shop_manager', 'Shop manager', array('read' => true)); InvoiceNinja\\Core\\Capabilities::grant();"
+            "if (!get_user_by('login', 'manager1')) { wp_insert_user(array('user_login' => 'manager1', 'user_pass' => 'manager1', 'user_email' => 'manager1@example.com', 'role' => 'shop_manager')); }")
+    m = Browser().login('manager1', 'manager1').rest_nonce()
+    status, r = m.api('POST', '/settings', {'log_level': 'info', 'notifications': {'attention': True}})
+    check(status == 200, 'a shop manager saves Advanced settings without admin-only fields', (status, r))

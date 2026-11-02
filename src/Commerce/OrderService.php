@@ -111,7 +111,12 @@ final class OrderService {
 			case 'cancelled':
 				throw new OrderConflict( esc_html__( 'This order is already cancelled.', 'invoiceninja' ) );
 			case 'placing':
-				throw new OrderConflict( esc_html__( 'This order is being sent to Invoice Ninja right now. Try again in a minute.', 'invoiceninja' ) );
+				if ( ! Orders::staleClaim( $order ) ) {
+					throw new OrderConflict( esc_html__( 'This order is being sent to Invoice Ninja right now. Try again in a minute.', 'invoiceninja' ) );
+				}
+				// The request placing it died: it's queued as far as anyone can tell.
+				$this->orders->transition( (int) $order['id'], array( 'placing' ), 'queued' );
+				$order = (array) $this->orders->find( (int) $order['id'] );
 		}
 		$client = $this->client();
 		if ( '' === (string) $order['invoice_id'] ) {
@@ -158,8 +163,8 @@ final class OrderService {
 				}
 				throw new OrderConflict( esc_html__( 'This order has a payment in Invoice Ninja, so it was not cancelled. Refund or adjust it there.', 'invoiceninja' ) );
 			}
-			$this->closeInvoice( $client, (string) $order['invoice_id'], $delete, '5' === $status );
-			if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => '' ) ) ) {
+			$had_payment = $this->closeInvoice( $client, (string) $order['invoice_id'], $delete, '5' === $status );
+			if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => $had_payment ? 'cancelled_paid' : '' ) ) ) {
 				throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
 			}
 		}
@@ -175,19 +180,20 @@ final class OrderService {
 	 * @param string     $invoice_id        Invoice id.
 	 * @param bool       $delete            Delete after cancelling.
 	 * @param bool       $already_cancelled Skip the cancel.
+	 * @return bool Whether the cancelled invoice turned out to have a payment.
 	 * @throws ApiException When Invoice Ninja didn't do it.
-	 * @throws OrderConflict When the invoice turned out to be paid.
 	 */
-	private function closeInvoice( HttpClient $client, string $invoice_id, bool $delete, bool $already_cancelled = false ): void {
+	private function closeInvoice( HttpClient $client, string $invoice_id, bool $delete, bool $already_cancelled = false ): bool {
 		if ( ! $already_cancelled ) {
 			$cancelled = $this->cancelInvoice( $client, $invoice_id );
 			if ( (float) ( $cancelled['paid_to_date'] ?? 0 ) > 0 ) {
-				throw new OrderConflict( esc_html__( 'This order has a payment in Invoice Ninja, so it was not cancelled. Refund or adjust it there.', 'invoiceninja' ) );
+				return true; // A payment arrived just before the cancel: never delete it.
 			}
 		}
 		if ( $delete ) {
 			$this->cancelInvoice( $client, $invoice_id, true );
 		}
+		return false;
 	}
 
 	/**
@@ -229,8 +235,11 @@ final class OrderService {
 	 */
 	public function retryNow( array $order ): array {
 		$order = (array) $this->orders->find( (int) $order['id'] );
-		if ( 'placing' === ( $order['status'] ?? '' ) ) {
+		if ( 'placing' === ( $order['status'] ?? '' ) && ! Orders::staleClaim( $order ) ) {
 			throw new OrderConflict( esc_html__( 'This order is being sent to Invoice Ninja right now. Reload in a minute.', 'invoiceninja' ) );
+		}
+		if ( 'placing' === $order['status'] ) {
+			$this->orders->transition( (int) $order['id'], array( 'placing' ), 'queued' );
 		}
 		if ( 'attention' === $order['status'] && ! $this->orders->transition( (int) $order['id'], array( 'attention' ), 'queued', array( 'attempts' => 0 ) ) ) {
 			throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
@@ -265,13 +274,9 @@ final class OrderService {
 		$status_id = (string) ( $invoice['status_id'] ?? '' );
 		// Paid only when Invoice Ninja says so; cancelled (5) and reversed (6) invoices also have no balance.
 		if ( '4' === $status_id || ( ! in_array( $status_id, array( '5', '6' ), true ) && (float) ( $invoice['amount'] ?? 0 ) > 0 && (float) ( $invoice['paid_to_date'] ?? 0 ) >= (float) $invoice['amount'] ) ) {
-			$this->orders->update(
-				(int) $order['id'],
-				array(
-					'status'  => 'paid',
-					'paid_at' => gmdate( 'Y-m-d H:i:s' ),
-				)
-			);
+			if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'paid', array( 'paid_at' => gmdate( 'Y-m-d H:i:s' ) ) ) ) {
+				return (array) $this->orders->find( (int) $order['id'] ); // Changed meanwhile.
+			}
 			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s paid', $order['number'] ), array(), 'order', (string) $order['number'] );
 			return (array) $this->orders->find( (int) $order['id'] );
 		}
@@ -282,7 +287,7 @@ final class OrderService {
 	 * API client for the connection.
 	 */
 	private function client(): HttpClient {
-		return $this->plugin->credentials->client( $this->plugin->state->allowsPrivate( $this->plugin->credentials->url() ) );
+		return $this->plugin->api();
 	}
 
 	/**

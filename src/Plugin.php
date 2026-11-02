@@ -115,6 +115,26 @@ final class Plugin {
 	}
 
 	/**
+	 * The API client for the saved connection (private hosts only when allowed for it).
+	 */
+	public function api(): \InvoiceNinja\Api\HttpClient {
+		return $this->credentials->client( $this->state->allowsPrivate( $this->credentials->url() ) );
+	}
+
+	/**
+	 * The shopper's IP for rate limits.
+	 */
+	public static function clientIp(): string {
+		/**
+		 * The shopper's IP for rate limits (filter it when a trusted proxy is in front).
+		 *
+		 * @since 2.0.0
+		 * @param string $ip IP.
+		 */
+		return (string) apply_filters( 'invoiceninja_client_ip', isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' );
+	}
+
+	/**
 	 * Create the instance and register hooks.
 	 *
 	 * @param string $file Main plugin file.
@@ -267,6 +287,10 @@ final class Plugin {
 			} elseif ( $ok ) {
 				$this->notifications->connectionRecovered();
 			}
+		}
+		// Orders whose placing request died: send them again.
+		foreach ( $this->orders->staleClaims() as $order_id ) {
+			$this->queue->push( 'invoiceninja_place_order', array( 'order_id' => $order_id ), 0, true );
 		}
 		if ( $this->abandoned->enabled() ) {
 			$this->queue->push( AbandonedOrders::HOOK, array(), 0, true );

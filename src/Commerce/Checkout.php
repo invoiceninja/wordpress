@@ -249,6 +249,24 @@ final class Checkout {
 		if ( null !== $done && $done['email'] === $email && null !== $cart_id && ! $this->cart->items( $cart_id ) ) {
 			return array( 'ok' => true ) + $this->publicView( $done, true );
 		}
+		// The cart first: a changed cart mustn't use up a correct code.
+		$summary = null === $cart_id ? $this->cart->summary( array() ) : $this->cart->reconcile( $cart_id, $this->buyNow() );
+		if ( ! $summary['lines'] || null === $cart_id ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'empty_cart',
+				'message' => __( 'Your cart is empty.', 'invoiceninja' ),
+			);
+		}
+		if ( $summary['changed'] ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'cart_changed',
+				'message' => __( "Some items changed or sold out, so we've updated your cart. Please check it before continuing.", 'invoiceninja' ),
+				'cart'    => $summary,
+			);
+		}
+
 		if ( ! $this->device->current( $email ) ) {
 			$result = $this->codes->verify( $email, $code, 'checkout', $ip );
 			if ( 'ok' !== $result ) {
@@ -266,23 +284,6 @@ final class Checkout {
 			if ( $remember ) {
 				$this->device->remember( $email );
 			}
-		}
-
-		$summary = null === $cart_id ? $this->cart->summary( array() ) : $this->cart->reconcile( $cart_id, $this->buyNow() );
-		if ( ! $summary['lines'] || null === $cart_id ) {
-			return array(
-				'ok'      => false,
-				'code'    => 'empty_cart',
-				'message' => __( 'Your cart is empty.', 'invoiceninja' ),
-			);
-		}
-		if ( $summary['changed'] ) {
-			return array(
-				'ok'      => false,
-				'code'    => 'cart_changed',
-				'message' => __( "Some items changed or sold out, so we've updated your cart. Please check it before continuing.", 'invoiceninja' ),
-				'cart'    => $summary,
-			);
 		}
 
 		// Same cart, same email, same contents: a double submit gets the same order.

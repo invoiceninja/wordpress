@@ -33,8 +33,22 @@ function invoiceninja_uninstall_site() {
 	}
 
 	// phpcs:disable WordPress.DB.DirectDatabaseQuery
-	$wpdb->query( 'DROP TABLE IF EXISTS ' . $wpdb->prefix . 'invoiceninja_log' ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fixed table name.
+	foreach ( array( 'invoiceninja_log', 'invoiceninja_orders', 'invoiceninja_map' ) as $invoiceninja_table ) {
+		$wpdb->query( 'DROP TABLE IF EXISTS ' . $wpdb->prefix . $invoiceninja_table ); // phpcs:ignore WordPress.DB.PreparedSQL.NotPrepared -- fixed table names.
+	}
 	// phpcs:enable
+	// Synced products (Invoice Ninja keeps the originals).
+	$invoiceninja_posts = get_posts(
+		array(
+			'post_type'   => 'invoiceninja_product',
+			'post_status' => 'any',
+			'numberposts' => -1,
+			'fields'      => 'ids',
+		)
+	);
+	foreach ( $invoiceninja_posts as $invoiceninja_post ) {
+		wp_delete_post( (int) $invoiceninja_post, true );
+	}
 	// delete_option() keeps a persistent object cache in step.
 	$invoiceninja_options = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s", $wpdb->esc_like( 'invoiceninja_' ) . '%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 	foreach ( $invoiceninja_options as $invoiceninja_option ) {

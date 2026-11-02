@@ -180,6 +180,27 @@ final class Orders {
 	}
 
 	/**
+	 * Whether an order's placing claim was abandoned (the request died mid-way).
+	 *
+	 * @param array<string, mixed> $order Order.
+	 */
+	public static function staleClaim( array $order ): bool {
+		return 'placing' === ( $order['status'] ?? '' ) && strtotime( (string) $order['updated_at'] . ' UTC' ) < time() - 300;
+	}
+
+	/**
+	 * Orders stuck in a placing claim for more than five minutes.
+	 *
+	 * @return list<int>
+	 */
+	public function staleClaims(): array {
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		return array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'placing' AND updated_at < %s LIMIT 100", gmdate( 'Y-m-d H:i:s', time() - 300 ) ) ) );
+	}
+
+	/**
 	 * Find by id.
 	 *
 	 * @param int $id Id.
@@ -251,7 +272,7 @@ final class Orders {
 		$page     = max( 1, (int) ( $filters['page'] ?? 1 ) );
 		$sql      = implode( ' AND ', $where );
 		// phpcs:disable WordPress.DB -- table name is ours; values are prepared.
-		$total  = (int) $wpdb->get_var( $params ? $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE {$sql}", $params ) : "SELECT COUNT(*) FROM {$table}" );
+		$total  = (int) $wpdb->get_var( $params ? $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE {$sql}", $params ) : "SELECT COUNT(*) FROM {$table} WHERE {$sql}" );
 		$rows   = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE {$sql} ORDER BY id DESC LIMIT %d OFFSET %d", array_merge( $params, array( $per_page, ( $page - 1 ) * $per_page ) ) ), ARRAY_A );
 		$counts = $wpdb->get_results( "SELECT status, COUNT(*) AS n FROM {$table} GROUP BY status", ARRAY_A );
 		// phpcs:enable

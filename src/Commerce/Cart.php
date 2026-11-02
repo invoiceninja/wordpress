@@ -52,13 +52,7 @@ final class Cart {
 			return $id;
 		}
 		$id = bin2hex( random_bytes( 16 ) );
-		/**
-		 * The shopper's IP for rate limits (filter it when a trusted proxy is in front).
-		 *
-		 * @since 2.0.0
-		 * @param string $ip IP.
-		 */
-		$ip = (string) apply_filters( 'invoiceninja_client_ip', isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' );
+		$ip = \InvoiceNinja\Plugin::clientIp();
 		if ( \InvoiceNinja\Plugin::booted() && \InvoiceNinja\Plugin::instance()->options->increment( 'ctr_cart_' . substr( md5( Checkout::ipBucket( $ip ) ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > 200 ) {
 			throw new \RuntimeException( 'Too many carts from this address' );
 		}

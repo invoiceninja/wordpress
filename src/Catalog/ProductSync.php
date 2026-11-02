@@ -103,7 +103,7 @@ final class ProductSync {
 		}
 
 		try {
-			$client = $this->plugin->credentials->client( $this->plugin->state->allowsPrivate( $this->plugin->credentials->url() ) );
+			$client = $this->plugin->api();
 			$items  = iterator_to_array( Paginator::each( $client, 'products', $query, 250 ), false );
 		} catch ( ApiException $e ) {
 			$this->plugin->logger->warning( 'sync', 'Product sync failed: ' . $e->kind->title(), array( 'technical' => $e->technical ) );

@@ -57,7 +57,7 @@ final class StockCheck {
 		if ( ! $items || ! $this->cart->tracksStock() ) {
 			return true;
 		}
-		$client   = $this->plugin->credentials->client( $this->plugin->state->allowsPrivate( $this->plugin->credentials->url() ) );
+		$client   = $this->plugin->api();
 		$deadline = microtime( true ) + self::BUDGET;
 		foreach ( array_slice( array_keys( $items ), 0, self::MAX_PRODUCTS ) as $product ) {
 			$map  = $this->mapping->find( 'product', (string) $product );

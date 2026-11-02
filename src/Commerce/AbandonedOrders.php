@@ -75,9 +75,10 @@ final class AbandonedOrders {
 			++$result['checked'];
 			$cursor = (int) $order['id'];
 			try {
-				$this->service->cancel( $order, $delete );
+				$closed = $this->service->cancel( $order, $delete );
 				++$result['cleaned'];
-				$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s was unpaid after %d days, so its invoice was %s', $order['number'], $days, $delete ? 'deleted' : 'cancelled' ), array(), 'order', (string) $order['number'] );
+				$what = 'invoice_gone' === $closed['note'] ? 'was already deleted in Invoice Ninja' : ( 'cancelled_paid' === $closed['note'] ? 'was cancelled, but had a payment' : ( $delete ? 'was deleted' : 'was cancelled' ) );
+				$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s was unpaid after %d days; its invoice %s', $order['number'], $days, $what ), array(), 'order', (string) $order['number'] );
 			} catch ( OrderConflict $e ) {
 				++$result['skipped']; // Paid, partly paid or changed: leave it alone, and don't look at it again.
 				$this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'awaiting_payment', array( 'note' => 'kept_unpaid' ) );
@@ -87,11 +88,6 @@ final class AbandonedOrders {
 					$cursor  = (int) $order['id'] - 1; // Try this one again next time.
 					$stopped = true;
 					break;
-				}
-				if ( \InvoiceNinja\Api\ErrorKind::NotFound === $e->kind ) {
-					// Deleted in Invoice Ninja: nothing left to pay.
-					$this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'cancelled', array( 'note' => 'invoice_gone' ) );
-					continue;
 				}
 				$failures                       = (array) $this->plugin->options->get( 'abandoned_failures', array() );
 				$tries                          = (int) ( $failures[ (int) $order['id'] ] ?? 0 ) + 1;

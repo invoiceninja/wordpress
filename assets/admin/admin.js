@@ -675,6 +675,12 @@
 					store.abandoned_days = ( boot.settings.store && boot.settings.store.abandoned_days ) || 14;
 				}
 				const data = section === 'store' ? { store } : Object.assign( {}, s, { store: undefined } );
+				if ( section !== 'store' && ! boot.can.manageSite ) {
+					// Only site administrators may send these; leave them out so the rest saves.
+					delete data.email;
+					delete data.delete_data_on_uninstall;
+					data.notifications = Object.assign( {}, data.notifications, { recipients: undefined } );
+				}
 				const saved = await api( '/settings', { method: 'POST', data } );
 				setS( saved );
 				boot.settings = saved;
