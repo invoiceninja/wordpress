@@ -18,9 +18,9 @@ sed -i.bak -E "s/(define\( 'INVOICENINJA_VERSION', ')[^']*(' \);)/\1$new\2/" inv
 rm -f invoiceninja.php.bak
 
 if [[ "$new" != *-* ]]; then
-  sed -i.bak -E "s/^Stable tag: .*/Stable tag: $new/" README.md && rm -f README.md.bak
+  sed -i.bak -E "s/^Stable tag: .*/Stable tag: $new/" readme.txt && rm -f readme.txt.bak
 fi
 
 grep -n "Version:\|INVOICENINJA_VERSION', '" invoiceninja.php
-grep -n "Stable tag" README.md
+grep -n "Stable tag" readme.txt
 echo "Now commit, then tag: git tag v$new && git push origin v$new"

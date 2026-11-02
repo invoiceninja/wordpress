@@ -44,7 +44,9 @@ def setup():
     # localhost looks like a copy, so orders are paused until confirmed
     lib.wp('invoiceninja', 'environment', 'confirm')
     # The 1.x flows run against the legacy display; 2.0 store flows switch to blocks themselves.
-    lib.wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('display' => 'legacy')));")
+    lib.wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('display' => 'legacy', 'mode' => 'cart', 'require_login' => false), 'modules' => array('woo' => false, 'store' => true, 'account' => true)));")
+    # WooCommerce flows switch it on themselves; everything else expects the plugin's own store.
+    lib.wp('plugin', 'deactivate', 'woocommerce', check_ok=False)
 
     for name, value in {
         'invoiceninja_api_url': 'https://in.test',

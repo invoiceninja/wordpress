@@ -15,3 +15,5 @@ phpcs.xml.dist
 phpstan.neon.dist
 .wordpress-org
 docs
+README.md
+.claude
