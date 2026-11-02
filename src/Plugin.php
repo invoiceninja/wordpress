@@ -77,6 +77,8 @@ final class Plugin {
 
 	public readonly \InvoiceNinja\Frontend\Store $store;
 
+	public readonly \InvoiceNinja\Customers\ClientResolver $clients;
+
 	/**
 	 * Set while Settings > Store and the 1.x purchase option are being synced.
 	 */
@@ -115,6 +117,7 @@ final class Plugin {
 			new StockCheck( $this, $this->cart, $this->mapping )
 		);
 		$this->abandoned     = new AbandonedOrders( $this, $this->orders, $this->orderService );
+		$this->clients       = new \InvoiceNinja\Customers\ClientResolver( $this );
 		$this->statics       = new \InvoiceNinja\Catalog\Statics( $this );
 		$this->store         = new \InvoiceNinja\Frontend\Store( $this );
 		$this->diagnostics   = new Diagnostics( $this );

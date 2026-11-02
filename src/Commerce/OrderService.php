@@ -338,43 +338,10 @@ final class OrderService {
 		if ( '' !== (string) $order['client_id'] ) {
 			return (string) $order['client_id'];
 		}
-		$email = strtolower( (string) $order['email'] );
-		foreach ( $client->get(
-			'clients',
-			array(
-				'email'  => $email,
-				'status' => 'active,archived',
-			),
-			5.0
-		)->data() as $candidate ) {
-			foreach ( (array) ( $candidate['contacts'] ?? array() ) as $contact ) {
-				if ( is_array( $contact ) && strtolower( (string) ( $contact['email'] ?? '' ) ) === $email && empty( $candidate['is_deleted'] ) ) {
-					$this->remember( $order, (string) $candidate['id'], (string) ( $contact['id'] ?? '' ) );
-					return (string) $candidate['id'];
-				}
-			}
-		}
-		$customer = $order['customer'];
-		$name     = trim( (string) ( $customer['first_name'] ?? '' ) . ' ' . (string) ( $customer['last_name'] ?? '' ) );
-		$created  = $client->post(
-			'clients',
-			array(
-				'name'     => '' !== $name ? $name : $email,
-				'contacts' => array(
-					array(
-						'first_name' => (string) ( $customer['first_name'] ?? '' ),
-						'last_name'  => (string) ( $customer['last_name'] ?? '' ),
-						'email'      => $email,
-						'phone'      => (string) ( $customer['phone'] ?? '' ),
-					),
-				),
-			),
-			array(),
-			5.0
-		)->data();
-		$this->remember( $order, (string) $created['id'], (string) ( $created['contacts'][0]['id'] ?? '' ) );
-		$this->plugin->logger->info( 'checkout', sprintf( 'Created an Invoice Ninja client for %s', $email ) );
-		return (string) $created['id'];
+		$customer = (array) $order['customer'];
+		$found    = $this->plugin->clients->findOrCreate( $client, (string) $order['email'], $customer );
+		$this->remember( $order, $found['client_id'], $found['contact_id'] );
+		return $found['client_id'];
 	}
 
 	/**
