@@ -1,5 +1,5 @@
 /**
- * Invoice Ninja admin screens: Home, Setup, Settings and Status.
+ * Invoice Ninja admin screens: Home, Setup, Orders, Settings and Status.
  *
  * Plain JavaScript on WordPress's own React (wp.element), so there is no build step.
  * Text never goes through innerHTML; React escapes everything.
@@ -1000,9 +1000,204 @@
 		return sprintf( /* translators: 1: added, 2: updated, 3: unpublished */ __( 'Products synced: %1$d added, %2$d updated, %3$d unpublished.', 'invoiceninja' ), r.created, r.updated, r.drafted );
 	}
 
+	// ---------- Orders ----------
+
+	const ORDER_STATUS = {
+		queued: [ 'info', __( 'Queued', 'invoiceninja' ) ],
+		placing: [ 'info', __( 'Queued', 'invoiceninja' ) ],
+		awaiting_payment: [ 'warning', __( 'Awaiting payment', 'invoiceninja' ) ],
+		paid: [ 'success', __( 'Paid', 'invoiceninja' ) ],
+		cancelled: [ 'neutral', __( 'Cancelled', 'invoiceninja' ) ],
+		attention: [ 'error', __( 'Needs attention', 'invoiceninja' ) ],
+	};
+
+	function money( amount, currency ) {
+		try {
+			if ( currency ) {
+				return new Intl.NumberFormat( undefined, { style: 'currency', currency } ).format( amount );
+			}
+		} catch ( e ) {
+			// Unknown currency code: fall through.
+		}
+		return Number( amount ).toFixed( 2 );
+	}
+
+	function Orders() {
+		const params = new URLSearchParams( window.location.search );
+		const [ filters, setFilters ] = useState( { status: params.get( 'status' ) || '', search: params.get( 's' ) || '', page: 1 } );
+		const [ data, setData ] = useState( null );
+		const [ error, setError ] = useState( '' );
+		const [ message, setMessage ] = useState( '' );
+		const [ busy, setBusy ] = useState( {} );
+		const [ confirming, setConfirming ] = useState( null );
+		const [ notify, setNotify ] = useState( true );
+		const latest = useRef( 0 );
+		const filtersRef = useRef( filters );
+		filtersRef.current = filters;
+		const keepRef = useRef( null );
+		const triggerRef = useRef( null );
+		const load = async ( f ) => {
+			const ticket = ++latest.current;
+			setError( '' );
+			try {
+				const q = new URLSearchParams( { status: f.status, search: f.search, page: String( f.page ) } );
+				const result = await api( '/admin/orders?' + q.toString() );
+				if ( ticket === latest.current ) {
+					setData( result );
+				}
+			} catch ( e ) {
+				if ( ticket === latest.current ) {
+					setError( errorText( e ) );
+					setData( ( prev ) => prev || { items: [], total: 0, counts: {} } );
+				}
+			}
+		};
+		useEffect( () => {
+			load( filters );
+		}, [ filters.status, filters.page ] );
+		useEffect( () => {
+			if ( confirming && keepRef.current ) {
+				keepRef.current.focus();
+			}
+		}, [ confirming ] );
+		const closeConfirm = () => {
+			setConfirming( null );
+			if ( triggerRef.current ) {
+				triggerRef.current.focus();
+			}
+		};
+		const setBusyFor = ( id, value ) => setBusy( ( prev ) => Object.assign( {}, prev, { [ id ]: value } ) );
+		const act = async ( order, action, extra ) => {
+			setBusyFor( order.id, action );
+			setMessage( '' );
+			try {
+				const updated = await api( '/admin/orders/' + order.id + '/' + action, { method: 'POST', data: extra || {} } );
+				const done = {
+					resend: sprintf( /* translators: %s: order number */ __( 'Payment email sent again for order %s.', 'invoiceninja' ), order.number ),
+					retry: updated.status === 'awaiting_payment' ? sprintf( /* translators: %s: order number */ __( 'Order %s is in Invoice Ninja now.', 'invoiceninja' ), order.number ) : sprintf( /* translators: %s: order number */ __( "Order %s couldn't be sent yet. See its note.", 'invoiceninja' ), order.number ),
+					cancel: sprintf( /* translators: %s: order number */ __( 'Order %s cancelled.', 'invoiceninja' ), order.number ),
+				};
+				setMessage( done[ action ] );
+				if ( action === 'cancel' ) {
+					setConfirming( null );
+				}
+			} catch ( e ) {
+				setMessage( errorText( e ) );
+				if ( action === 'cancel' ) {
+					setConfirming( null );
+				}
+			}
+			setBusyFor( order.id, '' );
+			// Counts, the banner and filtered views all change: reload what's on screen now.
+			load( filtersRef.current );
+		};
+		const copy = async ( order ) => {
+			try {
+				await window.navigator.clipboard.writeText( order.status_url );
+				setMessage( sprintf( /* translators: %s: order number */ __( 'Status link for order %s copied.', 'invoiceninja' ), order.number ) );
+			} catch ( e ) {
+				// eslint-disable-next-line no-alert
+				window.prompt( __( 'Copy the status link:', 'invoiceninja' ), order.status_url );
+			}
+		};
+		const counts = data ? data.counts : {};
+		const total = Object.keys( counts ).reduce( ( n, k ) => n + counts[ k ], 0 );
+		const views = [
+			[ '', __( 'All', 'invoiceninja' ), total ],
+			[ 'queued', __( 'Queued', 'invoiceninja' ), ( counts.queued || 0 ) + ( counts.placing || 0 ) ],
+			[ 'awaiting_payment', __( 'Awaiting payment', 'invoiceninja' ), counts.awaiting_payment || 0 ],
+			[ 'paid', __( 'Paid', 'invoiceninja' ), counts.paid || 0 ],
+			[ 'cancelled', __( 'Cancelled', 'invoiceninja' ), counts.cancelled || 0 ],
+			[ 'attention', __( 'Needs attention', 'invoiceninja' ), counts.attention || 0 ],
+		];
+		const attention = counts.attention || 0;
+		const showBanner = attention > 0 && filters.status !== 'attention';
+		const pages = data ? Math.max( 1, Math.ceil( data.total / 20 ) ) : 1;
+		const setStatus = ( status ) => setFilters( Object.assign( {}, filters, { status, page: 1 } ) );
+		return h( Fragment, null,
+			h( 'h1', null, __( 'Orders', 'invoiceninja' ) ),
+			showBanner ? h( Notice, { type: 'error', title: sprintf( /* translators: %d: number of orders */ _n( '%d order needs attention.', '%d orders need attention.', attention, 'invoiceninja' ), attention ) },
+				h( 'p', { className: 'in-row' }, _n( 'Its buyer is waiting for an invoice.', 'Their buyers are waiting for an invoice.', attention, 'invoiceninja' ), ' ',
+					h( Button, { onClick: () => setStatus( 'attention' ) }, __( 'Show them', 'invoiceninja' ) ) ) ) : null,
+			h( 'ul', { className: 'subsubsub in-views' }, views.map( ( v, i ) => h( 'li', { key: v[ 0 ] || 'all' },
+				h( 'a', { href: '#', className: filters.status === v[ 0 ] ? 'current' : '', 'aria-current': filters.status === v[ 0 ] ? 'page' : undefined, onClick: ( e ) => { e.preventDefault(); setStatus( v[ 0 ] ); } },
+					v[ 1 ], ' ', h( 'span', { className: 'count' }, '(' + v[ 2 ] + ')' ) ),
+				i < views.length - 1 ? ' |' : '' ) ) ),
+			h( 'form', { className: 'in-filters in-filters--orders', role: 'search', onSubmit: ( e ) => { e.preventDefault(); const f = Object.assign( {}, filters, { page: 1 } ); setFilters( f ); load( f ); } },
+				h( 'span', { className: 'in-field' }, h( 'label', { htmlFor: 'in-order-q' }, __( 'Order, invoice or email', 'invoiceninja' ) ),
+					h( 'input', { id: 'in-order-q', type: 'search', value: filters.search, onChange: ( e ) => setFilters( Object.assign( {}, filters, { search: e.target.value } ) ) } ) ),
+				h( 'button', { type: 'submit', className: 'button' }, __( 'Search', 'invoiceninja' ) ) ),
+			h( 'div', { role: 'status', className: 'in-live' },
+				error ? h( Notice, { type: 'error' }, h( 'p', null, error ) ) : null,
+				message ? h( Notice, { type: 'info' }, h( 'p', null, message ) ) : null ),
+			h( 'table', { className: 'wp-list-table widefat striped in-orders' },
+				h( 'thead', null, h( 'tr', null,
+					h( 'th', { scope: 'col' }, __( 'Order', 'invoiceninja' ) ),
+					h( 'th', { scope: 'col' }, __( 'Customer', 'invoiceninja' ) ),
+					h( 'th', { scope: 'col' }, __( 'Status', 'invoiceninja' ) ),
+					h( 'th', { scope: 'col', className: 'in-num' }, __( 'Total', 'invoiceninja' ) ),
+					h( 'th', { scope: 'col' }, __( 'Invoice', 'invoiceninja' ) ),
+					h( 'th', { scope: 'col' }, __( 'Placed', 'invoiceninja' ) ) ) ),
+				h( 'tbody', null,
+					! data ? h( 'tr', null, h( 'td', { colSpan: 6 }, __( 'Loading…', 'invoiceninja' ) ) ) : null,
+					data && data.items.length === 0 ? h( 'tr', null, h( 'td', { colSpan: 6 },
+						filters.status || filters.search ? __( 'No orders match.', 'invoiceninja' ) : __( 'No orders yet. They appear here as soon as someone checks out.', 'invoiceninja' ) ) ) : null,
+					data ? data.items.map( ( o ) => {
+						const [ tone, label ] = ORDER_STATUS[ o.status ] || [ 'neutral', o.status ];
+						const actions = [];
+						if ( boot.can.manage && o.status === 'queued' ) {
+							actions.push( h( Button, { key: 'retry', link: true, busy: busy[ o.id ] === 'retry', onClick: () => act( o, 'retry' ) }, __( 'Send now', 'invoiceninja' ) ) );
+						}
+						if ( boot.can.manage && o.status === 'attention' ) {
+							actions.push( h( Button, { key: 'retry', link: true, busy: busy[ o.id ] === 'retry', onClick: () => act( o, 'retry' ) }, __( 'Retry', 'invoiceninja' ) ) );
+						}
+						if ( boot.can.manage && o.status === 'awaiting_payment' ) {
+							actions.push( h( Button, { key: 'resend', link: true, busy: busy[ o.id ] === 'resend', onClick: () => act( o, 'resend' ) }, __( 'Resend payment email', 'invoiceninja' ) ) );
+						}
+						if ( o.status_url && o.status === 'awaiting_payment' ) {
+							actions.push( h( Button, { key: 'copy', link: true, onClick: () => copy( o ) }, __( 'Copy status link', 'invoiceninja' ) ) );
+						}
+						if ( o.status === 'attention' && o.client_url ) {
+							actions.push( h( External, { key: 'client', href: o.client_url }, __( 'Open client in Invoice Ninja', 'invoiceninja' ) ) );
+						}
+						if ( boot.can.manage && [ 'queued', 'awaiting_payment', 'attention' ].includes( o.status ) ) {
+							actions.push( h( Button, { key: 'cancel', link: true, className: 'button-link in-link-danger', 'aria-expanded': confirming === o.id ? 'true' : 'false', 'aria-controls': 'in-confirm-' + o.id, onClick: ( e ) => { triggerRef.current = e.currentTarget; setNotify( true ); setConfirming( o.id ); } }, __( 'Cancel…', 'invoiceninja' ) ) );
+						}
+						return h( Fragment, { key: o.id },
+							h( 'tr', { className: o.status === 'attention' ? 'is-attention' : '' },
+								h( 'td', null,
+									h( 'strong', null, o.number ),
+									h( 'div', { className: 'in-row-actions' }, actions.map( ( a, i ) => h( Fragment, { key: i }, i ? h( 'span', { className: 'in-sep', 'aria-hidden': 'true' }, ' | ' ) : null, a ) ) ) ),
+								h( 'td', null,
+									h( 'div', null, o.name || o.email ),
+									o.name ? h( 'div', { className: 'in-muted' }, o.email ) : null,
+									h( 'div', { className: 'in-muted' }, o.items.map( ( i ) => i.quantity + ' × ' + i.title ).join( ', ' ) ),
+									o.note ? h( 'div', { className: o.status === 'attention' ? 'in-note in-note--error' : 'in-note' }, o.note ) : null ),
+								h( 'td', null, h( Pill, { tone }, label ) ),
+								h( 'td', { className: 'in-num' }, money( o.total, o.currency ) ),
+								h( 'td', null, o.invoice_url ? h( External, { href: o.invoice_url }, o.invoice_number || __( 'Invoice', 'invoiceninja' ) ) : h( 'span', { className: 'in-muted' }, __( 'Not yet', 'invoiceninja' ) ) ),
+								h( 'td', null, new Date( o.created_at.replace( ' ', 'T' ) + 'Z' ).toLocaleString() ) ),
+							confirming === o.id ? h( 'tr', { className: 'in-confirm-row' }, h( 'td', { colSpan: 6 },
+								h( 'div', { className: 'in-confirm', id: 'in-confirm-' + o.id, role: 'group', 'aria-labelledby': 'in-confirm-q-' + o.id, onKeyDown: ( e ) => { if ( e.key === 'Escape' ) { e.stopPropagation(); closeConfirm(); } } },
+									h( 'p', null, h( 'strong', { id: 'in-confirm-q-' + o.id }, sprintf( /* translators: %s: order number */ __( 'Cancel order %s?', 'invoiceninja' ), o.number ) ), ' ',
+										o.invoice_number ? sprintf( /* translators: %s: invoice number */ __( 'Invoice %s is cancelled in Invoice Ninja, and its payment link stops working.', 'invoiceninja' ), o.invoice_number ) : __( "It hasn't reached Invoice Ninja, so nothing is created there.", 'invoiceninja' ) ),
+									o.invoice_number ? h( 'p', { className: 'in-muted' }, __( 'Stock is not put back. Delete the invoice in Invoice Ninja if you need that.', 'invoiceninja' ) ) : null,
+									h( 'label', null, h( 'input', { type: 'checkbox', checked: notify, onChange: ( e ) => setNotify( e.target.checked ) } ), ' ', sprintf( /* translators: %s: buyer name or email */ __( 'Email %s that the order was cancelled', 'invoiceninja' ), o.name || o.email ) ),
+									h( 'p', { className: 'in-row' },
+										h( 'button', { type: 'button', className: 'button', ref: keepRef, onClick: closeConfirm }, __( 'Keep order', 'invoiceninja' ) ),
+										h( Button, { danger: true, busy: busy[ o.id ] === 'cancel', onClick: () => act( o, 'cancel', { email: notify } ) }, __( 'Cancel order', 'invoiceninja' ) ) ) ) ) ) : null );
+					} ) : null ) ),
+			h( 'div', { className: 'tablenav' },
+				h( 'span', { className: 'in-muted' }, data ? sprintf( /* translators: %d: number */ _n( '%d order', '%d orders', data.total, 'invoiceninja' ), data.total ) : '' ),
+				h( 'span', { className: 'in-row in-push' },
+					h( Button, { disabled: filters.page <= 1, onClick: () => setFilters( Object.assign( {}, filters, { page: filters.page - 1 } ) ), 'aria-label': __( 'Previous page', 'invoiceninja' ) }, '‹' ),
+					h( 'span', null, sprintf( /* translators: 1: page, 2: pages */ __( '%1$d of %2$d', 'invoiceninja' ), filters.page, pages ) ),
+					h( Button, { disabled: filters.page >= pages, onClick: () => setFilters( Object.assign( {}, filters, { page: filters.page + 1 } ) ), 'aria-label': __( 'Next page', 'invoiceninja' ) }, '›' ) ) ) );
+	}
+
 	// ---------- Mount ----------
 
-	const SCREENS = { home: Home, setup: Setup, settings: Settings, status: Status };
+	const SCREENS = { home: Home, setup: Setup, settings: Settings, status: Status, orders: Orders };
 
 	wp.domReady( () => {
 		const root = document.getElementById( 'invoiceninja-app' );

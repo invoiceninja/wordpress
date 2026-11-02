@@ -173,6 +173,20 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         return in_mock_response( [ 'data' => [ 'id' => basename( $route ), 'contacts' => [] ] ] );
     }
 
+    if ( $route === 'invoices/bulk' && $method === 'POST' ) {
+        $data     = json_decode( (string) $body, true ) ?: [];
+        $invoices = get_option( 'in_mock_invoices', [] );
+        $changed  = [];
+        foreach ( (array) ( $data['ids'] ?? [] ) as $id ) {
+            if ( isset( $invoices[ $id ] ) && ( $data['action'] ?? '' ) === 'cancel' ) {
+                $invoices[ $id ]['status_id'] = '5';
+                $changed[] = $invoices[ $id ];
+            }
+        }
+        update_option( 'in_mock_invoices', $invoices, false );
+        return in_mock_response( [ 'data' => $changed ] );
+    }
+
     // 2.0: invoices are remembered so they can be searched by po_number and fetched by id
     if ( strpos( $route, 'invoices' ) === 0 && $method === 'POST' ) {
         $data     = json_decode( (string) $body, true ) ?: [];

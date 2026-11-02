@@ -46,7 +46,7 @@ final class OrderService {
 			return $order;
 		}
 		if ( ! $this->plugin->environment->writesAllowed() ) {
-			$this->orders->update( (int) $order['id'], array( 'note' => 'Orders are paused on this site' ) );
+			$this->orders->update( (int) $order['id'], array( 'note' => 'paused' ) );
 			$this->plugin->queue->push( 'invoiceninja_place_order', array( 'order_id' => (int) $order['id'] ), 900, true );
 			return (array) $this->orders->find( (int) $order['id'] );
 		}
@@ -80,18 +80,123 @@ final class OrderService {
 		$attempts = (int) $order['attempts'] + 1;
 		$this->orders->update( (int) $order['id'], array( 'attempts' => $attempts ) );
 		if ( $attempts > \InvoiceNinja\Core\RetryPolicy::maxAttempts() ) {
-			$this->orders->update(
-				(int) $order['id'],
-				array(
-					'status' => 'attention',
-					'note'   => "Couldn't reach Invoice Ninja after several hours",
-				)
-			);
+			if ( ! $this->orders->transition( (int) $order['id'], array( 'queued' ), 'attention', array( 'note' => 'gave_up' ) ) ) {
+				return;
+			}
 			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Error, 'checkout', sprintf( "Order %s couldn't be sent to Invoice Ninja after %d attempts", $order['number'], $attempts - 1 ), array(), 'order', (string) $order['number'] );
 			do_action( 'invoiceninja_order_needs_attention', (array) $this->orders->find( (int) $order['id'] ) );
 			return;
 		}
 		$this->place( $order, false );
+	}
+
+	/**
+	 * Cancel an order and its invoice in Invoice Ninja (the payment link stops working).
+	 *
+	 * @param array<string, mixed> $order Order.
+	 * @return array<string, mixed> The cancelled order.
+	 * @throws ApiException When Invoice Ninja can't be reached or refuses.
+	 * @throws OrderConflict When the order can't be cancelled now.
+	 */
+	public function cancel( array $order ): array {
+		$order = (array) $this->orders->find( (int) $order['id'] );
+		switch ( $order['status'] ?? '' ) {
+			case 'paid':
+				throw new OrderConflict( esc_html__( 'This order is paid. Refund it in Invoice Ninja instead.', 'invoiceninja' ) );
+			case 'cancelled':
+				throw new OrderConflict( esc_html__( 'This order is already cancelled.', 'invoiceninja' ) );
+			case 'placing':
+				throw new OrderConflict( esc_html__( 'This order is being sent to Invoice Ninja right now. Try again in a minute.', 'invoiceninja' ) );
+		}
+		$client = $this->client();
+		if ( '' === (string) $order['invoice_id'] ) {
+			// Stop the background job from placing it first, then look for an invoice a lost reply may have created.
+			if ( ! $this->orders->transition( (int) $order['id'], array( 'queued', 'attention' ), 'cancelled', array( 'note' => '' ) ) ) {
+				throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
+			}
+			if ( '' !== (string) $order['client_id'] ) {
+				try {
+					$existing = $this->findExisting( $client, $order, (string) $order['client_id'] );
+					if ( null !== $existing ) {
+						$this->cancelInvoice( $client, (string) $existing['id'] );
+						$this->orders->update(
+							(int) $order['id'],
+							array(
+								'invoice_id'     => (string) $existing['id'],
+								'invoice_number' => (string) ( $existing['number'] ?? '' ),
+							)
+						);
+					}
+				} catch ( ApiException $e ) {
+					$this->orders->update( (int) $order['id'], array( 'note' => 'check_invoice' ) );
+					$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Warning, 'checkout', sprintf( "Order %s cancelled, but Invoice Ninja couldn't be checked for an invoice. Look for PO number %s there.", $order['number'], $order['number'] ), array( 'kind' => $e->kind->value ), 'order', (string) $order['number'] );
+				}
+			}
+		} else {
+			$invoice = $client->get( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ), array(), 10.0 )->data();
+			$status  = (string) ( $invoice['status_id'] ?? '' );
+			if ( '4' === $status || (float) ( $invoice['paid_to_date'] ?? 0 ) > 0 ) {
+				if ( '4' === $status ) {
+					$this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'paid', array( 'paid_at' => gmdate( 'Y-m-d H:i:s' ) ) );
+				}
+				throw new OrderConflict( esc_html__( 'This order has a payment in Invoice Ninja, so it was not cancelled. Refund or adjust it there.', 'invoiceninja' ) );
+			}
+			if ( '5' !== $status ) {
+				$this->cancelInvoice( $client, (string) $order['invoice_id'] );
+			}
+			if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => '' ) ) ) {
+				throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
+			}
+		}
+		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s cancelled', $order['number'] ), array(), 'order', (string) $order['number'] );
+		return (array) $this->orders->find( (int) $order['id'] );
+	}
+
+	/**
+	 * Cancel an invoice in Invoice Ninja and make sure it took.
+	 *
+	 * @param HttpClient $client     Client.
+	 * @param string     $invoice_id Invoice id.
+	 * @throws ApiException When Invoice Ninja didn't cancel it.
+	 */
+	private function cancelInvoice( HttpClient $client, string $invoice_id ): void {
+		$result = $client->post(
+			'invoices/bulk',
+			array(
+				'action' => 'cancel',
+				'ids'    => array( $invoice_id ),
+			),
+			array(),
+			10.0
+		)->data();
+		foreach ( $result as $invoice ) {
+			if ( is_array( $invoice ) && (string) ( $invoice['id'] ?? '' ) === $invoice_id && '5' === (string) ( $invoice['status_id'] ?? '' ) ) {
+				return;
+			}
+		}
+		throw new ApiException( ErrorKind::InvalidResponse, "Invoice Ninja didn't cancel the invoice" );
+	}
+
+	/**
+	 * Try a stuck order again now.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 * @return array<string, mixed>
+	 * @throws OrderConflict When the order is being placed or can't be sent again.
+	 */
+	public function retryNow( array $order ): array {
+		$order = (array) $this->orders->find( (int) $order['id'] );
+		if ( 'placing' === ( $order['status'] ?? '' ) ) {
+			throw new OrderConflict( esc_html__( 'This order is being sent to Invoice Ninja right now. Reload in a minute.', 'invoiceninja' ) );
+		}
+		if ( 'attention' === $order['status'] && ! $this->orders->transition( (int) $order['id'], array( 'attention' ), 'queued', array( 'attempts' => 0 ) ) ) {
+			throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
+		}
+		$order = (array) $this->orders->find( (int) $order['id'] );
+		if ( 'queued' !== $order['status'] ) {
+			throw new OrderConflict( esc_html__( 'Only queued orders and orders that need attention can be sent again.', 'invoiceninja' ) );
+		}
+		return $this->place( $order, true );
 	}
 
 	/**
@@ -289,17 +394,26 @@ final class OrderService {
 				$link = (string) ( $invitation['link'] ?? '' );
 			}
 		}
-		$this->orders->update(
-			(int) $order['id'],
-			array(
-				'status'         => 'awaiting_payment',
-				'invoice_id'     => (string) ( $invoice['id'] ?? '' ),
-				'invoice_number' => (string) ( $invoice['number'] ?? '' ),
-				'client_id'      => (string) ( $invoice['client_id'] ?? $order['client_id'] ),
-				'pay_link'       => esc_url_raw( $link ),
-				'note'           => '',
-			)
+		$fields = array(
+			'invoice_id'     => (string) ( $invoice['id'] ?? '' ),
+			'invoice_number' => (string) ( $invoice['number'] ?? '' ),
+			'client_id'      => (string) ( $invoice['client_id'] ?? $order['client_id'] ),
+			'pay_link'       => esc_url_raw( $link ),
+			'note'           => '' === $link ? 'no_invitation' : '',
 		);
+		if ( ! $this->orders->transition( (int) $order['id'], array( 'placing' ), 'awaiting_payment', $fields ) ) {
+			// Cancelled by an admin while the invoice was being created: cancel the invoice too.
+			$current = (array) $this->orders->find( (int) $order['id'] );
+			if ( 'cancelled' === ( $current['status'] ?? '' ) && '' !== $fields['invoice_id'] ) {
+				$this->orders->update( (int) $order['id'], array_diff_key( $fields, array( 'pay_link' => 1 ) ) );
+				try {
+					$this->cancelInvoice( $this->client(), $fields['invoice_id'] );
+				} catch ( ApiException $e ) {
+					$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Error, 'checkout', sprintf( 'Order %s was cancelled while its invoice %s was being created. Cancel that invoice in Invoice Ninja.', $current['number'], $fields['invoice_number'] ), array( 'kind' => $e->kind->value ), 'order', (string) $current['number'] );
+				}
+			}
+			return (array) $this->orders->find( (int) $order['id'] );
+		}
 		$order = (array) $this->orders->find( (int) $order['id'] );
 		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s: invoice %s created', $order['number'], $order['invoice_number'] ), array(), 'order', (string) $order['number'] );
 		/**
@@ -336,13 +450,9 @@ final class OrderService {
 			}
 		}
 		if ( $e->kind->retryable() ) {
-			$this->orders->update(
-				(int) $order['id'],
-				array(
-					'status' => 'queued',
-					'note'   => $e->kind->title(),
-				)
-			);
+			if ( ! $this->orders->transition( (int) $order['id'], array( 'placing' ), 'queued', array( 'note' => 'error:' . $e->kind->value ) ) ) {
+				return (array) $this->orders->find( (int) $order['id'] ); // Cancelled meanwhile.
+			}
 			if ( $inline ) {
 				$this->plugin->queue->push( 'invoiceninja_place_order', array( 'order_id' => (int) $order['id'] ), 60, true );
 				$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Warning, 'checkout', sprintf( 'Order %s saved while Invoice Ninja was unavailable; it will be sent shortly', $order['number'] ), array( 'kind' => $e->kind->value ), 'order', (string) $order['number'] );
@@ -350,13 +460,9 @@ final class OrderService {
 			}
 			throw $e;
 		}
-		$this->orders->update(
-			(int) $order['id'],
-			array(
-				'status' => 'attention',
-				'note'   => $e->kind->title() . ( '' !== $e->technical ? ': ' . substr( $e->technical, 0, 180 ) : '' ),
-			)
-		);
+		if ( ! $this->orders->transition( (int) $order['id'], array( 'placing' ), 'attention', array( 'note' => 'error:' . $e->kind->value ) ) ) {
+			return (array) $this->orders->find( (int) $order['id'] ); // Cancelled meanwhile.
+		}
 		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Error, 'checkout', sprintf( "Order %s couldn't be invoiced: %s", $order['number'], $e->kind->title() ), array( 'technical' => $e->technical ), 'order', (string) $order['number'] );
 		$order = (array) $this->orders->find( (int) $order['id'] );
 		do_action( 'invoiceninja_order_needs_attention', $order );

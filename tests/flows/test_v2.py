@@ -62,7 +62,7 @@ def rest_routes_need_capabilities_except_ping():
     for method, path in [('GET', '/connection'), ('POST', '/connection'), ('DELETE', '/connection'),
                          ('POST', '/connection/test'), ('GET', '/settings'), ('POST', '/settings'),
                          ('GET', '/diagnostics'), ('GET', '/logs'), ('DELETE', '/logs'), ('POST', '/environment'),
-                         ('POST', '/mail/test')]:
+                         ('POST', '/mail/test'), ('GET', '/admin/orders'), ('POST', '/admin/orders/1/cancel')]:
         status, _ = anon.api(method, path, {} if method != 'GET' else None)
         check(status in (401, 403), '%s %s refuses anonymous users' % (method, path), status)
 
@@ -383,6 +383,8 @@ def store_ready():
     sync(b)
     wp('option', 'delete', 'in_mock_invoices', check_ok=False)
     wp('option', 'delete', 'in_mock_paid', check_ok=False)
+    # Every flow checks out from the same IP: start each with fresh rate-limit counters.
+    wp_eval("global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_ctr\\\\_%'\");")
     reset_mock_log()
 
 
@@ -523,3 +525,86 @@ def paused_site_takes_no_orders():
 def atomic_counters_count_from_one():
     out = wp_eval("$o = InvoiceNinja\\Plugin::instance()->options; delete_option('invoiceninja_ctr_test_1'); echo $o->increment('ctr_test_1'), ',', $o->increment('ctr_test_1'), ',', $o->increment('ctr_test_1');")
     check(out == '1,2,3', 'counter increments from 1', out)
+
+
+@test
+def admin_orders_list_resend_retry_and_cancel():
+    store_ready()
+    _, paid_later = checkout(shopper(), 'orders.one@example.com')
+    option('in_mock_mode', 'down')
+    try:
+        _, queued = checkout(shopper(), 'orders.two@example.com')
+    finally:
+        option('in_mock_mode', 'up')
+    b = admin()
+    status, r = b.api('GET', '/admin/orders?status=queued')
+    check(status == 200 and [o['number'] for o in r['items']] == [queued['number']], 'filter by status', r)
+    check(r['counts'].get('awaiting_payment', 0) >= 1 and r['counts'].get('queued') == 1, 'counts per status', r['counts'])
+    _, r = b.api('GET', '/admin/orders?search=orders.one')
+    row = r['items'][0]
+    check(row['number'] == paid_later['number'] and row['name'] == 'Gina Guest', 'search by email', row)
+    inv_id = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['invoice_id'];" % row['number'])
+    check(row['invoice_url'].startswith('https://in.test/app/invoices/%s' % inv_id), 'link to the invoice through Invoice Ninja app links (5.13.44+)', row['invoice_url'])
+    option('in_mock_version', '5.13.30')
+    try:
+        b.api('POST', '/connection/refresh', {})
+        _, old = b.api('GET', '/admin/orders?search=orders.one')
+        check(old['items'][0]['invoice_url'] == 'https://in.test/#/invoices/%s/edit' % inv_id, 'older servers get the web app route', old['items'][0]['invoice_url'])
+    finally:
+        wp('option', 'delete', 'in_mock_version')
+        b.api('POST', '/connection/refresh', {})
+    check('pay_link' not in row and 'INVITE' not in str(row), 'no payment or portal links on the admin screen', row)
+    check('#key=' in row['status_url'], 'status link carries its key in the fragment', row['status_url'])
+
+    reset_mock_log()
+    status, r = b.api('POST', '/admin/orders/%d/resend' % row['id'], {})
+    check(status == 200 and any('complete your payment' in m['subject'] for m in mails('orders.one@example.com')), 'payment email resent', r)
+
+    status, r = b.api('POST', '/admin/orders/%d/retry' % [o for o in b.api('GET', '/admin/orders?status=queued')[1]['items']][0]['id'], {})
+    check(status == 200 and r['status'] == 'awaiting_payment', 'queued order placed on retry', r)
+
+    reset_mock_log()
+    status, r = b.api('POST', '/admin/orders/%d/cancel' % row['id'], {'email': True})
+    check(status == 200 and r['status'] == 'cancelled', 'order cancelled', r)
+    bulk = [c for c in api_calls() if c['method'] == 'POST' and c['url'].endswith('/invoices/bulk')]
+    check(len(bulk) == 1 and '"cancel"' in bulk[0]['body'], 'invoice cancelled in Invoice Ninja', describe(bulk))
+    check(any('was cancelled' in m['subject'] for m in mails('orders.one@example.com')), 'buyer told about the cancellation')
+    status, r = b.api('POST', '/admin/orders/%d/resend' % row['id'], {})
+    check(status == 409, 'no payment email for a cancelled order', (status, r))
+    reset_mock_log()
+    status, r = b.api('POST', '/admin/orders/%d/cancel' % row['id'], {'email': True})
+    check(status == 409 and not mails('orders.one@example.com'), 'cancelling twice is refused and emails nobody', (status, r))
+
+    # A paid order is never cancelled, even if the site hasn't noticed the payment yet
+    _, paid = checkout(shopper(), 'orders.paid@example.com')
+    paid_id = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['id'], ' ', $o['invoice_id'];" % paid['number']).split()
+    wp_eval("update_option('in_mock_paid', array('%s'));" % paid_id[1])
+    reset_mock_log()
+    status, r = b.api('POST', '/admin/orders/%s/resend' % paid_id[0], {})
+    check(status == 409 and not mails('orders.paid@example.com'), 'no payment email for a paid order', (status, r))
+    status, r = b.api('POST', '/admin/orders/%s/cancel' % paid_id[0], {'email': True})
+    check(status == 409 and not mails('orders.paid@example.com'), 'a paid order is not cancelled', (status, r))
+    check(wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->find(%s)['status'];" % paid_id[0]) == 'paid', 'and is marked paid')
+
+    # An order being placed right now can't be cancelled or retried
+    option('in_mock_mode', 'down')
+    try:
+        _, busy = checkout(shopper(), 'orders.busy@example.com')
+    finally:
+        option('in_mock_mode', 'up')
+    busy_id = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); InvoiceNinja\\Plugin::instance()->orders->claim($o['id']); echo $o['id'];" % busy['number'])
+    for action in ('cancel', 'retry'):
+        status, r = b.api('POST', '/admin/orders/%s/%s' % (busy_id, action), {})
+        check(status == 409, '%s refused while the order is being placed' % action, (status, r))
+    # Cancelled while its invoice was being created: that invoice is cancelled too
+    out = wp_eval(
+        "$p = InvoiceNinja\\Plugin::instance(); $o = $p->orders->find(%s);"
+        "add_filter('pre_http_request', function($r, $args, $url) use ($p, $o) { if (strpos($url, '/invoices') !== false && $args['method'] === 'POST' && strpos($url, 'bulk') === false) { $p->orders->update($o['id'], array('status' => 'cancelled')); } return $r; }, 1, 3);"
+        "$p->orders->update($o['id'], array('status' => 'queued'));"
+        "$after = $p->orderService->place($p->orders->find($o['id']), false);"
+        "$inv = get_option('in_mock_invoices'); echo $after['status'], ' ', $inv[$after['invoice_id']]['status_id'];" % busy_id)
+    check(out == 'cancelled 5', 'an invoice created after the cancel is cancelled in Invoice Ninja', out)
+    status, _ = b.api('POST', '/admin/orders/999999/cancel', {})
+    check(status == 404, 'unknown order', status)
+    status, _, html = b.get('/wp-admin/admin.php?page=invoiceninja-orders')
+    check(status == 200 and 'data-screen="orders"' in html, 'orders screen renders', status)

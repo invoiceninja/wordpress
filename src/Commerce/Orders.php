@@ -135,6 +135,36 @@ final class Orders {
 	}
 
 	/**
+	 * Move an order to a new status only if it's still in one of the expected ones, so two
+	 * requests (an admin and a background job) can't both act on the same order.
+	 *
+	 * @param int                  $id     Order id.
+	 * @param list<string>         $from   Statuses it may be in now.
+	 * @param string               $to     New status.
+	 * @param array<string, mixed> $fields Other fields to save when it moved.
+	 * @return bool Whether it moved.
+	 */
+	public function transition( int $id, array $from, string $to, array $fields = array() ): bool {
+		global $wpdb;
+		$from = array_values( array_intersect( $from, self::STATUSES ) );
+		if ( ! $from || ! in_array( $to, self::STATUSES, true ) ) {
+			return false;
+		}
+		$table = self::table();
+		$in    = implode( ', ', array_fill( 0, count( $from ), '%s' ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber, WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( $wpdb->prepare( "UPDATE {$table} SET status = %s, updated_at = %s WHERE id = %d AND status IN ({$in})", array_merge( array( $to, gmdate( 'Y-m-d H:i:s' ), $id ), $from ) ) );
+		if ( 1 !== (int) $wpdb->rows_affected ) {
+			return false;
+		}
+		unset( $fields['status'] );
+		if ( $fields ) {
+			$this->update( $id, $fields );
+		}
+		return true;
+	}
+
+	/**
 	 * Claim a queued order for placing, so only one request or job creates its invoice.
 	 * A claim older than five minutes is considered abandoned.
 	 *
@@ -186,7 +216,9 @@ final class Orders {
 		$table  = self::table();
 		$where  = array( '1=1' );
 		$params = array();
-		if ( ! empty( $filters['status'] ) && in_array( $filters['status'], self::STATUSES, true ) ) {
+		if ( 'queued' === ( $filters['status'] ?? '' ) ) {
+			$where[] = "status IN ('queued', 'placing')"; // Placing is a short-lived claim on a queued order.
+		} elseif ( ! empty( $filters['status'] ) && in_array( $filters['status'], self::STATUSES, true ) ) {
 			$where[]  = 'status = %s';
 			$params[] = $filters['status'];
 		}
@@ -210,6 +242,26 @@ final class Orders {
 			'total'  => $total,
 			'counts' => array_map( 'intval', array_column( is_array( $counts ) ? $counts : array(), 'n', 'status' ) ),
 		);
+	}
+
+	/**
+	 * An order's note as a sentence for admins. Notes are stored as codes so they show in
+	 * the admin's language.
+	 *
+	 * @param string $note Stored note.
+	 */
+	public static function noteText( string $note ): string {
+		if ( str_starts_with( $note, 'error:' ) ) {
+			$kind = \InvoiceNinja\Api\ErrorKind::tryFrom( substr( $note, 6 ) );
+			return $kind ? $kind->title() . '. ' . $kind->fix() : '';
+		}
+		$notes = array(
+			'paused'        => __( 'Orders are paused on this site, so it waits until you allow them.', 'invoiceninja' ),
+			'gave_up'       => __( "Invoice Ninja couldn't be reached for several hours. Retry when it's back.", 'invoiceninja' ),
+			'no_invitation' => __( "Invoice Ninja didn't return a payment link for this buyer. Send the invoice from Invoice Ninja.", 'invoiceninja' ),
+			'check_invoice' => __( "Cancelled, but Invoice Ninja couldn't be checked for an invoice. Look there for this order number as the PO number.", 'invoiceninja' ),
+		);
+		return $notes[ $note ] ?? $note;
 	}
 
 	/**

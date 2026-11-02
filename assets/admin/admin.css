@@ -147,3 +147,24 @@
 }
 
 .in-sample { margin: 6px 0 6px 18px; list-style: disc; }
+
+/* Orders */
+.in-views { float: none; margin: 8px 0 0; }
+.in-filters--orders { margin-top: 4px; }
+.in-orders td { vertical-align: top; }
+.in-orders .in-num { text-align: end; white-space: nowrap; }
+.in-orders tr.is-attention td { background: #fcf0f1; }
+.in-orders tr.is-attention td:first-child { box-shadow: inset 4px 0 0 #d63638; }
+.in-orders .in-note { margin-top: 4px; font-size: 12px; color: #50575e; }
+.in-orders .in-note--error { color: #8a2424; }
+.in-row-actions { margin-top: 4px; font-size: 13px; }
+.in-row-actions .button-link, .in-row-actions a { font-size: 13px; }
+.in-sep { color: #a7aaad; }
+.in-link-danger { color: #b32d2e !important; }
+.in-confirm-row td { background: #fcf9e8 !important; }
+.in-confirm p { margin: 0 0 8px; }
+@media (max-width: 782px) {
+	.in-orders thead { display: none; }
+	.in-orders tr, .in-orders td { display: block; width: auto; }
+	.in-orders .in-num { text-align: start; }
+}

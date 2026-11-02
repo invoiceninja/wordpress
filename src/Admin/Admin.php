@@ -22,6 +22,7 @@ final class Admin {
 	public const SCREENS = array(
 		'invoiceninja'          => 'home',
 		'invoiceninja-setup'    => 'setup',
+		'invoiceninja-orders'   => 'orders',
 		'invoiceninja-settings' => 'settings',
 		'invoiceninja-status'   => 'status',
 	);
@@ -63,6 +64,7 @@ final class Admin {
 		add_submenu_page( 'invoiceninja', __( 'Invoice Ninja', 'invoiceninja' ), __( 'Home', 'invoiceninja' ), Capabilities::VIEW, 'invoiceninja', array( $this, 'render' ) );
 		// Setup leaves the menu once connected but stays reachable (hidden pages hang off options.php).
 		add_submenu_page( $connected ? 'options.php' : 'invoiceninja', __( 'Set up Invoice Ninja', 'invoiceninja' ), __( 'Setup', 'invoiceninja' ), 'manage_options', 'invoiceninja-setup', array( $this, 'render' ) );
+		add_submenu_page( 'invoiceninja', __( 'Orders', 'invoiceninja' ), __( 'Orders', 'invoiceninja' ), Capabilities::VIEW, 'invoiceninja-orders', array( $this, 'render' ) );
 		add_submenu_page( 'invoiceninja', __( 'Settings', 'invoiceninja' ), __( 'Settings', 'invoiceninja' ), Capabilities::MANAGE, 'invoiceninja-settings', array( $this, 'render' ) );
 		add_submenu_page( 'invoiceninja', __( 'Status', 'invoiceninja' ), __( 'Status', 'invoiceninja' ), Capabilities::VIEW, 'invoiceninja-status', array( $this, 'render' ) );
 	}
@@ -167,6 +169,7 @@ final class Admin {
 				'setup'     => admin_url( 'admin.php?page=invoiceninja-setup' ),
 				'settings'  => admin_url( 'admin.php?page=invoiceninja-settings' ),
 				'status'    => admin_url( 'admin.php?page=invoiceninja-status' ),
+				'orders'    => admin_url( 'admin.php?page=invoiceninja-orders' ),
 				'legacy'    => admin_url( 'admin.php?page=invoiceninja-legacy' ),
 				'scheduler' => admin_url( 'tools.php?page=action-scheduler&s=invoiceninja' ),
 				'docs'      => 'https://invoiceninja.github.io/en/wordpress/',

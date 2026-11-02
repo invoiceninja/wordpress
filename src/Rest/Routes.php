@@ -64,6 +64,9 @@ final class Routes {
 		$this->route( '/logs', 'GET', array( $this, 'logs' ), $view );
 		$this->route( '/logs', 'DELETE', array( $this, 'clearLogs' ), $manage );
 
+		$this->route( '/admin/orders', 'GET', array( $this, 'adminOrders' ), $view );
+		$this->route( '/admin/orders/(?P<id>\\d+)/(?P<action>resend|retry|cancel)', 'POST', array( $this, 'adminOrderAction' ), $manage );
+
 		$this->route( '/sync/products', 'GET', array( $this, 'syncStatus' ), $view );
 		$this->route( '/sync/products', 'POST', array( $this, 'syncProducts' ), $manage );
 
@@ -387,6 +390,129 @@ final class Routes {
 		$this->plugin->logger->clear();
 		$this->plugin->logger->info( 'connection', 'Activity log cleared' );
 		return new \WP_REST_Response( array( 'cleared' => true ) );
+	}
+
+	/**
+	 * GET /admin/orders.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function adminOrders( \WP_REST_Request $request ): \WP_REST_Response {
+		$result          = $this->plugin->orders->list(
+			array(
+				'status'   => (string) $request->get_param( 'status' ),
+				'search'   => sanitize_text_field( (string) $request->get_param( 'search' ) ),
+				'page'     => (int) $request->get_param( 'page' ),
+				'per_page' => 20,
+			)
+		);
+		$result['items'] = array_map( array( $this, 'adminOrder' ), $result['items'] );
+		return new \WP_REST_Response( $result );
+	}
+
+	/**
+	 * POST /admin/orders/{id}/{resend|retry|cancel}.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function adminOrderAction( \WP_REST_Request $request ): \WP_REST_Response {
+		$order = $this->plugin->orders->find( (int) $request->get_param( 'id' ) );
+		if ( null === $order ) {
+			return $this->error( 'not_found', __( 'Order not found.', 'invoiceninja' ), 404 );
+		}
+		try {
+			switch ( (string) $request->get_param( 'action' ) ) {
+				case 'resend':
+					// Payments are only noticed when someone looks, so check before asking the buyer to pay.
+					delete_transient( 'invoiceninja_order_check_' . $order['id'] );
+					$order = $this->plugin->orderService->refreshStatus( $order );
+					if ( 'awaiting_payment' !== $order['status'] ) {
+						return $this->error( 'not_awaiting', 'paid' === $order['status'] ? __( 'This order is paid, so there is nothing to resend.', 'invoiceninja' ) : __( 'Only orders awaiting payment have a payment email.', 'invoiceninja' ), 409 );
+					}
+					if ( '' === (string) $order['pay_link'] ) {
+						return $this->error( 'no_pay_link', __( 'This order has no payment link for the buyer. Send the invoice from Invoice Ninja.', 'invoiceninja' ), 409 );
+					}
+					$this->plugin->checkout->emailBuyer( $order );
+					$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'email', sprintf( 'Payment email resent for order %s', $order['number'] ), array(), 'order', (string) $order['number'] );
+					break;
+				case 'retry':
+					$order = $this->plugin->orderService->retryNow( $order );
+					break;
+				case 'cancel':
+					$order = $this->plugin->orderService->cancel( $order );
+					if ( $request->get_param( 'email' ) ) {
+						// In the site's language, not the admin's.
+						$switched = switch_to_locale( get_locale() );
+						$this->plugin->mailer->send(
+							(string) $order['email'],
+							/* translators: %s: order number */
+							sprintf( __( 'Order #%s was cancelled', 'invoiceninja' ), $order['number'] ),
+							'<p>' . esc_html__( "Your order was cancelled and its payment link no longer works. You haven't been charged for it. If this is a surprise, reply to this email.", 'invoiceninja' ) . '</p>'
+						);
+						if ( $switched ) {
+							restore_previous_locale();
+						}
+					}
+					break;
+			}
+		} catch ( \InvoiceNinja\Commerce\OrderConflict $e ) {
+			return $this->error( 'order_conflict', $e->getMessage(), 409 );
+		} catch ( \InvoiceNinja\Api\ApiException $e ) {
+			return $this->error( $e->kind->value, $e->kind->title() . '. ' . $e->kind->fix(), 502 );
+		}
+		return new \WP_REST_Response( $this->adminOrder( (array) $this->plugin->orders->find( (int) $order['id'] ) ) );
+	}
+
+	/**
+	 * Builds links to records in Invoice Ninja's own app. 5.13.44+ has /app/<path>, which
+	 * opens whichever web app the server runs; older servers use the React app's hash routes.
+	 *
+	 * @return (callable(string): string)|null Null when not connected.
+	 */
+	private function inAppUrl(): ?callable {
+		$base = $this->plugin->credentials->url();
+		if ( '' === $base ) {
+			return null;
+		}
+		$state   = $this->plugin->state->get();
+		$company = (string) ( $state['company']['id'] ?? '' );
+		if ( \InvoiceNinja\Api\HttpClient::versionAtLeast( (string) ( $state['version'] ?? '' ), '5.13.44' ) ) {
+			return static fn( string $path ): string => $base . '/app/' . $path . ( '' !== $company ? '?company=' . rawurlencode( $company ) : '' );
+		}
+		$web = \InvoiceNinja\Api\BaseUrl::isHosted( $base ) ? 'https://app.invoicing.co' : $base;
+		return static fn( string $path ): string => $web . '/#/' . $path . ( str_starts_with( $path, 'invoices/' ) ? '/edit' : '' );
+	}
+
+	/**
+	 * An order for the admin list (no payment link: it logs into the client's portal).
+	 *
+	 * @param array<string, mixed> $order Order.
+	 * @return array<string, mixed>
+	 */
+	public function adminOrder( array $order ): array {
+		$app = $this->inAppUrl();
+		return array(
+			'id'             => (int) $order['id'],
+			'currency'       => (string) $order['currency'],
+			'number'         => (string) $order['number'],
+			'status'         => (string) $order['status'],
+			'email'          => (string) $order['email'],
+			'name'           => trim( (string) ( $order['customer']['first_name'] ?? '' ) . ' ' . (string) ( $order['customer']['last_name'] ?? '' ) ),
+			'total'          => (float) $order['total'],
+			'invoice_number' => (string) $order['invoice_number'],
+			'invoice_url'    => '' !== (string) $order['invoice_id'] && null !== $app ? $app( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ) ) : '',
+			'client_url'     => '' !== (string) $order['client_id'] && null !== $app ? $app( 'clients/' . rawurlencode( (string) $order['client_id'] ) ) : '',
+			'note'           => \InvoiceNinja\Commerce\Orders::noteText( (string) $order['note'] ),
+			'created_at'     => (string) $order['created_at'],
+			'status_url'     => $this->plugin->checkout->statusUrl( $order ),
+			'items'          => array_map(
+				static fn( array $i ): array => array(
+					'title'    => (string) $i['title'],
+					'quantity' => (int) $i['quantity'],
+				),
+				(array) $order['items']
+			),
+		);
 	}
 
 	/**

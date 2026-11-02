@@ -103,7 +103,7 @@ final class Notifications {
 			$this->recipients(),
 			/* translators: %s: order number */
 			sprintf( __( 'Order %s needs you', 'invoiceninja' ), (string) $order['number'] ),
-			'<p>' . esc_html( (string) $order['note'] ) . '</p><p>' . esc_html__( 'The buyer was told you will be in touch.', 'invoiceninja' ) . '</p><p><a href="' . esc_url( admin_url( 'admin.php?page=invoiceninja-status&tab=activity' ) ) . '">' . esc_html__( 'Open the activity log', 'invoiceninja' ) . '</a></p>'
+			'<p>' . esc_html( \InvoiceNinja\Commerce\Orders::noteText( (string) $order['note'] ) ) . '</p><p>' . esc_html__( 'The buyer was told you will be in touch.', 'invoiceninja' ) . '</p><p><a href="' . esc_url( admin_url( 'admin.php?page=invoiceninja-orders&status=attention' ) ) . '">' . esc_html__( 'Open Orders', 'invoiceninja' ) . '</a></p>'
 		);
 	}
 
