@@ -198,6 +198,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             if ( isset( $invoices[ $id ] ) && ( $data['action'] ?? '' ) === 'cancel' ) {
                 $invoices[ $id ]['status_id'] = '5';
                 $changed[] = $invoices[ $id ];
+            } elseif ( isset( $invoices[ $id ] ) && ( $data['action'] ?? '' ) === 'delete' ) {
+                $invoices[ $id ]['is_deleted'] = true;
+                $changed[] = $invoices[ $id ];
             }
         }
         update_option( 'in_mock_invoices', $invoices, false );

@@ -645,3 +645,49 @@ def stock_is_checked_live_before_the_code():
         b.api('POST', '/connection/refresh', {})
         r = sync(b)
     check(meta(product_ids()['Widget'][0], 'in_stock_quantity') == '3', 'the next sync restores the stock from Invoice Ninja', r)
+
+
+@test
+def abandoned_cleanup_is_off_by_default_and_only_closes_unpaid_invoices():
+    store_ready()
+    b = admin()
+    b.api('POST', '/settings', {'store': {'abandoned_enabled': False, 'abandoned_action': 'cancel'}})
+    # Orders from other flows count as recent here
+    wp_eval("global $wpdb; $wpdb->query($wpdb->prepare('UPDATE ' . InvoiceNinja\\Commerce\\Orders::table() . ' SET created_at = %s', gmdate('Y-m-d H:i:s')));")
+    try:
+        numbers = {}
+        for name in ('unpaid', 'paid', 'partial', 'recent'):
+            _, r = checkout(shopper(), 'abandon.%s@example.com' % name)
+            numbers[name] = r['number']
+        def order(name):
+            out = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['id'], ' ', $o['status'], ' ', $o['invoice_id'];" % numbers[name])
+            return out.split()
+        for name in ('unpaid', 'paid', 'partial'):
+            wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('created_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % numbers[name])
+        wp_eval("update_option('in_mock_paid', array('%s')); $i = get_option('in_mock_invoices'); $i['%s']['paid_to_date'] = 5; $i['%s']['balance'] -= 5; update_option('in_mock_invoices', $i);" % (order('paid')[2], order('partial')[2], order('partial')[2]))
+        run = "echo wp_json_encode(InvoiceNinja\\Plugin::instance()->abandoned->run());"
+        check(wp_eval(run) == '{"checked":0,"cleaned":0,"skipped":0}', 'nothing happens while the setting is off')
+        status, r = b.api('POST', '/settings', {'store': {'abandoned_action': 'erase'}})
+        check(status == 400, 'unknown action refused', (status, r))
+        status, r = b.api('POST', '/settings', {'store': {'abandoned_enabled': True, 'abandoned_days': 14}})
+        check(status == 200, 'turned on', r)
+        reset_mock_log()
+        out = wp_eval(run)
+        check(out == '{"checked":3,"cleaned":1,"skipped":2}', 'three old orders checked, one closed', out)
+        inv = wp_eval("echo wp_json_encode(array_map(function($i) { return array($i['status_id'], !empty($i['is_deleted'])); }, get_option('in_mock_invoices')));")
+        check(order('unpaid')[1] == 'cancelled' and '"%s":["5",false]' % order('unpaid')[2] in inv, 'the unpaid invoice is cancelled', (order('unpaid'), inv))
+        check(order('paid')[1] == 'paid', 'a paid invoice is recorded as paid, never cancelled', order('paid'))
+        check(order('partial')[1] == 'awaiting_payment', 'a partly paid invoice is left alone', order('partial'))
+        check(wp_eval(run) == '{"checked":0,"cleaned":0,"skipped":0}', 'and is not checked again on later runs')
+        check(order('recent')[1] == 'awaiting_payment', 'recent orders are left alone', order('recent'))
+        check(not [c for c in api_calls() if c['method'] == 'POST' and order('partial')[2] in c['body']], 'nothing is sent for the partly paid invoice')
+        # Delete, when chosen
+        _, r = checkout(shopper(), 'abandon.delete@example.com')
+        numbers['delete'] = r['number']
+        wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('created_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % r['number'])
+        b.api('POST', '/settings', {'store': {'abandoned_action': 'delete'}})
+        wp_eval(run)
+        inv = wp_eval("$i = get_option('in_mock_invoices'); echo !empty($i['%s']['is_deleted']) ? 'deleted' : 'kept';" % order('delete')[2])
+        check(inv == 'deleted' and order('delete')[1] == 'cancelled', 'the invoice is deleted when the admin chose that', (inv, order('delete')))
+    finally:
+        b.api('POST', '/settings', {'store': {'abandoned_enabled': False, 'abandoned_action': 'cancel'}})

@@ -309,6 +309,12 @@ final class Routes {
 		if ( isset( $changes['notifications']['leads'] ) && ! in_array( $changes['notifications']['leads'], array( 'instant', 'daily', 'off' ), true ) ) {
 			return $this->error( 'invalid_leads', __( 'Unknown quote request email setting.', 'invoiceninja' ), 400 );
 		}
+		if ( isset( $changes['store']['abandoned_action'] ) && ! in_array( $changes['store']['abandoned_action'], array( 'cancel', 'delete' ), true ) ) {
+			return $this->error( 'invalid_action', __( 'Unknown action for unpaid orders.', 'invoiceninja' ), 400 );
+		}
+		if ( isset( $changes['store']['abandoned_days'] ) && ( (int) $changes['store']['abandoned_days'] < 1 || (int) $changes['store']['abandoned_days'] > 365 ) ) {
+			return $this->error( 'invalid_days', __( 'Choose between 1 and 365 days.', 'invoiceninja' ), 400 );
+		}
 		if ( isset( $changes['notifications']['recipients'] ) ) {
 			$emails = array_filter( array_map( 'trim', explode( ',', (string) $changes['notifications']['recipients'] ) ) );
 			foreach ( $emails as $email ) {

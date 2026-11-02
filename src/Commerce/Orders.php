@@ -206,6 +206,22 @@ final class Orders {
 	}
 
 	/**
+	 * Orders in a status placed before a time, oldest first.
+	 *
+	 * @param string $status Status.
+	 * @param int    $before Unix time.
+	 * @param int    $limit  Maximum.
+	 * @return list<array<string, mixed>>
+	 */
+	public function olderThan( string $status, int $before, int $limit ): array {
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE status = %s AND created_at < %s AND note <> 'kept_unpaid' ORDER BY id ASC LIMIT %d", $status, gmdate( 'Y-m-d H:i:s', $before ), $limit ), ARRAY_A );
+		return array_map( array( self::class, 'hydrate' ), is_array( $rows ) ? $rows : array() );
+	}
+
+	/**
 	 * List orders for the admin screen, newest first.
 	 *
 	 * @param array{status?: string, search?: string, page?: int, per_page?: int} $filters Filters.
@@ -259,6 +275,7 @@ final class Orders {
 			'paused'        => __( 'Orders are paused on this site, so it waits until you allow them.', 'invoiceninja' ),
 			'gave_up'       => __( "Invoice Ninja couldn't be reached for several hours. Retry when it's back.", 'invoiceninja' ),
 			'no_invitation' => __( "Invoice Ninja didn't return a payment link for this buyer. Send the invoice from Invoice Ninja.", 'invoiceninja' ),
+			'kept_unpaid'   => __( 'Left open by the unpaid-orders cleanup: its invoice has a payment or credit.', 'invoiceninja' ),
 			'check_invoice' => __( "Cancelled, but Invoice Ninja couldn't be checked for an invoice. Look there for this order number as the PO number.", 'invoiceninja' ),
 		);
 		return $notes[ $note ] ?? $note;

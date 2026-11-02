@@ -705,6 +705,27 @@
 						h( 'input', { type: 'radio', name: 'in-leads', checked: s.notifications.leads === v, onChange: () => set( 'notifications', 'leads', v ) } ), h( 'span', null, l ) ) ) ) ),
 				row( __( 'New orders', 'invoiceninja' ), null, check( 'notifications', 'new_orders', __( 'Email me about every new order', 'invoiceninja' ), __( "Off by default: Invoice Ninja's own notifications cover new invoices and payments.", 'invoiceninja' ) ) ),
 				row( __( 'Weekly summary', 'invoiceninja' ), null, check( 'notifications', 'weekly', __( 'Send a summary every Monday', 'invoiceninja' ) ) ) ) ),
+			h( 'h2', null, __( 'Unpaid orders', 'invoiceninja' ) ),
+			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
+				row( __( 'Clean up', 'invoiceninja' ), null, h( Fragment, null,
+					check( 'store', 'abandoned_enabled', __( 'Close orders that stay unpaid', 'invoiceninja' ), __( 'Off by default. Each invoice is checked again first: anything with a payment or credit is left alone.', 'invoiceninja' ) ),
+					s.store.abandoned_enabled ? h( 'p', { className: 'in-row' },
+						h( 'label', { htmlFor: 'in-ab-days' }, __( 'After', 'invoiceninja' ) ),
+						h( 'input', { id: 'in-ab-days', type: 'number', min: 1, max: 365, className: 'small-text', value: s.store.abandoned_days, onChange: ( e ) => set( 'store', 'abandoned_days', parseInt( e.target.value, 10 ) || 14 ) } ),
+						h( 'span', null, __( 'days unpaid', 'invoiceninja' ) ) ) : null ) ),
+				s.store.abandoned_enabled ? row( __( 'What to do', 'invoiceninja' ), null, h( 'fieldset', null,
+					h( 'legend', { className: 'screen-reader-text' }, __( 'What to do with unpaid orders', 'invoiceninja' ) ),
+					h( 'label', { className: 'in-check' },
+						h( 'input', { type: 'radio', name: 'in-ab-action', checked: s.store.abandoned_action === 'cancel', onChange: () => set( 'store', 'abandoned_action', 'cancel' ) } ),
+						h( 'span', null, h( 'strong', null, __( 'Cancel the invoice (recommended)', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'The payment link stops working. The invoice stays in Invoice Ninja, so invoice numbers have no gaps.', 'invoiceninja' ) ) ) ),
+					h( 'label', { className: 'in-check' },
+						h( 'input', { type: 'radio', name: 'in-ab-action', checked: s.store.abandoned_action === 'delete', onChange: () => {
+							// eslint-disable-next-line no-alert
+							if ( window.confirm( __( 'Delete unpaid invoices? This gives their stock back, but leaves gaps in your invoice numbers, which many countries do not allow.', 'invoiceninja' ) ) ) {
+								set( 'store', 'abandoned_action', 'delete' );
+							}
+						} } ),
+						h( 'span', null, h( 'strong', null, __( 'Delete the invoice', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'Gives the stock back. Leaves gaps in invoice numbers: check that this is allowed where you are.', 'invoiceninja' ) ) ) ) ) ) : null ) ),
 			h( 'h2', null, __( 'Logs', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
 				row( __( 'Log detail', 'invoiceninja' ), 'in-level', h( 'select', { id: 'in-level', value: s.log_level, onChange: ( e ) => set( null, 'log_level', e.target.value ) },

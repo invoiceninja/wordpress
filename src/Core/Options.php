@@ -43,6 +43,11 @@ final class Options {
 			'new_orders'  => false,
 			'weekly'      => false,
 		),
+		'store'                    => array(
+			'abandoned_enabled' => false,
+			'abandoned_days'    => 14,
+			'abandoned_action'  => 'cancel',
+		),
 		'email'                    => array(
 			'sender_name' => '',
 			'from'        => '',

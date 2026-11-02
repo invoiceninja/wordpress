@@ -93,12 +93,13 @@ final class OrderService {
 	/**
 	 * Cancel an order and its invoice in Invoice Ninja (the payment link stops working).
 	 *
-	 * @param array<string, mixed> $order Order.
+	 * @param array<string, mixed> $order  Order.
+	 * @param bool                 $delete Delete the invoice instead of cancelling it (gives stock back, leaves a gap in invoice numbers).
 	 * @return array<string, mixed> The cancelled order.
 	 * @throws ApiException When Invoice Ninja can't be reached or refuses.
 	 * @throws OrderConflict When the order can't be cancelled now.
 	 */
-	public function cancel( array $order ): array {
+	public function cancel( array $order, bool $delete = false ): array {
 		$order = (array) $this->orders->find( (int) $order['id'] );
 		switch ( $order['status'] ?? '' ) {
 			case 'paid':
@@ -118,7 +119,7 @@ final class OrderService {
 				try {
 					$existing = $this->findExisting( $client, $order, (string) $order['client_id'] );
 					if ( null !== $existing ) {
-						$this->cancelInvoice( $client, (string) $existing['id'] );
+						$this->cancelInvoice( $client, (string) $existing['id'], $delete );
 						$this->orders->update(
 							(int) $order['id'],
 							array(
@@ -133,16 +134,17 @@ final class OrderService {
 				}
 			}
 		} else {
-			$invoice = $client->get( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ), array(), 10.0 )->data();
-			$status  = (string) ( $invoice['status_id'] ?? '' );
-			if ( '4' === $status || (float) ( $invoice['paid_to_date'] ?? 0 ) > 0 ) {
+			$invoice  = $client->get( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ), array(), 10.0 )->data();
+			$status   = (string) ( $invoice['status_id'] ?? '' );
+			$credited = isset( $invoice['balance'], $invoice['amount'] ) && round( (float) $invoice['balance'], 2 ) < round( (float) $invoice['amount'], 2 ) && '5' !== $status;
+			if ( '4' === $status || (float) ( $invoice['paid_to_date'] ?? 0 ) > 0 || $credited ) {
 				if ( '4' === $status ) {
 					$this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'paid', array( 'paid_at' => gmdate( 'Y-m-d H:i:s' ) ) );
 				}
 				throw new OrderConflict( esc_html__( 'This order has a payment in Invoice Ninja, so it was not cancelled. Refund or adjust it there.', 'invoiceninja' ) );
 			}
-			if ( '5' !== $status ) {
-				$this->cancelInvoice( $client, (string) $order['invoice_id'] );
+			if ( $delete || '5' !== $status ) {
+				$this->cancelInvoice( $client, (string) $order['invoice_id'], $delete );
 			}
 			if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => '' ) ) ) {
 				throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
@@ -153,28 +155,32 @@ final class OrderService {
 	}
 
 	/**
-	 * Cancel an invoice in Invoice Ninja and make sure it took.
+	 * Cancel (or delete) an invoice in Invoice Ninja and make sure it took.
 	 *
 	 * @param HttpClient $client     Client.
 	 * @param string     $invoice_id Invoice id.
-	 * @throws ApiException When Invoice Ninja didn't cancel it.
+	 * @param bool       $delete     Delete instead of cancel.
+	 * @throws ApiException When Invoice Ninja didn't do it.
 	 */
-	private function cancelInvoice( HttpClient $client, string $invoice_id ): void {
+	private function cancelInvoice( HttpClient $client, string $invoice_id, bool $delete = false ): void {
 		$result = $client->post(
 			'invoices/bulk',
 			array(
-				'action' => 'cancel',
+				'action' => $delete ? 'delete' : 'cancel',
 				'ids'    => array( $invoice_id ),
 			),
 			array(),
 			10.0
 		)->data();
 		foreach ( $result as $invoice ) {
-			if ( is_array( $invoice ) && (string) ( $invoice['id'] ?? '' ) === $invoice_id && '5' === (string) ( $invoice['status_id'] ?? '' ) ) {
+			if ( ! is_array( $invoice ) || (string) ( $invoice['id'] ?? '' ) !== $invoice_id ) {
+				continue;
+			}
+			if ( $delete ? ! empty( $invoice['is_deleted'] ) : '5' === (string) ( $invoice['status_id'] ?? '' ) ) {
 				return;
 			}
 		}
-		throw new ApiException( ErrorKind::InvalidResponse, "Invoice Ninja didn't cancel the invoice" );
+		throw new ApiException( ErrorKind::InvalidResponse, $delete ? "Invoice Ninja didn't delete the invoice" : "Invoice Ninja didn't cancel the invoice" );
 	}
 
 	/**

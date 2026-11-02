@@ -12,6 +12,7 @@ namespace InvoiceNinja;
 use InvoiceNinja\Admin\Admin;
 use InvoiceNinja\Catalog\ImageSideloader;
 use InvoiceNinja\Catalog\ProductSync;
+use InvoiceNinja\Commerce\AbandonedOrders;
 use InvoiceNinja\Commerce\Cart;
 use InvoiceNinja\Commerce\Checkout;
 use InvoiceNinja\Commerce\OrderNumbers;
@@ -70,6 +71,8 @@ final class Plugin {
 	public readonly OrderService $orderService;
 	public readonly Checkout $checkout;
 
+	public readonly AbandonedOrders $abandoned;
+
 	/**
 	 * Constructor.
 	 *
@@ -102,6 +105,7 @@ final class Plugin {
 			new DeviceRemember( $this->secrets ),
 			new StockCheck( $this, $this->cart, $this->mapping )
 		);
+		$this->abandoned     = new AbandonedOrders( $this, $this->orders, $this->orderService );
 		$this->diagnostics   = new Diagnostics( $this );
 	}
 
@@ -182,6 +186,7 @@ final class Plugin {
 		);
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
 		$this->queue->handle( 'invoiceninja_place_order', array( $this->orderService, 'retry' ) );
+		$this->queue->handle( AbandonedOrders::HOOK, fn() => $this->abandoned->run() );
 		add_action( 'invoiceninja_order_placed', array( $this->checkout, 'emailBuyer' ) );
 		add_action( 'invoiceninja_order_needs_attention', array( $this->notifications, 'orderNeedsAttention' ) );
 		$this->queue->handle( 'invoiceninja_sideload_image', array( new ImageSideloader( $this ), 'handle' ) );
@@ -222,6 +227,9 @@ final class Plugin {
 			} elseif ( $ok ) {
 				$this->notifications->connectionRecovered();
 			}
+		}
+		if ( $this->abandoned->enabled() ) {
+			$this->queue->push( AbandonedOrders::HOOK, array(), 0, true );
 		}
 		$this->options->set( 'heartbeat', time() );
 	}
