@@ -557,12 +557,12 @@
 
 	function Settings() {
 		const params = new URLSearchParams( window.location.search );
-		const [ tab, setTab ] = useState( params.get( 'tab' ) === 'advanced' ? 'advanced' : 'connection' );
-		const tabs = [ [ 'connection', __( 'Connection', 'invoiceninja' ) ], [ 'advanced', __( 'Advanced', 'invoiceninja' ) ] ];
+		const [ tab, setTab ] = useState( [ 'store', 'advanced' ].includes( params.get( 'tab' ) ) ? params.get( 'tab' ) : 'connection' );
+		const tabs = [ [ 'connection', __( 'Connection', 'invoiceninja' ) ], [ 'store', __( 'Store', 'invoiceninja' ) ], [ 'advanced', __( 'Advanced', 'invoiceninja' ) ] ];
 		return h( Fragment, null,
 			h( 'h1', null, __( 'Settings', 'invoiceninja' ) ),
 			h( Tabs, { tabs, tab, setTab } ),
-			tab === 'connection' ? h( ConnectionSettings ) : h( AdvancedSettings ) );
+			tab === 'connection' ? h( ConnectionSettings ) : h( AdvancedSettings, { key: tab, section: tab } ) );
 	}
 
 	function Tabs( { tabs, tab, setTab } ) {
@@ -656,7 +656,7 @@
 			h( 'aside', { className: 'in-aside' }, h( ConnectionCard, { connection: conn } ) ) );
 	}
 
-	function AdvancedSettings() {
+	function AdvancedSettings( { section } ) {
 		const [ s, setS ] = useState( boot.settings );
 		const [ busy, setBusy ] = useState( false );
 		const [ message, setMessage ] = useState( '' );
@@ -683,6 +683,49 @@
 		const check = ( group, key, label, help ) => h( 'label', { className: 'in-check' },
 			h( 'input', { type: 'checkbox', checked: !! s[ group ][ key ], onChange: ( e ) => set( group, key, e.target.checked ) } ),
 			h( 'span', null, h( 'strong', null, label ), help ? h( 'span', { className: 'in-muted' }, help ) : null ) );
+		const radios = ( group, key, name, options ) => h( 'fieldset', null,
+			h( 'legend', { className: 'screen-reader-text' }, name ),
+			options.map( ( [ v, l, help ] ) => h( 'label', { key: v, className: 'in-check' },
+				h( 'input', { type: 'radio', name: 'in-' + key, checked: s[ group ][ key ] === v, onChange: () => set( group, key, v ) } ),
+				h( 'span', null, h( 'strong', null, l ), help ? h( 'span', { className: 'in-muted' }, help ) : null ) ) ) );
+		const saveRow = h( 'p', { className: 'in-row' }, h( Button, { primary: true, busy, onClick: save }, __( 'Save changes', 'invoiceninja' ) ), h( 'span', { role: 'status' }, message ) );
+		if ( section === 'store' ) {
+			return h( Fragment, null,
+				h( 'h2', null, __( 'Selling', 'invoiceninja' ) ),
+				h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
+					row( __( 'Online ordering', 'invoiceninja' ), null, radios( 'store', 'mode', __( 'Online ordering', 'invoiceninja' ), [
+						[ 'cart', __( 'Cart', 'invoiceninja' ), __( 'Shoppers add several products, then check out.', 'invoiceninja' ) ],
+						[ 'buy_now', __( 'Buy Now', 'invoiceninja' ), __( 'One product per order, straight to checkout.', 'invoiceninja' ) ],
+						[ 'off', __( 'Off', 'invoiceninja' ), __( 'Show products and prices only.', 'invoiceninja' ) ],
+					] ) ),
+					row( __( 'Who can order', 'invoiceninja' ), null, check( 'store', 'require_login', __( 'Require customers to log in', 'invoiceninja' ), __( 'Off: guests confirm their email with a 6-digit code instead.', 'invoiceninja' ) ) ),
+					row( __( 'Display', 'invoiceninja' ), null, radios( 'store', 'display', __( 'Display', 'invoiceninja' ), [
+						[ 'blocks', __( 'Blocks', 'invoiceninja' ), __( 'Products, cart and checkout use the new blocks and your theme’s styles.', 'invoiceninja' ) ],
+						[ 'legacy', __( 'Legacy 1.x', 'invoiceninja' ), __( 'Keeps the products page and cart looking exactly as they did in 1.x.', 'invoiceninja' ) ],
+					] ) ) ) ),
+				h( 'h2', null, __( 'Unpaid orders', 'invoiceninja' ) ),
+			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
+				row( __( 'Clean up', 'invoiceninja' ), null, h( Fragment, null,
+					check( 'store', 'abandoned_enabled', __( 'Close orders that stay unpaid', 'invoiceninja' ), __( 'Off by default. Each invoice is checked again first: anything with a payment or credit is left alone.', 'invoiceninja' ) ),
+					s.store.abandoned_enabled ? h( 'p', { className: 'in-row' },
+						h( 'label', { htmlFor: 'in-ab-days' }, __( 'After', 'invoiceninja' ) ),
+						h( 'input', { id: 'in-ab-days', type: 'number', min: 1, max: 365, className: 'small-text', value: s.store.abandoned_days, onChange: ( e ) => set( 'store', 'abandoned_days', parseInt( e.target.value, 10 ) || 14 ) } ),
+						h( 'span', null, __( 'days unpaid', 'invoiceninja' ) ) ) : null ) ),
+				s.store.abandoned_enabled ? row( __( 'What to do', 'invoiceninja' ), null, h( 'fieldset', null,
+					h( 'legend', { className: 'screen-reader-text' }, __( 'What to do with unpaid orders', 'invoiceninja' ) ),
+					h( 'label', { className: 'in-check' },
+						h( 'input', { type: 'radio', name: 'in-ab-action', checked: s.store.abandoned_action === 'cancel', onChange: () => set( 'store', 'abandoned_action', 'cancel' ) } ),
+						h( 'span', null, h( 'strong', null, __( 'Cancel the invoice (recommended)', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'The payment link stops working. The invoice stays in Invoice Ninja, so invoice numbers have no gaps.', 'invoiceninja' ) ) ) ),
+					h( 'label', { className: 'in-check' },
+						h( 'input', { type: 'radio', name: 'in-ab-action', checked: s.store.abandoned_action === 'delete', onChange: () => {
+							// eslint-disable-next-line no-alert
+							if ( window.confirm( __( 'Delete unpaid invoices? This gives their stock back, but leaves gaps in your invoice numbers, which many countries do not allow.', 'invoiceninja' ) ) ) {
+								set( 'store', 'abandoned_action', 'delete' );
+							}
+						} } ),
+						h( 'span', null, h( 'strong', null, __( 'Delete the invoice', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'Gives the stock back. Leaves gaps in invoice numbers: check that this is allowed where you are.', 'invoiceninja' ) ) ) ) ) ) : null ) ),
+				saveRow );
+		}
 		return h( Fragment, null,
 			h( 'h2', null, __( 'Email sending', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
@@ -705,27 +748,6 @@
 						h( 'input', { type: 'radio', name: 'in-leads', checked: s.notifications.leads === v, onChange: () => set( 'notifications', 'leads', v ) } ), h( 'span', null, l ) ) ) ) ),
 				row( __( 'New orders', 'invoiceninja' ), null, check( 'notifications', 'new_orders', __( 'Email me about every new order', 'invoiceninja' ), __( "Off by default: Invoice Ninja's own notifications cover new invoices and payments.", 'invoiceninja' ) ) ),
 				row( __( 'Weekly summary', 'invoiceninja' ), null, check( 'notifications', 'weekly', __( 'Send a summary every Monday', 'invoiceninja' ) ) ) ) ),
-			h( 'h2', null, __( 'Unpaid orders', 'invoiceninja' ) ),
-			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
-				row( __( 'Clean up', 'invoiceninja' ), null, h( Fragment, null,
-					check( 'store', 'abandoned_enabled', __( 'Close orders that stay unpaid', 'invoiceninja' ), __( 'Off by default. Each invoice is checked again first: anything with a payment or credit is left alone.', 'invoiceninja' ) ),
-					s.store.abandoned_enabled ? h( 'p', { className: 'in-row' },
-						h( 'label', { htmlFor: 'in-ab-days' }, __( 'After', 'invoiceninja' ) ),
-						h( 'input', { id: 'in-ab-days', type: 'number', min: 1, max: 365, className: 'small-text', value: s.store.abandoned_days, onChange: ( e ) => set( 'store', 'abandoned_days', parseInt( e.target.value, 10 ) || 14 ) } ),
-						h( 'span', null, __( 'days unpaid', 'invoiceninja' ) ) ) : null ) ),
-				s.store.abandoned_enabled ? row( __( 'What to do', 'invoiceninja' ), null, h( 'fieldset', null,
-					h( 'legend', { className: 'screen-reader-text' }, __( 'What to do with unpaid orders', 'invoiceninja' ) ),
-					h( 'label', { className: 'in-check' },
-						h( 'input', { type: 'radio', name: 'in-ab-action', checked: s.store.abandoned_action === 'cancel', onChange: () => set( 'store', 'abandoned_action', 'cancel' ) } ),
-						h( 'span', null, h( 'strong', null, __( 'Cancel the invoice (recommended)', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'The payment link stops working. The invoice stays in Invoice Ninja, so invoice numbers have no gaps.', 'invoiceninja' ) ) ) ),
-					h( 'label', { className: 'in-check' },
-						h( 'input', { type: 'radio', name: 'in-ab-action', checked: s.store.abandoned_action === 'delete', onChange: () => {
-							// eslint-disable-next-line no-alert
-							if ( window.confirm( __( 'Delete unpaid invoices? This gives their stock back, but leaves gaps in your invoice numbers, which many countries do not allow.', 'invoiceninja' ) ) ) {
-								set( 'store', 'abandoned_action', 'delete' );
-							}
-						} } ),
-						h( 'span', null, h( 'strong', null, __( 'Delete the invoice', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'Gives the stock back. Leaves gaps in invoice numbers: check that this is allowed where you are.', 'invoiceninja' ) ) ) ) ) ) : null ) ),
 			h( 'h2', null, __( 'Logs', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
 				row( __( 'Log detail', 'invoiceninja' ), 'in-level', h( 'select', { id: 'in-level', value: s.log_level, onChange: ( e ) => set( null, 'log_level', e.target.value ) },
@@ -743,7 +765,7 @@
 						}
 					} } ),
 					h( 'span', null, h( 'strong', null, __( 'Delete all plugin data when uninstalling', 'invoiceninja' ) ), h( 'span', null, __( 'Removes products, orders, quote requests and settings from WordPress. Nothing in Invoice Ninja is touched.', 'invoiceninja' ) ) ) ) ),
-			h( 'p', { className: 'in-row' }, h( Button, { primary: true, busy, onClick: save }, __( 'Save changes', 'invoiceninja' ) ), h( 'span', { role: 'status' }, message ) ) );
+			saveRow );
 	}
 
 	// ---------- Status ----------

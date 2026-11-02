@@ -144,7 +144,12 @@ final class Routes {
 		} catch ( \RuntimeException $e ) {
 			return $this->error( 'rate_limited', __( 'Too many requests. Please try again later.', 'invoiceninja' ), 429 );
 		}
-		$result = $cart->set( $id, (string) $request->get_param( 'product' ), (int) $request->get_param( 'quantity' ) );
+		$mode = (string) $this->plugin->options->setting( 'store.mode' );
+		if ( 'off' === $mode ) {
+			return $this->error( 'store_off', __( "Online ordering isn't available on this site.", 'invoiceninja' ), 403 );
+		}
+		// Buy Now: the cart only ever holds the product just chosen.
+		$result = $cart->set( $id, (string) $request->get_param( 'product' ), (int) $request->get_param( 'quantity' ), 'buy_now' === $mode );
 		return new \WP_REST_Response( $result + array( 'cart' => $cart->summary( $cart->items( $id ) ) ) );
 	}
 
@@ -308,6 +313,12 @@ final class Routes {
 		}
 		if ( isset( $changes['notifications']['leads'] ) && ! in_array( $changes['notifications']['leads'], array( 'instant', 'daily', 'off' ), true ) ) {
 			return $this->error( 'invalid_leads', __( 'Unknown quote request email setting.', 'invoiceninja' ), 400 );
+		}
+		if ( isset( $changes['store']['mode'] ) && ! in_array( $changes['store']['mode'], array( 'off', 'buy_now', 'cart' ), true ) ) {
+			return $this->error( 'invalid_mode', __( 'Unknown store mode.', 'invoiceninja' ), 400 );
+		}
+		if ( isset( $changes['store']['display'] ) && ! in_array( $changes['store']['display'], array( 'blocks', 'legacy' ), true ) ) {
+			return $this->error( 'invalid_display', __( 'Unknown display.', 'invoiceninja' ), 400 );
 		}
 		if ( isset( $changes['store']['abandoned_action'] ) && ! in_array( $changes['store']['abandoned_action'], array( 'cancel', 'delete' ), true ) ) {
 			return $this->error( 'invalid_action', __( 'Unknown action for unpaid orders.', 'invoiceninja' ), 400 );

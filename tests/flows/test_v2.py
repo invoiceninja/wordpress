@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '6', 'schema at 6', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '7', 'schema at 7', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -46,7 +46,7 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '6', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '7', 'all migrations ran')
     reset_mock_log()
     wp_eval('InvoiceNinja\\Controllers\\ProductController::loadProducts();')
     calls = api_calls()
@@ -379,6 +379,7 @@ def checkout(s, email, **extra):
 def store_ready():
     b = admin()
     connect(b)
+    b.api('POST', '/settings', {'store': {'mode': 'cart', 'require_login': False}})
     wp('invoiceninja', 'environment', 'confirm')
     sync(b)
     wp('option', 'delete', 'in_mock_invoices', check_ok=False)
@@ -691,3 +692,41 @@ def abandoned_cleanup_is_off_by_default_and_only_closes_unpaid_invoices():
         check(inv == 'deleted' and order('delete')[1] == 'cancelled', 'the invoice is deleted when the admin chose that', (inv, order('delete')))
     finally:
         b.api('POST', '/settings', {'store': {'abandoned_enabled': False, 'abandoned_action': 'cancel'}})
+
+
+@test
+def upgrade_keeps_the_1x_purchase_mode_and_login_requirement():
+    try:
+        for legacy, mode in (('single', 'buy_now'), ('multiple', 'cart'), ('disabled', 'off')):
+            out = wp_eval("update_option('invoiceninja_online_purchases', '%s'); $o = InvoiceNinja\\Plugin::instance()->options;"
+                          "$o->saveSettings(array('store' => array('mode' => 'cart', 'require_login' => false, 'display' => 'blocks')));"
+                          "update_option('invoiceninja_schema_version', 6); InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade();"
+                          "echo wp_json_encode(InvoiceNinja\\Plugin::instance()->options->settings()['store']);" % legacy)
+            check('"mode":"%s"' % mode in out and '"require_login":true' in out and '"display":"legacy"' in out, '1.x %s becomes %s, login required, legacy display' % (legacy, mode), out)
+    finally:
+        wp('option', 'update', 'invoiceninja_online_purchases', 'multiple')
+
+
+@test
+def store_mode_and_login_requirement_are_enforced():
+    store_ready()
+    b = admin()
+    try:
+        b.api('POST', '/settings', {'store': {'require_login': True}})
+        s = shopper()
+        status, r = s.api('POST', '/checkout/start', {'email': 'needs.login@example.com'})
+        check(status == 422 and r['code'] == 'login_required' and 'wp-login.php' in r['login_url'], 'guests are asked to log in', (status, r))
+        status, r = s.api('POST', '/checkout/confirm', {'email': 'needs.login@example.com', 'code': '123456'})
+        check(status == 422 and r['code'] == 'login_required', 'and confirm refuses too', (status, r))
+        b.api('POST', '/settings', {'store': {'require_login': False, 'mode': 'buy_now'}})
+        s = Browser()
+        s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 2})
+        _, r = s.api('POST', '/cart/items', {'product': 'P2', 'quantity': 1})
+        check([l['product'] for l in r['cart']['lines']] == ['P2'], 'Buy Now keeps only the product just chosen', r['cart'])
+        b.api('POST', '/settings', {'store': {'mode': 'off'}})
+        status, r = Browser().api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+        check(status == 403 and r['code'] == 'store_off', 'no cart when ordering is off', (status, r))
+        status, r = b.api('POST', '/settings', {'store': {'mode': 'shop'}})
+        check(status == 400, 'unknown mode refused', (status, r))
+    finally:
+        b.api('POST', '/settings', {'store': {'mode': 'cart', 'require_login': False}})

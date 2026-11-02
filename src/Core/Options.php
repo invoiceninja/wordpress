@@ -44,6 +44,9 @@ final class Options {
 			'weekly'      => false,
 		),
 		'store'                    => array(
+			'mode'              => 'cart',
+			'require_login'     => false,
+			'display'           => 'blocks',
 			'abandoned_enabled' => false,
 			'abandoned_days'    => 14,
 			'abandoned_action'  => 'cancel',

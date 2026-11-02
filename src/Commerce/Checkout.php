@@ -46,6 +46,30 @@ final class Checkout {
 	) {}
 
 	/**
+	 * Store settings that stop this visitor ordering: store off, or login required.
+	 *
+	 * @return array<string, mixed>|null The error reply, or null to continue.
+	 */
+	private function gate(): ?array {
+		if ( 'off' === $this->plugin->options->setting( 'store.mode' ) ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'store_off',
+				'message' => __( "Online ordering isn't available on this site.", 'invoiceninja' ),
+			);
+		}
+		if ( $this->plugin->options->setting( 'store.require_login' ) && ! is_user_logged_in() ) {
+			return array(
+				'ok'        => false,
+				'code'      => 'login_required',
+				'message'   => __( 'Log in to place your order. Your cart is saved while you do.', 'invoiceninja' ),
+				'login_url' => wp_login_url(),
+			);
+		}
+		return null;
+	}
+
+	/**
 	 * Whether the store can take orders right now; returns a reason when it can't.
 	 */
 	public function unavailable(): ?string {
@@ -70,6 +94,10 @@ final class Checkout {
 				'code'    => 'unavailable',
 				'message' => $reason,
 			);
+		}
+		$gate = $this->gate();
+		if ( null !== $gate ) {
+			return $gate;
 		}
 		$email = EmailCode::normalize( $details['email'] ?? '' );
 		if ( ! is_email( $email ) ) {
@@ -156,6 +184,10 @@ final class Checkout {
 				'code'    => 'unavailable',
 				'message' => $reason,
 			);
+		}
+		$gate = $this->gate();
+		if ( null !== $gate ) {
+			return $gate;
 		}
 		$email = EmailCode::normalize( $details['email'] ?? '' );
 		if ( ! $this->device->current( $email ) ) {

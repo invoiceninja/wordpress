@@ -101,9 +101,10 @@ final class Cart {
 	 * @param string $id       Cart id.
 	 * @param string $product  Invoice Ninja product id.
 	 * @param int    $quantity Quantity.
+	 * @param bool   $only     Make this the only product in the cart (Buy Now).
 	 * @return array{ok: bool, quantity: int, message: string}
 	 */
-	public function set( string $id, string $product, int $quantity ): array {
+	public function set( string $id, string $product, int $quantity, bool $only = false ): array {
 		$product = ProductSync::cleanId( $product );
 		$info    = $this->product( $product );
 		$items   = $this->items( $id );
@@ -116,6 +117,9 @@ final class Cart {
 		}
 		$quantity = max( 0, min( $quantity, $info['max'] ) );
 		$message  = '';
+		if ( $only && $quantity > 0 ) {
+			$items = array();
+		}
 		if ( $quantity < 1 ) {
 			unset( $items[ $product ] );
 		} else {
