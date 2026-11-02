@@ -226,6 +226,54 @@ final class ProductSync {
 	}
 
 	/**
+	 * Update one product in place, from a record just fetched from Invoice Ninja (a webhook).
+	 * Same rules as a full sync, without the circuit breaker or moving the cursor.
+	 *
+	 * @param array<string, mixed> $product Invoice Ninja product.
+	 * @return string created, updated, drafted, unchanged, skipped, busy (a sync is running; try later) or failed.
+	 */
+	public function syncOne( array $product ): string {
+		$id = self::cleanId( (string) ( $product['id'] ?? '' ) );
+		if ( '' === $id ) {
+			return 'skipped';
+		}
+		if ( ! $this->lock() ) {
+			return 'busy';
+		}
+		try {
+			$desired = self::desired( $product );
+			$map     = $this->mapping->find( 'product', $id );
+			$post_id = $map ? (int) $map['wp_id'] : (int) ( $this->legacyIndex()[ $id ] ?? 0 );
+			$status  = $post_id > 0 ? get_post_status( $post_id ) : false;
+			if ( false === $status || self::POST_TYPE !== get_post_type( $post_id ) ) {
+				$post_id = 0;
+				$status  = null;
+			}
+			$action = match ( true ) {
+				'trash' === $status                                                => 'skipped',
+				0 === $post_id && 'draft' === $desired['post']['post_status']     => 'skipped',
+				0 === $post_id                                                     => 'created',
+				null !== $map && $map['hash'] === $desired['hash']                 => 'unchanged',
+				'draft' === $desired['post']['post_status'] && 'draft' !== $status => 'drafted',
+				default                                                            => 'updated',
+			};
+			if ( 'skipped' === $action || 'unchanged' === $action ) {
+				return $action;
+			}
+			$written = $this->write( $post_id, $desired, is_string( $status ) ? $status : null );
+			if ( $written <= 0 ) {
+				return 'failed';
+			}
+			$this->mapping->save( 'product', $id, 'post', $written, $desired['hash'] );
+			$this->maybeQueueImage( $written, $desired['image'] );
+			$this->plugin->logger->log( LogLevel::Info, 'sync', sprintf( 'Product %s %s from an Invoice Ninja update', $desired['post']['post_title'], $action ), array(), 'product', $id );
+			return $action;
+		} finally {
+			$this->plugin->options->delete( 'sync_lock' );
+		}
+	}
+
+	/**
 	 * Take the sync lock (stale after 10 minutes).
 	 */
 	private function lock(): bool {
