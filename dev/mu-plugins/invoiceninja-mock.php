@@ -68,6 +68,9 @@ add_action( 'generate_rewrite_rules', function () {
 } );
 
 add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
+    if ( false !== $pre ) {
+        return $pre; // A module mock (priority 5) already answered, and logged, this request.
+    }
     $method = isset( $args['method'] ) ? $args['method'] : 'GET';
     $body   = isset( $args['body'] ) && is_string( $args['body'] ) ? $args['body'] : null;
 
