@@ -668,7 +668,9 @@
 			setBusy( true );
 			setMessage( '' );
 			try {
-				const saved = await api( '/settings', { method: 'POST', data: s } );
+				// Only this tab's settings: the other tab may have changed meanwhile, and shop managers can't send email settings.
+				const data = section === 'store' ? { store: s.store } : Object.assign( {}, s, { store: undefined } );
+				const saved = await api( '/settings', { method: 'POST', data } );
 				setS( saved );
 				boot.settings = saved;
 				setMessage( __( 'Settings saved.', 'invoiceninja' ) );
@@ -699,17 +701,14 @@
 						[ 'off', __( 'Off', 'invoiceninja' ), __( 'Show products and prices only.', 'invoiceninja' ) ],
 					] ) ),
 					row( __( 'Who can order', 'invoiceninja' ), null, check( 'store', 'require_login', __( 'Require customers to log in', 'invoiceninja' ), __( 'Off: guests confirm their email with a 6-digit code instead.', 'invoiceninja' ) ) ),
-					row( __( 'Display', 'invoiceninja' ), null, radios( 'store', 'display', __( 'Display', 'invoiceninja' ), [
-						[ 'blocks', __( 'Blocks', 'invoiceninja' ), __( 'Products, cart and checkout use the new blocks and your theme’s styles.', 'invoiceninja' ) ],
-						[ 'legacy', __( 'Legacy 1.x', 'invoiceninja' ), __( 'Keeps the products page and cart looking exactly as they did in 1.x.', 'invoiceninja' ) ],
-					] ) ) ) ),
+					null ) ),
 				h( 'h2', null, __( 'Unpaid orders', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
 				row( __( 'Clean up', 'invoiceninja' ), null, h( Fragment, null,
 					check( 'store', 'abandoned_enabled', __( 'Close orders that stay unpaid', 'invoiceninja' ), __( 'Off by default. Each invoice is checked again first: anything with a payment or credit is left alone.', 'invoiceninja' ) ),
 					s.store.abandoned_enabled ? h( 'p', { className: 'in-row' },
 						h( 'label', { htmlFor: 'in-ab-days' }, __( 'After', 'invoiceninja' ) ),
-						h( 'input', { id: 'in-ab-days', type: 'number', min: 1, max: 365, className: 'small-text', value: s.store.abandoned_days, onChange: ( e ) => set( 'store', 'abandoned_days', parseInt( e.target.value, 10 ) || 14 ) } ),
+						h( 'input', { id: 'in-ab-days', type: 'number', min: 1, max: 365, className: 'small-text', value: s.store.abandoned_days, onChange: ( e ) => set( 'store', 'abandoned_days', e.target.value ) } ),
 						h( 'span', null, __( 'days unpaid', 'invoiceninja' ) ) ) : null ) ),
 				s.store.abandoned_enabled ? row( __( 'What to do', 'invoiceninja' ), null, h( 'fieldset', null,
 					h( 'legend', { className: 'screen-reader-text' }, __( 'What to do with unpaid orders', 'invoiceninja' ) ),

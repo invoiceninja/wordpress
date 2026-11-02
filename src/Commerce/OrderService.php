@@ -119,7 +119,7 @@ final class OrderService {
 				try {
 					$existing = $this->findExisting( $client, $order, (string) $order['client_id'] );
 					if ( null !== $existing ) {
-						$this->cancelInvoice( $client, (string) $existing['id'], $delete );
+						$this->closeInvoice( $client, (string) $existing['id'], $delete );
 						$this->orders->update(
 							(int) $order['id'],
 							array(
@@ -143,9 +143,7 @@ final class OrderService {
 				}
 				throw new OrderConflict( esc_html__( 'This order has a payment in Invoice Ninja, so it was not cancelled. Refund or adjust it there.', 'invoiceninja' ) );
 			}
-			if ( $delete || '5' !== $status ) {
-				$this->cancelInvoice( $client, (string) $order['invoice_id'], $delete );
-			}
+			$this->closeInvoice( $client, (string) $order['invoice_id'], $delete, '5' === $status );
 			if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => '' ) ) ) {
 				throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
 			}
@@ -155,14 +153,38 @@ final class OrderService {
 	}
 
 	/**
+	 * Cancel an invoice, then delete it if asked. Cancelling first means a payment made a
+	 * moment ago stops the delete: Invoice Ninja won't cancel a paid invoice.
+	 *
+	 * @param HttpClient $client            Client.
+	 * @param string     $invoice_id        Invoice id.
+	 * @param bool       $delete            Delete after cancelling.
+	 * @param bool       $already_cancelled Skip the cancel.
+	 * @throws ApiException When Invoice Ninja didn't do it.
+	 * @throws OrderConflict When the invoice turned out to be paid.
+	 */
+	private function closeInvoice( HttpClient $client, string $invoice_id, bool $delete, bool $already_cancelled = false ): void {
+		if ( ! $already_cancelled ) {
+			$cancelled = $this->cancelInvoice( $client, $invoice_id );
+			if ( (float) ( $cancelled['paid_to_date'] ?? 0 ) > 0 ) {
+				throw new OrderConflict( esc_html__( 'This order has a payment in Invoice Ninja, so it was not cancelled. Refund or adjust it there.', 'invoiceninja' ) );
+			}
+		}
+		if ( $delete ) {
+			$this->cancelInvoice( $client, $invoice_id, true );
+		}
+	}
+
+	/**
 	 * Cancel (or delete) an invoice in Invoice Ninja and make sure it took.
 	 *
 	 * @param HttpClient $client     Client.
 	 * @param string     $invoice_id Invoice id.
 	 * @param bool       $delete     Delete instead of cancel.
+	 * @return array<string, mixed> The invoice as Invoice Ninja returned it.
 	 * @throws ApiException When Invoice Ninja didn't do it.
 	 */
-	private function cancelInvoice( HttpClient $client, string $invoice_id, bool $delete = false ): void {
+	private function cancelInvoice( HttpClient $client, string $invoice_id, bool $delete = false ): array {
 		$result = $client->post(
 			'invoices/bulk',
 			array(
@@ -177,7 +199,7 @@ final class OrderService {
 				continue;
 			}
 			if ( $delete ? ! empty( $invoice['is_deleted'] ) : '5' === (string) ( $invoice['status_id'] ?? '' ) ) {
-				return;
+				return $invoice;
 			}
 		}
 		throw new ApiException( ErrorKind::InvalidResponse, $delete ? "Invoice Ninja didn't delete the invoice" : "Invoice Ninja didn't cancel the invoice" );
@@ -406,6 +428,7 @@ final class OrderService {
 			'client_id'      => (string) ( $invoice['client_id'] ?? $order['client_id'] ),
 			'pay_link'       => esc_url_raw( $link ),
 			'note'           => '' === $link ? 'no_invitation' : '',
+			'placed_at'      => gmdate( 'Y-m-d H:i:s' ),
 		);
 		if ( ! $this->orders->transition( (int) $order['id'], array( 'placing' ), 'awaiting_payment', $fields ) ) {
 			// Cancelled by an admin while the invoice was being created: cancel the invoice too.

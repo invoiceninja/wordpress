@@ -59,7 +59,7 @@ final class Cart {
 		 * @param string $ip IP.
 		 */
 		$ip = (string) apply_filters( 'invoiceninja_client_ip', isset( $_SERVER['REMOTE_ADDR'] ) ? sanitize_text_field( wp_unslash( $_SERVER['REMOTE_ADDR'] ) ) : '' );
-		if ( \InvoiceNinja\Plugin::booted() && \InvoiceNinja\Plugin::instance()->options->increment( 'ctr_cart_' . substr( md5( $ip ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > 200 ) {
+		if ( \InvoiceNinja\Plugin::booted() && \InvoiceNinja\Plugin::instance()->options->increment( 'ctr_cart_' . substr( md5( Checkout::ipBucket( $ip ) ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > 200 ) {
 			throw new \RuntimeException( 'Too many carts from this address' );
 		}
 		$this->cookie( self::COOKIE, $id . '.' . self::sign( $id, $this->secrets->get( 'cart_secret' ) ), true );
@@ -117,8 +117,8 @@ final class Cart {
 		}
 		$quantity = max( 0, min( $quantity, $info['max'] ) );
 		$message  = '';
-		if ( $only && $quantity > 0 ) {
-			$items = array();
+		if ( $only ) {
+			$items = array(); // Buy Now: even a sold-out choice replaces what was there.
 		}
 		if ( $quantity < 1 ) {
 			unset( $items[ $product ] );
@@ -263,11 +263,22 @@ final class Cart {
 	 * Bring the stored cart in line with what can be bought now (lower quantities, drop
 	 * unavailable products), so "we've updated your cart" is true.
 	 *
-	 * @param string $id Cart id.
+	 * @param string $id   Cart id.
+	 * @param bool   $only Buy Now: keep only the most recently added product.
 	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>}
 	 */
-	public function reconcile( string $id ): array {
-		$summary = $this->summary( $this->items( $id ) );
+	public function reconcile( string $id, bool $only = false ): array {
+		$items = $this->items( $id );
+		if ( $only && count( $items ) > 1 ) {
+			$last  = (string) array_key_last( $items );
+			$items = array( $last => $items[ $last ] );
+			set_transient( 'invoiceninja_cart_' . $id, $items, self::TTL );
+			$summary            = $this->summary( $items );
+			$summary['changed'] = array_merge( $summary['changed'], array( $last ) );
+			$this->cookie( self::COUNT_COOKIE, (string) array_sum( $items ), false );
+			return $summary;
+		}
+		$summary = $this->summary( $items );
 		if ( $summary['changed'] ) {
 			$items = array();
 			foreach ( $summary['lines'] as $line ) {

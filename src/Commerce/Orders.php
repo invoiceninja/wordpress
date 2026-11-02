@@ -59,6 +59,7 @@ final class Orders {
 			created_at datetime NOT NULL,
 			updated_at datetime NOT NULL,
 			paid_at datetime NULL,
+			placed_at datetime NULL,
 			PRIMARY KEY  (id),
 			UNIQUE KEY number (number),
 			UNIQUE KEY token (token),
@@ -119,7 +120,7 @@ final class Orders {
 	 */
 	public function update( int $id, array $fields ): void {
 		global $wpdb;
-		$allowed = array( 'status', 'client_id', 'invoice_id', 'invoice_number', 'pay_link', 'attempts', 'note', 'paid_at', 'customer' );
+		$allowed = array( 'status', 'client_id', 'invoice_id', 'invoice_number', 'pay_link', 'attempts', 'note', 'paid_at', 'placed_at', 'customer' );
 		$fields  = array_intersect_key( $fields, array_flip( $allowed ) );
 		if ( isset( $fields['status'] ) && ! in_array( $fields['status'], self::STATUSES, true ) ) {
 			unset( $fields['status'] );
@@ -206,18 +207,19 @@ final class Orders {
 	}
 
 	/**
-	 * Orders in a status placed before a time, oldest first.
+	 * Orders awaiting payment whose invoice was sent before a time, by id, after a cursor.
 	 *
-	 * @param string $status Status.
-	 * @param int    $before Unix time.
-	 * @param int    $limit  Maximum.
+	 * @param int $before Unix time.
+	 * @param int $after  Only ids above this.
+	 * @param int $limit  Maximum.
 	 * @return list<array<string, mixed>>
 	 */
-	public function olderThan( string $status, int $before, int $limit ): array {
+	public function unpaidSince( int $before, int $after, int $limit ): array {
 		global $wpdb;
 		$table = self::table();
+		// The payment email went out when the invoice was created (placed_at), not when the order was saved.
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
-		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE status = %s AND created_at < %s AND note <> 'kept_unpaid' ORDER BY id ASC LIMIT %d", $status, gmdate( 'Y-m-d H:i:s', $before ), $limit ), ARRAY_A );
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT * FROM {$table} WHERE status = 'awaiting_payment' AND COALESCE(placed_at, created_at) < %s AND note NOT IN ('kept_unpaid', 'cleanup_failed') AND id > %d ORDER BY id ASC LIMIT %d", gmdate( 'Y-m-d H:i:s', $before ), $after, $limit ), ARRAY_A );
 		return array_map( array( self::class, 'hydrate' ), is_array( $rows ) ? $rows : array() );
 	}
 
@@ -272,11 +274,13 @@ final class Orders {
 			return $kind ? $kind->title() . '. ' . $kind->fix() : '';
 		}
 		$notes = array(
-			'paused'        => __( 'Orders are paused on this site, so it waits until you allow them.', 'invoiceninja' ),
-			'gave_up'       => __( "Invoice Ninja couldn't be reached for several hours. Retry when it's back.", 'invoiceninja' ),
-			'no_invitation' => __( "Invoice Ninja didn't return a payment link for this buyer. Send the invoice from Invoice Ninja.", 'invoiceninja' ),
-			'kept_unpaid'   => __( 'Left open by the unpaid-orders cleanup: its invoice has a payment or credit.', 'invoiceninja' ),
-			'check_invoice' => __( "Cancelled, but Invoice Ninja couldn't be checked for an invoice. Look there for this order number as the PO number.", 'invoiceninja' ),
+			'paused'         => __( 'Orders are paused on this site, so it waits until you allow them.', 'invoiceninja' ),
+			'gave_up'        => __( "Invoice Ninja couldn't be reached for several hours. Retry when it's back.", 'invoiceninja' ),
+			'no_invitation'  => __( "Invoice Ninja didn't return a payment link for this buyer. Send the invoice from Invoice Ninja.", 'invoiceninja' ),
+			'invoice_gone'   => __( 'The invoice was deleted in Invoice Ninja, so the order was closed.', 'invoiceninja' ),
+			'cleanup_failed' => __( "The unpaid-orders cleanup couldn't close this order. Check its invoice in Invoice Ninja.", 'invoiceninja' ),
+			'kept_unpaid'    => __( 'Left open by the unpaid-orders cleanup: its invoice has a payment or credit.', 'invoiceninja' ),
+			'check_invoice'  => __( "Cancelled, but Invoice Ninja couldn't be checked for an invoice. Look there for this order number as the PO number.", 'invoiceninja' ),
 		);
 		return $notes[ $note ] ?? $note;
 	}

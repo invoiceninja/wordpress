@@ -29,6 +29,16 @@ final class StockCheck {
 	public const MAX_PRODUCTS = 10;
 
 	/**
+	 * A product checked this recently isn't asked about again.
+	 */
+	public const FRESH = 60;
+
+	/**
+	 * Live checks per hour for the whole site, whoever asks.
+	 */
+	public const SITE_HOURLY = 600;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Plugin  $plugin  Plugin.
@@ -52,14 +62,19 @@ final class StockCheck {
 		foreach ( array_slice( array_keys( $items ), 0, self::MAX_PRODUCTS ) as $product ) {
 			$map  = $this->mapping->find( 'product', (string) $product );
 			$left = $deadline - microtime( true );
-			if ( null === $map ) {
+			if ( null === $map || get_transient( 'invoiceninja_stock_seen_' . md5( (string) $product ) ) ) {
 				continue;
 			}
 			if ( $left < 0.3 ) {
 				return $this->slow();
 			}
+			// Bounded by the catalogue, not by visitors: each product is asked about at most once a minute.
+			if ( $this->plugin->options->increment( 'ctr_stock_site_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > self::SITE_HOURLY ) {
+				return $this->slow();
+			}
+			set_transient( 'invoiceninja_stock_seen_' . md5( (string) $product ), 1, self::FRESH );
 			try {
-				$data = $client->get( 'products/' . rawurlencode( (string) $product ), array(), min( 1.5, $left ) )->data();
+				$data = $client->get( 'products/' . rawurlencode( (string) $product ), array(), max( 0.3, min( 1.5, $left ) ) )->data();
 			} catch ( ApiException $e ) {
 				return $this->slow( $e );
 			}

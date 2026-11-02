@@ -73,7 +73,7 @@ final class EmailCode {
 			);
 		}
 		// IP first, so a blocked IP doesn't use up the victim's hourly email allowance.
-		if ( ! $this->allow( 'i' . $this->hash( $ip ), self::PER_IP_HOUR ) || ! $this->allow( 'e' . $key, self::PER_EMAIL_HOUR ) ) {
+		if ( ! $this->allow( 'i' . $this->hash( \InvoiceNinja\Commerce\Checkout::ipBucket( $ip ) ), self::PER_IP_HOUR ) || ! $this->allow( 'e' . $key, self::PER_EMAIL_HOUR ) ) {
 			$this->logger->warning( 'email', 'Email code rate limit reached' );
 			return array(
 				'status'      => 'limited',
@@ -132,7 +132,7 @@ final class EmailCode {
 		// Atomic caps: parallel guesses each take a number, so racing requests can't share one attempt.
 		$hour = (int) floor( time() / HOUR_IN_SECONDS );
 		if ( $this->options->increment( 'ctr_guess_' . substr( $key, 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_EMAIL_HOUR
-			|| ( '' !== $ip && $this->options->increment( 'ctr_guessip_' . substr( $this->hash( $ip ), 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_IP_HOUR ) ) {
+			|| ( '' !== $ip && $this->options->increment( 'ctr_guessip_' . substr( $this->hash( \InvoiceNinja\Commerce\Checkout::ipBucket( $ip ) ), 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_IP_HOUR ) ) {
 			return 'locked';
 		}
 		$name   = 'invoiceninja_code_' . $key;

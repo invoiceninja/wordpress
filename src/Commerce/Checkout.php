@@ -58,15 +58,65 @@ final class Checkout {
 				'message' => __( "Online ordering isn't available on this site.", 'invoiceninja' ),
 			);
 		}
-		if ( $this->plugin->options->setting( 'store.require_login' ) && ! is_user_logged_in() ) {
+		if ( $this->plugin->options->setting( 'store.require_login' ) && 0 === self::userId() ) {
+			$back = wp_get_referer();
 			return array(
 				'ok'        => false,
 				'code'      => 'login_required',
 				'message'   => __( 'Log in to place your order. Your cart is saved while you do.', 'invoiceninja' ),
-				'login_url' => wp_login_url(),
+				'login_url' => wp_login_url( $back ? $back : home_url( '/' ) ),
 			);
 		}
 		return null;
+	}
+
+	/**
+	 * The logged-in shopper. Store requests carry no REST nonce (pages stay cacheable), so
+	 * WordPress treats them as logged out; read the login cookie instead. The routes'
+	 * same-site Origin check stands in for the nonce.
+	 */
+	public static function userId(): int {
+		$id = get_current_user_id();
+		if ( $id > 0 ) {
+			return $id;
+		}
+		$cookie = wp_validate_auth_cookie( '', 'logged_in' );
+		return $cookie ? (int) $cookie : 0;
+	}
+
+	/**
+	 * With login required, orders always use the account's own email: a shared computer's
+	 * remembered device must never let one customer order as another.
+	 *
+	 * @param array<string, string> $details Buyer details.
+	 * @return array<string, string>
+	 */
+	private function accountEmail( array $details ): array {
+		if ( $this->plugin->options->setting( 'store.require_login' ) ) {
+			$user = get_userdata( self::userId() );
+			if ( $user ) {
+				$details['email'] = (string) $user->user_email;
+			}
+		}
+		return $details;
+	}
+
+	/**
+	 * The address used for rate limits: IPv6 by /64, since one connection usually gets a
+	 * whole /64 to rotate through.
+	 *
+	 * @param string $ip IP.
+	 */
+	public static function ipBucket( string $ip ): string {
+		$packed = filter_var( $ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV6 ) ? inet_pton( $ip ) : false;
+		return false !== $packed ? bin2hex( substr( $packed, 0, 8 ) ) . '::/64' : $ip;
+	}
+
+	/**
+	 * Whether the store sells one product per order.
+	 */
+	private function buyNow(): bool {
+		return 'buy_now' === $this->plugin->options->setting( 'store.mode' );
 	}
 
 	/**
@@ -99,7 +149,8 @@ final class Checkout {
 		if ( null !== $gate ) {
 			return $gate;
 		}
-		$email = EmailCode::normalize( $details['email'] ?? '' );
+		$details = $this->accountEmail( $details );
+		$email   = EmailCode::normalize( $details['email'] ?? '' );
 		if ( ! is_email( $email ) ) {
 			return array(
 				'ok'      => false,
@@ -116,10 +167,10 @@ final class Checkout {
 			);
 		}
 		// Stock right now, before the code is sent (limited per address: each check calls Invoice Ninja).
-		if ( $this->plugin->options->increment( 'ctr_stock_' . substr( md5( $ip ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) <= 60 ) {
+		if ( $this->plugin->options->increment( 'ctr_stock_' . substr( md5( self::ipBucket( $ip ) ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) <= 60 ) {
 			$this->stock->refresh( $this->cart->items( $cart_id ) );
 		}
-		$summary = $this->cart->reconcile( $cart_id );
+		$summary = $this->cart->reconcile( $cart_id, $this->buyNow() );
 		if ( ! $summary['lines'] ) {
 			return array(
 				'ok'      => false,
@@ -189,7 +240,8 @@ final class Checkout {
 		if ( null !== $gate ) {
 			return $gate;
 		}
-		$email = EmailCode::normalize( $details['email'] ?? '' );
+		$details = $this->accountEmail( $details );
+		$email   = EmailCode::normalize( $details['email'] ?? '' );
 		if ( ! $this->device->current( $email ) ) {
 			$result = $this->codes->verify( $email, $code, 'checkout', $ip );
 			if ( 'ok' !== $result ) {
@@ -210,7 +262,7 @@ final class Checkout {
 		}
 
 		$cart_id = $this->cart->currentId();
-		$summary = null === $cart_id ? $this->cart->summary( array() ) : $this->cart->reconcile( $cart_id );
+		$summary = null === $cart_id ? $this->cart->summary( array() ) : $this->cart->reconcile( $cart_id, $this->buyNow() );
 		if ( ! $summary['lines'] || null === $cart_id ) {
 			return array(
 				'ok'      => false,
@@ -237,7 +289,7 @@ final class Checkout {
 						'number'   => $this->numbers->next(),
 						'token'    => $token,
 						'email'    => $email,
-						'user_id'  => get_current_user_id(),
+						'user_id'  => self::userId(),
 						'customer' => array(
 							'first_name' => sanitize_text_field( $details['first_name'] ?? '' ),
 							'last_name'  => sanitize_text_field( $details['last_name'] ?? '' ),

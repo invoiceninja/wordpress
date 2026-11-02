@@ -74,6 +74,11 @@ final class Plugin {
 	public readonly AbandonedOrders $abandoned;
 
 	/**
+	 * Set while Settings > Store and the 1.x purchase option are being synced.
+	 */
+	private bool $syncingStore = false;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param string $file Main plugin file.
@@ -187,6 +192,41 @@ final class Plugin {
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
 		$this->queue->handle( 'invoiceninja_place_order', array( $this->orderService, 'retry' ) );
 		$this->queue->handle( AbandonedOrders::HOOK, fn() => $this->abandoned->run() );
+		// Settings > Store and the 1.x purchase option stay in step (the 1.x buttons still read
+		// theirs), once migration 7 has copied the 1.x value over.
+		$to_legacy   = function ( ...$args ): void {
+			$value = $args[1] ?? null; // The new value is the second argument of both hooks.
+			$modes = array(
+				'off'     => 'disabled',
+				'buy_now' => 'single',
+				'cart'    => 'multiple',
+			);
+			$mode  = is_array( $value ) ? (string) ( $value['store']['mode'] ?? '' ) : '';
+			if ( $this->syncingStore || ! isset( $modes[ $mode ] ) || (int) get_option( Options::PREFIX . 'schema_version', 0 ) < 7 || get_option( 'invoiceninja_online_purchases' ) === $modes[ $mode ] ) {
+				return;
+			}
+			$this->syncingStore = true;
+			update_option( 'invoiceninja_online_purchases', $modes[ $mode ] );
+			$this->syncingStore = false;
+		};
+		$from_legacy = function ( ...$args ): void {
+			$value = is_string( $args[1] ?? null ) ? $args[1] : '';
+			$modes = array(
+				'disabled' => 'off',
+				'single'   => 'buy_now',
+				'multiple' => 'cart',
+			);
+			if ( $this->syncingStore || ! isset( $modes[ $value ] ) || (int) get_option( Options::PREFIX . 'schema_version', 0 ) < 7 || $this->options->setting( 'store.mode' ) === $modes[ $value ] ) {
+				return;
+			}
+			$this->syncingStore = true;
+			$this->options->saveSettings( array( 'store' => array( 'mode' => $modes[ $value ] ) ) );
+			$this->syncingStore = false;
+		};
+		add_action( 'update_option_' . Options::PREFIX . 'settings', $to_legacy, 10, 3 );
+		add_action( 'add_option_' . Options::PREFIX . 'settings', $to_legacy, 10, 2 );
+		add_action( 'update_option_invoiceninja_online_purchases', $from_legacy, 10, 3 );
+		add_action( 'add_option_invoiceninja_online_purchases', $from_legacy, 10, 2 );
 		add_action( 'invoiceninja_order_placed', array( $this->checkout, 'emailBuyer' ) );
 		add_action( 'invoiceninja_order_needs_attention', array( $this->notifications, 'orderNeedsAttention' ) );
 		$this->queue->handle( 'invoiceninja_sideload_image', array( new ImageSideloader( $this ), 'handle' ) );

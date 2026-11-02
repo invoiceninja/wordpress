@@ -18,7 +18,7 @@ use InvoiceNinja\Connection\Credentials;
  */
 final class Installer {
 
-	public const SCHEMA = 7;
+	public const SCHEMA = 8;
 
 	/**
 	 * Constructor.
@@ -125,7 +125,10 @@ final class Installer {
 				// 1.x purchase modes. Login stays required: 1.0.15 required it for every purchase.
 				$legacy = get_option( 'invoiceninja_online_purchases', false );
 				if ( false === $legacy ) {
-					return;
+					if ( ! $this->hasLegacyData() ) {
+						return; // A new install: keep the defaults.
+					}
+					$legacy = 'disabled'; // 1.x's default: it never sold online.
 				}
 				$modes = array(
 					'disabled' => 'off',
@@ -143,6 +146,9 @@ final class Installer {
 					)
 				);
 				$this->logger->info( 'upgrade', sprintf( 'Kept the 1.x store settings: %s, login required, legacy display', $mode ) );
+			},
+			8 => static function (): void {
+				// Orders gained placed_at; createTables() above added it.
 			},
 		);
 		foreach ( $steps as $version => $step ) {

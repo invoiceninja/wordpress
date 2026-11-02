@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '7', 'schema at 7', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '8', 'schema at 8', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -46,7 +46,7 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '7', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '8', 'all migrations ran')
     reset_mock_log()
     wp_eval('InvoiceNinja\\Controllers\\ProductController::loadProducts();')
     calls = api_calls()
@@ -654,7 +654,7 @@ def abandoned_cleanup_is_off_by_default_and_only_closes_unpaid_invoices():
     b = admin()
     b.api('POST', '/settings', {'store': {'abandoned_enabled': False, 'abandoned_action': 'cancel'}})
     # Orders from other flows count as recent here
-    wp_eval("global $wpdb; $wpdb->query($wpdb->prepare('UPDATE ' . InvoiceNinja\\Commerce\\Orders::table() . ' SET created_at = %s', gmdate('Y-m-d H:i:s')));")
+    wp_eval("global $wpdb; $wpdb->query($wpdb->prepare('UPDATE ' . InvoiceNinja\\Commerce\\Orders::table() . ' SET created_at = %s, placed_at = %s, note = \\'\\'', gmdate('Y-m-d H:i:s'), gmdate('Y-m-d H:i:s')));" + "delete_option('invoiceninja_abandoned_cursor');")
     try:
         numbers = {}
         for name in ('unpaid', 'paid', 'partial', 'recent'):
@@ -664,7 +664,7 @@ def abandoned_cleanup_is_off_by_default_and_only_closes_unpaid_invoices():
             out = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['id'], ' ', $o['status'], ' ', $o['invoice_id'];" % numbers[name])
             return out.split()
         for name in ('unpaid', 'paid', 'partial'):
-            wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('created_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % numbers[name])
+            wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('created_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS), 'placed_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % numbers[name])
         wp_eval("update_option('in_mock_paid', array('%s')); $i = get_option('in_mock_invoices'); $i['%s']['paid_to_date'] = 5; $i['%s']['balance'] -= 5; update_option('in_mock_invoices', $i);" % (order('paid')[2], order('partial')[2], order('partial')[2]))
         run = "echo wp_json_encode(InvoiceNinja\\Plugin::instance()->abandoned->run());"
         check(wp_eval(run) == '{"checked":0,"cleaned":0,"skipped":0}', 'nothing happens while the setting is off')
@@ -680,16 +680,30 @@ def abandoned_cleanup_is_off_by_default_and_only_closes_unpaid_invoices():
         check(order('paid')[1] == 'paid', 'a paid invoice is recorded as paid, never cancelled', order('paid'))
         check(order('partial')[1] == 'awaiting_payment', 'a partly paid invoice is left alone', order('partial'))
         check(wp_eval(run) == '{"checked":0,"cleaned":0,"skipped":0}', 'and is not checked again on later runs')
+        # Saved 20 days ago but only invoiced now (Invoice Ninja was down): not abandoned
+        wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('created_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % numbers['recent'])
+        wp_eval(run)
+        check(order('recent')[1] == 'awaiting_payment', 'age counts from when the invoice was sent', order('recent'))
+        # Invoice deleted in Invoice Ninja: the order is closed and doesn't block later runs
+        _, r = checkout(shopper(), 'abandon.gone@example.com')
+        numbers['gone'] = r['number']
+        wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('placed_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % r['number'])
+        wp_eval("$i = get_option('in_mock_invoices'); unset($i['%s']); update_option('in_mock_invoices', $i);" % order('gone')[2])
+        wp_eval(run)
+        check(order('gone')[1] == 'cancelled', 'an invoice deleted in Invoice Ninja closes the order', order('gone'))
         check(order('recent')[1] == 'awaiting_payment', 'recent orders are left alone', order('recent'))
         check(not [c for c in api_calls() if c['method'] == 'POST' and order('partial')[2] in c['body']], 'nothing is sent for the partly paid invoice')
         # Delete, when chosen
         _, r = checkout(shopper(), 'abandon.delete@example.com')
         numbers['delete'] = r['number']
-        wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('created_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % r['number'])
+        wp_eval("global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('created_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS), 'placed_at' => gmdate('Y-m-d H:i:s', time() - 20 * DAY_IN_SECONDS)), array('number' => '%s'));" % r['number'])
         b.api('POST', '/settings', {'store': {'abandoned_action': 'delete'}})
+        reset_mock_log()
         wp_eval(run)
         inv = wp_eval("$i = get_option('in_mock_invoices'); echo !empty($i['%s']['is_deleted']) ? 'deleted' : 'kept';" % order('delete')[2])
         check(inv == 'deleted' and order('delete')[1] == 'cancelled', 'the invoice is deleted when the admin chose that', (inv, order('delete')))
+        bulk = [c['body'] for c in api_calls() if c['url'].endswith('/invoices/bulk')]
+        check(len(bulk) == 2 and '"cancel"' in bulk[0] and '"delete"' in bulk[1], 'cancelled first, so a just-paid invoice is never deleted', bulk)
     finally:
         b.api('POST', '/settings', {'store': {'abandoned_enabled': False, 'abandoned_action': 'cancel'}})
 
@@ -698,13 +712,26 @@ def abandoned_cleanup_is_off_by_default_and_only_closes_unpaid_invoices():
 def upgrade_keeps_the_1x_purchase_mode_and_login_requirement():
     try:
         for legacy, mode in (('single', 'buy_now'), ('multiple', 'cart'), ('disabled', 'off')):
-            out = wp_eval("update_option('invoiceninja_online_purchases', '%s'); $o = InvoiceNinja\\Plugin::instance()->options;"
+            out = wp_eval("update_option('invoiceninja_schema_version', 6); $o = InvoiceNinja\\Plugin::instance()->options;"
                           "$o->saveSettings(array('store' => array('mode' => 'cart', 'require_login' => false, 'display' => 'blocks')));"
-                          "update_option('invoiceninja_schema_version', 6); InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade();"
+                          "update_option('invoiceninja_online_purchases', '%s'); InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade();"
                           "echo wp_json_encode(InvoiceNinja\\Plugin::instance()->options->settings()['store']);" % legacy)
             check('"mode":"%s"' % mode in out and '"require_login":true' in out and '"display":"legacy"' in out, '1.x %s becomes %s, login required, legacy display' % (legacy, mode), out)
+        out = wp_eval("update_option('invoiceninja_schema_version', 6); delete_option('invoiceninja_online_purchases'); $o = InvoiceNinja\\Plugin::instance()->options;"
+                      "$o->saveSettings(array('store' => array('mode' => 'cart', 'require_login' => false)));"
+                      "InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade();"
+                      "echo wp_json_encode(InvoiceNinja\\Plugin::instance()->options->settings()['store']);")
+        check('"mode":"off"' in out, "a 1.x site that never turned purchases on stays off", out)
+        # Both ways: 1.x code reads Settings > Store, and writing the 1.x option moves it
+        wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('mode' => 'off')));")
+        check(wp_eval("echo get_option('invoiceninja_online_purchases', 'disabled');") == 'disabled', '1.x buttons follow Settings > Store')
+        wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('mode' => 'cart')));")
+        check(wp('option', 'get', 'invoiceninja_online_purchases') == 'multiple', 'changing the Store mode updates the 1.x option')
+        wp('option', 'update', 'invoiceninja_online_purchases', 'single')
+        check('"mode":"buy_now"' in wp_eval("echo wp_json_encode(InvoiceNinja\\Plugin::instance()->options->settings()['store']);"), 'and the 1.x option moves Settings > Store')
     finally:
         wp('option', 'update', 'invoiceninja_online_purchases', 'multiple')
+        wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('mode' => 'cart', 'require_login' => false)));")
 
 
 @test
@@ -718,11 +745,26 @@ def store_mode_and_login_requirement_are_enforced():
         check(status == 422 and r['code'] == 'login_required' and 'wp-login.php' in r['login_url'], 'guests are asked to log in', (status, r))
         status, r = s.api('POST', '/checkout/confirm', {'email': 'needs.login@example.com', 'code': '123456'})
         check(status == 422 and r['code'] == 'login_required', 'and confirm refuses too', (status, r))
-        b.api('POST', '/settings', {'store': {'require_login': False, 'mode': 'buy_now'}})
+        # A logged-in customer (store pages send no REST nonce) can order, as their account's email
+        member = Browser().login('admin', 'admin')
+        member.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+        status, r = member.api('POST', '/checkout/start', {'email': 'someone.else@example.com'})
+        check(status == 200 and r['ok'], 'logged-in customers pass the login requirement', (status, r))
+        check(not mails('someone.else@example.com'), 'and order as their own account, not a typed email')
+        # Buy Now
+        b.api('POST', '/settings', {'store': {'require_login': False, 'mode': 'cart'}})
         s = Browser()
+        s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 2})
+        s.api('POST', '/cart/items', {'product': 'P2', 'quantity': 1})
+        b.api('POST', '/settings', {'store': {'mode': 'buy_now'}})
+        status, r = s.api('POST', '/checkout/start', {'email': 'buy.now@example.com'})
+        check(status == 422 and r['code'] == 'cart_changed' and [l['product'] for l in r['cart']['lines']] == ['P2'], 'a cart from before Buy Now is trimmed to one product at checkout', (status, r))
         s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 2})
         _, r = s.api('POST', '/cart/items', {'product': 'P2', 'quantity': 1})
         check([l['product'] for l in r['cart']['lines']] == ['P2'], 'Buy Now keeps only the product just chosen', r['cart'])
+        out = wp_eval("add_filter('invoiceninja_track_inventory', '__return_true'); $c = InvoiceNinja\\Plugin::instance()->cart; $id = str_repeat('a', 32);"
+                      "$c->set($id, 'P1', 1, true); $c->set($id, 'P2', 1, true); echo wp_json_encode($c->items($id));")
+        check(out == '[]', 'Buy Now on a sold-out product empties the cart instead of buying the previous one', out)
         b.api('POST', '/settings', {'store': {'mode': 'off'}})
         status, r = Browser().api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
         check(status == 403 and r['code'] == 'store_off', 'no cart when ordering is off', (status, r))

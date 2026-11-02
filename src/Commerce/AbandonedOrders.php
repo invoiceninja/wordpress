@@ -28,6 +28,11 @@ final class AbandonedOrders {
 	public const BATCH = 25;
 
 	/**
+	 * Seconds per run; the rest is picked up a minute later.
+	 */
+	public const BUDGET = 20.0;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Plugin       $plugin  Plugin.
@@ -57,10 +62,18 @@ final class AbandonedOrders {
 		if ( ! $this->enabled() || ! $this->plugin->environment->writesAllowed() || 'connected' !== $this->plugin->state->get()['status'] ) {
 			return $result;
 		}
-		$days   = max( 1, (int) $this->plugin->options->setting( 'store.abandoned_days' ) );
-		$delete = 'delete' === $this->plugin->options->setting( 'store.abandoned_action' );
-		foreach ( $this->orders->olderThan( 'awaiting_payment', time() - $days * DAY_IN_SECONDS, self::BATCH ) as $order ) {
+		$days     = max( 1, (int) $this->plugin->options->setting( 'store.abandoned_days' ) );
+		$delete   = 'delete' === $this->plugin->options->setting( 'store.abandoned_action' );
+		$cursor   = (int) $this->plugin->options->get( 'abandoned_cursor', 0 );
+		$deadline = microtime( true ) + self::BUDGET;
+		$stopped  = false;
+		$batch    = $this->orders->unpaidSince( time() - $days * DAY_IN_SECONDS, $cursor, self::BATCH );
+		foreach ( $batch as $order ) {
+			if ( microtime( true ) > $deadline ) {
+				break;
+			}
 			++$result['checked'];
+			$cursor = (int) $order['id'];
 			try {
 				$this->service->cancel( $order, $delete );
 				++$result['cleaned'];
@@ -71,9 +84,31 @@ final class AbandonedOrders {
 			} catch ( ApiException $e ) {
 				++$result['skipped'];
 				if ( $e->kind->breaksConnection() ) {
+					$cursor  = (int) $order['id'] - 1; // Try this one again next time.
+					$stopped = true;
 					break;
 				}
+				if ( \InvoiceNinja\Api\ErrorKind::NotFound === $e->kind ) {
+					// Deleted in Invoice Ninja: nothing left to pay.
+					$this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'cancelled', array( 'note' => 'invoice_gone' ) );
+					continue;
+				}
+				$tries = (int) $order['attempts'] + 1;
+				$this->orders->update(
+					(int) $order['id'],
+					array(
+						'attempts' => $tries,
+						'note'     => $tries >= 3 ? 'cleanup_failed' : (string) $order['note'],
+					)
+				);
+				$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Warning, 'checkout', sprintf( "The unpaid-orders cleanup couldn't close order %s: %s", $order['number'], $e->kind->title() ), array( 'kind' => $e->kind->value ), 'order', (string) $order['number'] );
 			}
+		}
+		$more = $stopped || count( $batch ) >= self::BATCH || $result['checked'] < count( $batch );
+		// Start from the beginning again once the end is reached.
+		$this->plugin->options->set( 'abandoned_cursor', $more ? $cursor : 0 );
+		if ( $more && ! $stopped ) {
+			$this->plugin->queue->push( self::HOOK, array(), 60, true );
 		}
 		return $result;
 	}

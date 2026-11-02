@@ -139,14 +139,14 @@ final class Routes {
 	 */
 	public function setCartItem( \WP_REST_Request $request ): \WP_REST_Response {
 		$cart = $this->plugin->cart;
+		$mode = (string) $this->plugin->options->setting( 'store.mode' );
+		if ( 'off' === $mode ) {
+			return $this->error( 'store_off', __( "Online ordering isn't available on this site.", 'invoiceninja' ), 403 );
+		}
 		try {
 			$id = $cart->ensureId();
 		} catch ( \RuntimeException $e ) {
 			return $this->error( 'rate_limited', __( 'Too many requests. Please try again later.', 'invoiceninja' ), 429 );
-		}
-		$mode = (string) $this->plugin->options->setting( 'store.mode' );
-		if ( 'off' === $mode ) {
-			return $this->error( 'store_off', __( "Online ordering isn't available on this site.", 'invoiceninja' ), 403 );
 		}
 		// Buy Now: the cart only ever holds the product just chosen.
 		$result = $cart->set( $id, (string) $request->get_param( 'product' ), (int) $request->get_param( 'quantity' ), 'buy_now' === $mode );

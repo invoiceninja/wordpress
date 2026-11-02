@@ -398,7 +398,13 @@ class SettingsController extends BaseController
             'callback' => function() 
             { 
                $value = get_option( 'invoiceninja_online_purchases', 'disabled' );
-               
+               if ( \InvoiceNinja\Plugin::booted() ) {
+                  // 2.0 owns this setting now (Settings > Store); keep the stored value when this form is saved.
+                  echo '<input type="hidden" name="invoiceninja_online_purchases" value="' . esc_attr( $value ) . '"/>';
+                  echo '<a href="' . esc_url( admin_url( 'admin.php?page=invoiceninja-settings&tab=store' ) ) . '">' . esc_html__( 'Set in Invoice Ninja > Settings > Store', 'invoiceninja' ) . '</a>';
+                  return;
+               }
+
                echo '<select name="invoiceninja_online_purchases">
                   <option value="disabled" ' . ( $value == 'disabled' ? 'SELECTED' : '' ) . '>Disabled</option>
                   <option value="single" ' . ( $value == 'single' ? 'SELECTED' : '' ) . '>Single [Buy Now]</option>
