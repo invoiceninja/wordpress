@@ -268,6 +268,13 @@ final class ConnectionService {
 	 * Remove the token and stop syncing.
 	 */
 	public function disconnect(): void {
+		/**
+		 * Fires before disconnecting, while the token still works: modules undo what they set
+		 * up in Invoice Ninja (webhooks, subscription settings).
+		 *
+		 * @since 2.0.0
+		 */
+		do_action( 'invoiceninja_before_disconnect' );
 		$this->credentials->clearToken();
 		$this->state->markDisconnected();
 		$this->logger->info( 'connection', 'Disconnected from Invoice Ninja' );
