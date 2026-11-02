@@ -330,5 +330,3 @@ Open **Status → Checks**. Most problems come with a one-click fix. You can als
   <a href="https://invoiceninja.com/terms/">Terms</a> ·
   <a href="https://invoiceninja.com/privacy-policy/">Privacy</a>
 </p>
-
-<p align="center">Made by <a href="https://hillel.dev">Hillel Coren</a> and <a href="https://www.oliver-flueckiger.ch">Oliver Flueckiger</a>. GPLv2 or later.</p>
