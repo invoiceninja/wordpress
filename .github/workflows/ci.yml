@@ -87,18 +87,33 @@ jobs:
         run: vendor/bin/phpunit --testsuite unit
 
   e2e:
-    name: E2E (${{ matrix.image }}${{ matrix.wp && format(', WP {0}', matrix.wp) || ', latest WP' }})
+    name: E2E ${{ matrix.shard }} (${{ matrix.image }}${{ matrix.wp && format(', WP {0}', matrix.wp) || ', latest WP' }})
     runs-on: ubuntu-latest
     timeout-minutes: 30
     strategy:
       fail-fast: false
+      # The flows share one WordPress per job, so they're split into shards that run as parallel jobs.
       matrix:
+        image: [php8.1-apache, php8.3-apache, php8.4-apache]
+        wp: ['']  # Latest; the WP 6.7 entries below are extra jobs.
+        shard: [core, modules]
         include:
-          - image: php8.1-apache
-          - image: php8.3-apache
-          - image: php8.4-apache
+          - shard: core
+            suites: v1,v2
+          - shard: modules
+            suites: portal,forms,subscriptions,webhooks
           - image: php8.1-apache
             wp: '6.7'
+            shard: core
+            suites: v1,v2
+          - image: php8.1-apache
+            wp: '6.7'
+            shard: modules
+            suites: portal,forms,subscriptions,webhooks
+          - image: php8.3-apache
+            shard: woocommerce
+            suites: woocommerce
+            woocommerce: '11.2.1'
     env:
       WP_IMAGE_TAG: ${{ matrix.image }}
       WP_VERSION: ${{ matrix.wp }}
@@ -115,8 +130,11 @@ jobs:
         run: |
           $COMPOSE pull --quiet
           $COMPOSE up -d --wait
+      - name: Install WooCommerce
+        if: matrix.woocommerce
+        run: $COMPOSE run --rm -T cli plugin install woocommerce --version=${{ matrix.woocommerce }}
       - name: Run end-to-end flows
-        run: python3 tests/flows/run.py
+        run: python3 tests/flows/run.py suite:${{ matrix.suites }}
       - name: Show logs on failure
         if: failure()
         run: |

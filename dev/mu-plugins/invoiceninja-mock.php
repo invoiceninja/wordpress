@@ -53,6 +53,12 @@ function in_mock_clients() {
 }
 
 // The fake host doesn't exist in DNS; give the plugin's private-network check a public address.
+// The flow tests run every queued job themselves; Action Scheduler's loopback runner would
+// otherwise run the same job at the same moment in another request (run.py sets this).
+add_filter( 'action_scheduler_allow_async_request_runner', function ( $allow ) {
+    return get_option( 'in_mock_no_async' ) ? false : $allow;
+} );
+
 add_filter( 'invoiceninja_pre_resolve_host', function ( $ips, $host ) {
     return $host === 'in.test' ? [ '93.184.216.34' ] : $ips;
 }, 10, 2 );

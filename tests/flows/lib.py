@@ -4,6 +4,7 @@ The tests drive a real WordPress (dev/docker-compose.yml) over HTTP and WP-CLI,
 with the Invoice Ninja API faked by dev/mu-plugins/invoiceninja-mock.php.
 """
 
+import atexit
 import http.cookiejar
 import json
 import os
@@ -34,10 +35,29 @@ def check(condition, message, detail=''):
 
 # ---------- docker / wp-cli ----------
 
+_cli = {}
+
+
+def _cli_container():
+    """One WP-CLI container for the whole run: starting one per command costs about a second each."""
+    if 'name' not in _cli:
+        name = 'invoiceninja-flows-cli-%d' % os.getpid()
+        # Sleeps at most 3 hours and removes itself, so a killed run leaves nothing behind for long.
+        subprocess.run(COMPOSE + ['run', '-d', '--rm', '--name', name, '--entrypoint', 'sleep', 'cli', '10800'],
+                       capture_output=True, text=True, cwd=ROOT, check=True)
+        atexit.register(lambda: subprocess.run(['docker', 'rm', '-f', name], capture_output=True))
+        _cli['name'] = name
+    return _cli['name']
+
+
+def _wp_run(args):
+    return subprocess.run(['docker', 'exec', '-i', _cli_container(), 'wp'] + list(args),
+                          capture_output=True, text=True, cwd=ROOT, stdin=subprocess.DEVNULL)
+
+
 def wp(*args, check_ok=True):
     """Run a WP-CLI command in the cli container and return stdout."""
-    result = subprocess.run(COMPOSE + ['run', '--rm', '-T', 'cli'] + list(args),
-                            capture_output=True, text=True, cwd=ROOT)
+    result = _wp_run(args)
     if check_ok and result.returncode != 0:
         raise Failure('wp ' + ' '.join(args) + ' failed', result.stderr[-2000:] + result.stdout[-2000:])
     return result.stdout.strip()
@@ -45,8 +65,7 @@ def wp(*args, check_ok=True):
 
 def wp_ok(*args):
     """True if the WP-CLI command exits successfully."""
-    return subprocess.run(COMPOSE + ['run', '--rm', '-T', 'cli'] + list(args),
-                          capture_output=True, text=True, cwd=ROOT).returncode == 0
+    return _wp_run(args).returncode == 0
 
 
 def wp_eval(php):

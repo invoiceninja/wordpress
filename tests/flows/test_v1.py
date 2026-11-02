@@ -264,6 +264,7 @@ def inventory_tracking_limits_and_out_of_stock():
     finally:
         option('in_mock_track_inventory', '0')
         option('invoiceninja_api_token', 'goodtoken1234567893')
+        wp_eval("do_action('invoiceninja_connected', array());")  # the cached profile must forget inventory tracking too
 
 
 @test
