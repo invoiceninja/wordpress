@@ -264,3 +264,22 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
 
     return in_mock_response( [ 'message' => 'Mock: unhandled route ' . $route ], 404 );
 }, 10, 3 );
+
+// Dev only: the latest code emailed to an address, for the browser smoke test.
+add_action( 'rest_api_init', function () {
+    register_rest_route( 'in-mock/v1', '/code', [
+        'methods'             => 'GET',
+        'permission_callback' => '__return_true',
+        'callback'            => function ( WP_REST_Request $request ) {
+            $email = strtolower( (string) $request->get_param( 'email' ) );
+            $code  = '';
+            foreach ( file_exists( in_mock_log_path() ) ? file( in_mock_log_path() ) : [] as $line ) {
+                $entry = json_decode( $line, true );
+                if ( is_array( $entry ) && ( $entry['event'] ?? '' ) === 'mail' && false !== strpos( strtolower( wp_json_encode( $entry['to'] ) ), $email ) && preg_match( '/^(\d{6}) is your/', (string) $entry['subject'], $m ) ) {
+                    $code = $m[1];
+                }
+            }
+            return [ 'code' => $code ];
+        },
+    ] );
+} );

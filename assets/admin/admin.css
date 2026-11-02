@@ -168,3 +168,5 @@
 	.in-orders tr, .in-orders td { display: block; width: auto; }
 	.in-orders .in-num { text-align: start; }
 }
+
+.in-lead { font-size: 15px; max-width: 760px; }

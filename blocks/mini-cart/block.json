@@ -1,0 +1,35 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/mini-cart",
+	"title": "Mini Cart",
+	"category": "invoiceninja",
+	"description": "A cart button with the number of items, for your header.",
+	"icon": "cart",
+	"keywords": [
+		"cart",
+		"header"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {
+		"label": {
+			"type": "string",
+			"default": ""
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": false,
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	}
+}

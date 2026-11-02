@@ -51,12 +51,35 @@ final class Options {
 			'abandoned_days'    => 14,
 			'abandoned_action'  => 'cancel',
 		),
+		'pages'                    => array(
+			'shop'     => 0,
+			'checkout' => 0,
+			'status'   => 0,
+			'account'  => 0,
+		),
 		'email'                    => array(
 			'sender_name' => '',
 			'from'        => '',
 			'reply_to'    => '',
 		),
 	);
+
+	/**
+	 * Setting defaults, including those modules add.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public static function defaults(): array {
+		/**
+		 * Setting defaults. Modules add their own group; the type of each default is what
+		 * a saved value is cast to.
+		 *
+		 * @since 2.0.0
+		 * @param array<string, mixed> $defaults Defaults.
+		 */
+		$defaults = apply_filters( 'invoiceninja_setting_defaults', self::SETTING_DEFAULTS );
+		return is_array( $defaults ) ? $defaults + self::SETTING_DEFAULTS : self::SETTING_DEFAULTS;
+	}
 
 	/**
 	 * Read a raw option.
@@ -162,7 +185,7 @@ final class Options {
 	 */
 	public function settings(): array {
 		$stored = $this->get( 'settings', array() );
-		return self::merge( self::SETTING_DEFAULTS, is_array( $stored ) ? $stored : array() );
+		return self::merge( self::defaults(), is_array( $stored ) ? $stored : array() );
 	}
 
 	/**
@@ -189,7 +212,7 @@ final class Options {
 	 * @return array<string, mixed> The saved settings.
 	 */
 	public function saveSettings( array $changes ): array {
-		$clean = self::sanitize( self::SETTING_DEFAULTS, self::merge( $this->settings(), $changes ) );
+		$clean = self::sanitize( self::defaults(), self::merge( $this->settings(), $changes ) );
 		$this->set( 'settings', $clean );
 		return $clean;
 	}

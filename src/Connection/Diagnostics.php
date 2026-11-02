@@ -248,7 +248,14 @@ final class Diagnostics {
 			);
 		}
 
-		usort( $checks, static fn( array $a, array $b ): int => self::ORDER[ $a['status'] ] <=> self::ORDER[ $b['status'] ] );
+		/**
+		 * Modules add checks: arrays of id, label, status (pass, warn, fail, info, skip), detail, action.
+		 *
+		 * @since 2.0.0
+		 * @param array<int, array<string, string>> $checks Checks.
+		 */
+		$checks = (array) apply_filters( 'invoiceninja_diagnostics_checks', $checks );
+		usort( $checks, static fn( array $a, array $b ): int => ( self::ORDER[ $a['status'] ] ?? 9 ) <=> ( self::ORDER[ $b['status'] ] ?? 9 ) );
 		$counts = array_fill_keys( array_keys( self::ORDER ), 0 );
 		foreach ( $checks as $check ) {
 			++$counts[ $check['status'] ];

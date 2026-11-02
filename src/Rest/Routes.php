@@ -21,7 +21,7 @@ final class Routes {
 
 	public const NS = 'invoiceninja/v1';
 
-	public const PUBLIC_ROUTES = array( '/ping', '/cart', '/cart/items', '/checkout/start', '/checkout/confirm', '/orders/(?P<number>[A-Za-z0-9-]+)' );
+	public const PUBLIC_ROUTES = array( '/ping', '/cart', '/cart/items', '/checkout/start', '/checkout/confirm', '/orders/(?P<number>[A-Za-z0-9-]+)', '/orders/find', '/orders/last', '/orders/last/change' );
 
 	/**
 	 * Constructor.
@@ -45,6 +45,9 @@ final class Routes {
 		$this->route( '/cart/items', 'POST', array( $this, 'setCartItem' ), $same_site );
 		$this->route( '/checkout/start', 'POST', array( $this, 'checkoutStart' ), $same_site );
 		$this->route( '/checkout/confirm', 'POST', array( $this, 'checkoutConfirm' ), $same_site );
+		$this->route( '/orders/find', 'POST', array( $this, 'findOrder' ), $same_site );
+		$this->route( '/orders/last', 'GET', array( $this, 'lastOrder' ), '__return_true' );
+		$this->route( '/orders/last/change', 'POST', array( $this, 'changeLastOrder' ), $same_site );
 		$this->route( '/orders/(?P<number>[A-Za-z0-9-]+)', 'GET', array( $this, 'orderStatus' ), '__return_true' );
 
 		$this->route( '/connection', 'GET', array( $this, 'getConnection' ), $view );
@@ -65,13 +68,81 @@ final class Routes {
 		$this->route( '/logs', 'DELETE', array( $this, 'clearLogs' ), $manage );
 
 		$this->route( '/admin/orders', 'GET', array( $this, 'adminOrders' ), $view );
+		$this->route( '/admin/products', 'GET', array( $this, 'adminProducts' ), static fn() => current_user_can( 'edit_posts' ) );
+		$this->route( '/pages', 'POST', array( $this, 'createPages' ), $manage );
+		$this->route( '/store/display', 'POST', array( $this, 'switchDisplay' ), $manage );
 		$this->route( '/admin/orders/(?P<id>\\d+)/(?P<action>resend|retry|cancel)', 'POST', array( $this, 'adminOrderAction' ), $manage );
+		$this->route( '/admin/orders/bulk', 'POST', array( $this, 'adminOrdersBulk' ), $manage );
 
 		$this->route( '/sync/products', 'GET', array( $this, 'syncStatus' ), $view );
 		$this->route( '/sync/products', 'POST', array( $this, 'syncProducts' ), $manage );
 
 		$this->route( '/mail/test', 'POST', array( $this, 'mailTest' ), $manage );
 		$this->route( '/mail/confirm', 'POST', array( $this, 'mailConfirm' ), $manage );
+
+		/**
+		 * Modules add their routes here with Routes::add().
+		 *
+		 * @since 2.0.0
+		 * @param Routes $routes Routes.
+		 */
+		do_action( 'invoiceninja_rest_routes', $this );
+	}
+
+	/**
+	 * Add a module's route.
+	 *
+	 * @param string   $path     Path under invoiceninja/v1.
+	 * @param string   $method   Method(s).
+	 * @param callable $callback Handler.
+	 * @param string   $access   view, manage, manage_site, logged_in, same_site (public writes from this site's pages) or public (reads, and server-to-server calls that check their own signature).
+	 * @throws \LogicException On an unknown access level.
+	 */
+	public function add( string $path, string $method, callable $callback, string $access ): void {
+		$permissions = array(
+			'view'        => static fn(): bool => current_user_can( Capabilities::VIEW ),
+			'manage'      => static fn(): bool => current_user_can( Capabilities::MANAGE ),
+			'manage_site' => static fn(): bool => current_user_can( 'manage_options' ),
+			'logged_in'   => static fn(): bool => \InvoiceNinja\Commerce\Checkout::userId() > 0,
+			'same_site'   => array( $this, 'sameSite' ),
+			'public'      => '__return_true',
+		);
+		if ( ! isset( $permissions[ $access ] ) ) {
+			throw new \LogicException( 'Unknown access ' . esc_html( $access ) );
+		}
+		register_rest_route(
+			self::NS,
+			$path,
+			array(
+				'methods'             => $method,
+				'callback'            => $callback,
+				'permission_callback' => $permissions[ $access ],
+			)
+		);
+	}
+
+	/**
+	 * The client IP for rate limits (for modules).
+	 */
+	public static function clientIp(): string {
+		return Plugin::clientIp();
+	}
+
+	/**
+	 * An error reply (for modules).
+	 *
+	 * @param string $code    Code.
+	 * @param string $message Message.
+	 * @param int    $status  HTTP status.
+	 */
+	public static function fail( string $code, string $message, int $status ): \WP_REST_Response {
+		return new \WP_REST_Response(
+			array(
+				'code'    => $code,
+				'message' => $message,
+			),
+			$status
+		);
 	}
 
 	/**
@@ -171,6 +242,97 @@ final class Routes {
 	public function checkoutConfirm( \WP_REST_Request $request ): \WP_REST_Response {
 		$result = $this->plugin->checkout->confirm( $this->buyer( $request ), (string) $request->get_param( 'code' ), (bool) $request->get_param( 'remember' ), self::ip() );
 		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
+	}
+
+	/**
+	 * POST /orders/find {number, email} — always the same reply.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function findOrder( \WP_REST_Request $request ): \WP_REST_Response {
+		$this->plugin->checkout->findOrder( sanitize_text_field( (string) $request->get_param( 'number' ) ), sanitize_email( (string) $request->get_param( 'email' ) ), self::ip() );
+		return new \WP_REST_Response( array( 'ok' => true ) );
+	}
+
+	/**
+	 * GET /orders/last — this browser's latest order (from its HttpOnly cookie).
+	 */
+	public function lastOrder(): \WP_REST_Response {
+		nocache_headers();
+		$order = $this->plugin->checkout->lastOrder();
+		if ( null === $order ) {
+			return new \WP_REST_Response( array( 'ok' => false ), 200 );
+		}
+		return new \WP_REST_Response( array( 'ok' => true ) + $this->plugin->checkout->publicView( $order, true ) );
+	}
+
+	/**
+	 * POST /orders/last/change — cancel the unpaid latest order and restore its cart.
+	 */
+	public function changeLastOrder(): \WP_REST_Response {
+		$result = $this->plugin->checkout->changeLastOrder();
+		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 409 );
+	}
+
+	/**
+	 * GET /admin/products — synced products for the block editor's product picker.
+	 */
+	public function adminProducts(): \WP_REST_Response {
+		$posts = get_posts(
+			array(
+				'post_type'   => \InvoiceNinja\Catalog\ProductSync::POST_TYPE,
+				'post_status' => array( 'publish', 'draft' ),
+				'numberposts' => 500, // phpcs:ignore WordPress.WP.PostsPerPage.posts_per_page_numberposts -- admin-only picker list.
+				'orderby'     => 'title',
+				'order'       => 'ASC',
+			)
+		);
+		return new \WP_REST_Response(
+			array_values(
+				array_filter(
+					array_map(
+						static fn( \WP_Post $p ): array => array(
+							'id'    => (string) get_post_meta( $p->ID, 'product_id', true ),
+							'title' => wp_strip_all_tags( get_the_title( $p ) ),
+						),
+						$posts
+					),
+					static fn( array $p ): bool => '' !== $p['id']
+				)
+			)
+		);
+	}
+
+	/**
+	 * POST /store/display {action: preview|blocks|legacy}.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function switchDisplay( \WP_REST_Request $request ): \WP_REST_Response {
+		$action = (string) $request->get_param( 'action' );
+		if ( ! in_array( $action, array( 'preview', 'blocks', 'legacy' ), true ) ) {
+			return $this->error( 'invalid_action', __( 'Unknown display action.', 'invoiceninja' ), 400 );
+		}
+		return new \WP_REST_Response( $this->plugin->store->switchDisplay( $action ) );
+	}
+
+	/**
+	 * POST /pages {pages: [shop, checkout, status, account]} — create missing store pages.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function createPages( \WP_REST_Request $request ): \WP_REST_Response {
+		$which = array_intersect( array_map( 'strval', (array) $request->get_param( 'pages' ) ), array( 'shop', 'checkout', 'status', 'account' ) );
+		$ids   = $this->plugin->store->createPages( $which ? array_values( $which ) : array( 'shop', 'checkout', 'status' ) );
+		$urls  = array();
+		foreach ( $ids as $key => $id ) {
+			$urls[ $key ] = array(
+				'id'   => $id,
+				'url'  => (string) get_permalink( $id ),
+				'edit' => (string) get_edit_post_link( $id, 'raw' ),
+			);
+		}
+		return new \WP_REST_Response( array( 'pages' => $urls ) );
 	}
 
 	/**
@@ -418,6 +580,7 @@ final class Routes {
 			array(
 				'status'   => (string) $request->get_param( 'status' ),
 				'search'   => sanitize_text_field( (string) $request->get_param( 'search' ) ),
+				'month'    => sanitize_text_field( (string) $request->get_param( 'month' ) ),
 				'page'     => (int) $request->get_param( 'page' ),
 				'per_page' => 20,
 			)
@@ -497,6 +660,42 @@ final class Routes {
 		}
 		$web = \InvoiceNinja\Api\BaseUrl::isHosted( $base ) ? 'https://app.invoicing.co' : $base;
 		return static fn( string $path ): string => $web . '/#/' . $path . ( str_starts_with( $path, 'invoices/' ) ? '/edit' : '' );
+	}
+
+	/**
+	 * POST /admin/orders/bulk {action: resend|cancel, ids: [], email: bool}.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function adminOrdersBulk( \WP_REST_Request $request ): \WP_REST_Response {
+		$action = (string) $request->get_param( 'action' );
+		if ( ! in_array( $action, array( 'resend', 'cancel' ), true ) ) {
+			return $this->error( 'invalid_action', __( 'Unknown bulk action.', 'invoiceninja' ), 400 );
+		}
+		$done   = 0;
+		$failed = array();
+		foreach ( array_slice( array_map( 'intval', (array) $request->get_param( 'ids' ) ), 0, 50 ) as $id ) {
+			$single = new \WP_REST_Request( 'POST' );
+			$single->set_param( 'id', $id );
+			$single->set_param( 'action', $action );
+			$single->set_param( 'email', (bool) $request->get_param( 'email' ) );
+			$response = $this->adminOrderAction( $single );
+			if ( 200 === $response->get_status() ) {
+				++$done;
+			} else {
+				$data     = (array) $response->get_data();
+				$failed[] = array(
+					'id'      => $id,
+					'message' => (string) ( $data['message'] ?? '' ),
+				);
+			}
+		}
+		return new \WP_REST_Response(
+			array(
+				'done'   => $done,
+				'failed' => $failed,
+			)
+		);
 	}
 
 	/**

@@ -849,3 +849,135 @@ def final_review_regressions():
     m = Browser().login('manager1', 'manager1').rest_nonce()
     status, r = m.api('POST', '/settings', {'log_level': 'info', 'notifications': {'attention': True}})
     check(status == 200, 'a shop manager saves Advanced settings without admin-only fields', (status, r))
+
+
+# ---------- M2: store front end ----------
+
+def blocks_store():
+    store_ready()
+    b = admin()
+    b.api('POST', '/settings', {'store': {'mode': 'cart', 'require_login': False}})
+    status, r = b.api('POST', '/store/display', {'action': 'blocks'})
+    check(status == 200 and r['ok'], 'switched to blocks', r)
+    status, r = b.api('POST', '/pages', {'pages': ['shop', 'checkout', 'status']})
+    check(status == 200 and set(r['pages']) == {'shop', 'checkout', 'status'}, 'store pages exist', r)
+    return b, r['pages']
+
+
+@test
+def store_pages_blocks_and_shortcodes_render():
+    b, pages = blocks_store()
+    try:
+        _, _, html = Browser().get(pages['shop']['url'].split('8089', 1)[-1])
+        check('invoiceninja-products__grid' in html and 'Widget' in html, 'Shop page lists synced products', html[:300])
+        check('data-invoiceninja-add="P1"' in html, 'with Add to cart', html[:300])
+        check('store.js' in html and 'window.invoiceNinjaStore' in html, 'store script loads on store pages')
+        check('invoiceninja-cart' not in html, 'the 1.x cart is not injected in blocks display')
+        _, _, home = Browser().get('/')
+        check('store.js' not in home and 'store.css' not in home, 'no store assets on pages without store blocks')
+        _, _, checkout = Browser().get(pages['checkout']['url'].split('8089', 1)[-1])
+        check('data-invoiceninja-checkout' in checkout, 'Checkout page renders the checkout block')
+        out = wp_eval("echo do_shortcode('[invoiceninja_product product_id=\"P1\" show=\"price\"]');")
+        check('invoiceninja-price' in out, 'shortcodes match the blocks', out)
+        status, products = b.api('GET', '/admin/products')
+        check(status == 200 and any(p['id'] == 'P1' for p in products), 'product picker list for the editor', products)
+        status, _ = Browser().api('GET', '/admin/products')
+        check(status in (401, 403), 'product picker needs a logged-in editor', status)
+    finally:
+        b.api('POST', '/store/display', {'action': 'legacy'})
+
+
+@test
+def status_links_last_order_change_and_find():
+    b, pages = blocks_store()
+    try:
+        s = shopper()
+        email = 'banner.buyer@example.com'
+        status, r = checkout(s, email)
+        check(status == 200 and r['status'] == 'awaiting_payment', 'order placed', r)
+        check('/order-status/?order=' in r['status_url'] and '#key=' in r['status_url'], 'status link opens the Order Status page', r['status_url'])
+        names = [c.name for c in s.jar]
+        check('invoiceninja_order' in names and 'invoiceninja_order_flag' in names, 'the browser remembers its latest order')
+        _, last = s.api('GET', '/orders/last')
+        check(last['ok'] and last['number'] == r['number'] and last['pay_link'], 'latest order with its payment link', last)
+        _, nobody = Browser().api('GET', '/orders/last')
+        check(not nobody['ok'], 'another browser sees nothing', nobody)
+        # Back from paying without paying: change the order
+        status, changed = s.api('POST', '/orders/last/change', {})
+        check(status == 200 and changed['ok'], 'Change order works', changed)
+        _, cartnow = s.api('GET', '/cart')
+        check([l['product'] for l in cartnow['lines']] == ['P1'] and cartnow['lines'][0]['quantity'] == 2, 'items are back in the cart', cartnow)
+        o = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['status'];" % r['number'])
+        check(o == 'cancelled', 'and the old order is cancelled', o)
+        # Find my order: same reply either way, link emailed only on a match
+        reset_mock_log()
+        _, a = Browser().api('POST', '/orders/find', {'number': r['number'], 'email': email})
+        _, z = Browser().api('POST', '/orders/find', {'number': r['number'], 'email': 'wrong@example.com'})
+        check(a == z == {'ok': True}, 'the same reply for a match and a miss', (a, z))
+        check(len(mails(email)) == 1 and not mails('wrong@example.com'), 'link emailed only to the buyer')
+        # Old-style link redirects to the page
+        st, loc, _ = Browser().get('/?invoiceninja_order=' + r['number'])
+        check(st in (301, 302) and 'order-status' in (loc or ''), 'old status links redirect to the Order Status page', (st, loc))
+    finally:
+        b.api('POST', '/store/display', {'action': 'legacy'})
+
+
+@test
+def welcome_display_switch_and_orders_bulk():
+    store_ready()
+    b = admin()
+    try:
+        # A 1.x products page and the welcome flag, as left by the upgrade
+        page = wp_eval("$id = wp_insert_post(array('post_type' => 'page', 'post_status' => 'publish', 'post_title' => 'Products', 'post_content' => '<p>1.x grid</p>')); update_option('invoiceninja_product_page_id', $id); update_option('invoiceninja_welcome_pending', 1); echo $id;")
+        b.api('POST', '/store/display', {'action': 'legacy'})
+        st, loc, _ = b.get('/wp-admin/index.php')
+        check(st == 302 and 'invoiceninja-welcome' in (loc or ''), 'the first admin visit after the upgrade opens Welcome', (st, loc))
+        st, loc, html = b.get('/wp-admin/admin.php?page=invoiceninja-welcome')
+        check(st == 200 and 'data-screen="welcome"' in html, 'Welcome renders')
+        st2, loc2, _ = b.get('/wp-admin/index.php')
+        check(st2 == 200, 'and only once', (st2, loc2))
+        _, r = b.api('POST', '/store/display', {'action': 'preview'})
+        check(r['ok'] and 'preview=true' in r['url'], 'a draft preview with blocks', r)
+        _, r = b.api('POST', '/store/display', {'action': 'blocks'})
+        check(r['ok'] and r['pages']['checkout'] and r['pages']['status'], 'switching creates Checkout and Order Status', r)
+        content = wp_eval("echo get_post_field('post_content', %s);" % page)
+        check('wp:invoiceninja/products' in content, 'the Shop page now holds the Products block', content)
+        wp_eval('InvoiceNinja\\Controllers\\ProductController::loadProducts();')
+        check('wp:invoiceninja/products' in wp_eval("echo get_post_field('post_content', %s);" % page), 'a 1.x import no longer overwrites it')
+        _, r = b.api('POST', '/store/display', {'action': 'legacy'})
+        check('1.x grid' in wp_eval("echo get_post_field('post_content', %s);" % page), 'switching back restores the 1.x page')
+        # Bulk resend and the month filter
+        _, a = checkout(shopper(), 'bulk.one@example.com')
+        _, c = checkout(shopper(), 'bulk.two@example.com')
+        ids = [wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['id'];" % o['number']) for o in (a, c)]
+        reset_mock_log()
+        _, r = b.api('POST', '/admin/orders/bulk', {'action': 'resend', 'ids': [int(i) for i in ids]})
+        check(r['done'] == 2 and len([m for m in mails() if 'complete your payment' in m['subject']]) == 2, 'bulk resend', r)
+        import datetime
+        month = datetime.datetime.utcnow().strftime('%Y-%m')
+        _, r = b.api('GET', '/admin/orders?month=' + month)
+        _, old = b.api('GET', '/admin/orders?month=2001-01')
+        check(r['total'] >= 2 and old['total'] == 0, 'month filter', (r['total'], old['total']))
+    finally:
+        b.api('POST', '/store/display', {'action': 'legacy'})
+        wp('option', 'delete', 'invoiceninja_welcome_pending', check_ok=False)
+
+
+@test
+def browser_store_smoke():
+    """Real browser (Playwright image in Docker) through shop, cart, code, pay link and status. Opt-in: BROWSER=1."""
+    import os
+    import subprocess
+    if os.environ.get('BROWSER') != '1':
+        return
+    b, pages = blocks_store()
+    try:
+        path = lambda key: '/' + pages[key]['url'].split('8089/', 1)[-1]
+        from lib import ROOT
+        cmd = ['docker', 'run', '--rm', '--network', 'container:invoiceninja-dev-wp-loopback-1',
+               '-v', os.path.join(ROOT, 'tests', 'browser') + ':/t:ro', 'mcr.microsoft.com/playwright/python:v1.48.0-jammy',
+               'sh', '-c', 'pip install -q playwright==1.48.0 >/dev/null 2>&1 && python /t/store_smoke.py "$0" "$1" "$2"', 'http://localhost:8089', path('shop'), path('checkout')]
+        result = subprocess.run(cmd, capture_output=True, text=True, timeout=600)
+        check(result.returncode == 0 and 'browser smoke ok' in result.stdout, 'store works in a real browser', (result.stdout[-1500:], result.stderr[-3000:]))
+    finally:
+        b.api('POST', '/store/display', {'action': 'legacy'})

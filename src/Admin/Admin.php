@@ -25,6 +25,7 @@ final class Admin {
 		'invoiceninja-orders'   => 'orders',
 		'invoiceninja-settings' => 'settings',
 		'invoiceninja-status'   => 'status',
+		'invoiceninja-welcome'  => 'welcome',
 	);
 
 	/**
@@ -41,6 +42,7 @@ final class Admin {
 		add_action( 'admin_menu', array( $this, 'menu' ) );
 		add_action( 'admin_enqueue_scripts', array( $this, 'assets' ) );
 		add_filter( 'parent_file', array( $this, 'parentFile' ) );
+		add_action( 'admin_init', array( $this, 'welcomeRedirect' ) );
 		add_filter( 'plugin_action_links_' . plugin_basename( $this->plugin->file ), array( $this, 'actionLinks' ) );
 	}
 
@@ -67,6 +69,7 @@ final class Admin {
 		add_submenu_page( 'invoiceninja', __( 'Orders', 'invoiceninja' ), __( 'Orders', 'invoiceninja' ), Capabilities::VIEW, 'invoiceninja-orders', array( $this, 'render' ) );
 		add_submenu_page( 'invoiceninja', __( 'Settings', 'invoiceninja' ), __( 'Settings', 'invoiceninja' ), Capabilities::MANAGE, 'invoiceninja-settings', array( $this, 'render' ) );
 		add_submenu_page( 'invoiceninja', __( 'Status', 'invoiceninja' ), __( 'Status', 'invoiceninja' ), Capabilities::VIEW, 'invoiceninja-status', array( $this, 'render' ) );
+		add_submenu_page( 'options.php', __( 'Welcome to Invoice Ninja 2.0', 'invoiceninja' ), __( 'Welcome', 'invoiceninja' ), Capabilities::MANAGE, 'invoiceninja-welcome', array( $this, 'render' ) );
 	}
 
 	/**
@@ -102,6 +105,28 @@ final class Admin {
 		);
 		wp_set_script_translations( 'invoiceninja-admin', 'invoiceninja' );
 		wp_add_inline_script( 'invoiceninja-admin', 'window.invoiceNinjaAdmin = ' . wp_json_encode( $this->data( $screen ) ) . ';', 'before' );
+		/**
+		 * Modules enqueue admin scripts here (depending on invoiceninja-admin) that add
+		 * Settings tabs through window.invoiceNinjaAdminUI.addTab().
+		 *
+		 * @since 2.0.0
+		 * @param string $screen Screen.
+		 */
+		do_action( 'invoiceninja_admin_assets', $screen );
+	}
+
+	/**
+	 * After an upgrade from 1.x, show the Welcome screen once to the first admin who visits.
+	 */
+	public function welcomeRedirect(): void {
+		global $pagenow;
+		// Only from where admins land after an update, never from a page they chose.
+		if ( ! $this->plugin->options->get( 'welcome_pending' ) || wp_doing_ajax() || ! current_user_can( Capabilities::MANAGE ) || isset( $_GET['activate-multi'] ) || ! in_array( $pagenow, array( 'index.php', 'plugins.php', 'update-core.php' ), true ) ) { // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- read only.
+			return;
+		}
+		$this->plugin->options->delete( 'welcome_pending' );
+		wp_safe_redirect( admin_url( 'admin.php?page=invoiceninja-welcome' ) );
+		exit;
 	}
 
 	/**
@@ -110,7 +135,7 @@ final class Admin {
 	 * @param string $parent_file Parent file.
 	 */
 	public function parentFile( string $parent_file ): string {
-		return 'setup' === $this->currentScreen() ? 'invoiceninja' : $parent_file;
+		return in_array( $this->currentScreen(), array( 'setup', 'welcome' ), true ) ? 'invoiceninja' : $parent_file;
 	}
 
 	/**
@@ -130,7 +155,23 @@ final class Admin {
 	 */
 	private function currentScreen(): string {
 		$page = isset( $_GET['page'] ) ? sanitize_key( wp_unslash( $_GET['page'] ) ) : ''; // phpcs:ignore WordPress.Security.NonceVerification.Recommended -- choosing a screen.
-		return self::SCREENS[ $page ] ?? '';
+		return self::screens()[ $page ] ?? '';
+	}
+
+	/**
+	 * Our admin pages by slug, including modules' (which add a submenu page that calls
+	 * Admin::renderScreen() and a screen through window.invoiceNinjaAdminUI.addScreen()).
+	 *
+	 * @return array<string, string>
+	 */
+	public static function screens(): array {
+		/**
+		 * Admin pages (slug => screen name) that load the admin app.
+		 *
+		 * @since 2.0.0
+		 * @param array<string, string> $screens Screens.
+		 */
+		return (array) apply_filters( 'invoiceninja_admin_screens', self::SCREENS );
 	}
 
 	/**
@@ -160,6 +201,12 @@ final class Admin {
 			'userEmail'    => (string) $user->user_email,
 			'siteHost'     => (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ),
 			'upgradedFrom' => (string) $this->plugin->options->get( 'upgraded_from', '' ),
+			'welcome'      => 'welcome' === $screen ? array(
+				'display'        => (string) $this->plugin->options->setting( 'store.display' ),
+				'customisations' => $this->plugin->store->legacyCustomisations(),
+				'customers'      => (int) ( count_users()['total_users'] ?? 0 ),
+				'requireLogin'   => (bool) $this->plugin->options->setting( 'store.require_login' ),
+			) : null,
 			'can'          => array(
 				'manageSite' => current_user_can( 'manage_options' ),
 				'manage'     => current_user_can( Capabilities::MANAGE ),

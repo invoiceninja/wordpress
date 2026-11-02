@@ -309,6 +309,7 @@ final class Checkout {
 						),
 						'items'    => $summary['lines'],
 						'total'    => $summary['total'],
+						'currency' => $this->plugin->statics->currencyCode(),
 					)
 				);
 			} catch ( \RuntimeException $e ) {
@@ -326,6 +327,7 @@ final class Checkout {
 		}
 		// A new cart id, so buying the same items again later is a new order.
 		$this->cart->clear( $cart_id, (int) $order['id'] );
+		$this->rememberOrder( $order );
 		return array( 'ok' => true ) + $this->publicView( $order, true );
 	}
 
@@ -344,6 +346,7 @@ final class Checkout {
 			'invoice_number' => (string) $order['invoice_number'],
 			'items'          => array_map(
 				static fn( array $i ): array => array(
+					'product'  => (string) ( $i['product'] ?? '' ),
 					'title'    => (string) $i['title'],
 					'quantity' => (int) $i['quantity'],
 					'price'    => (float) $i['price'],
@@ -381,7 +384,107 @@ final class Checkout {
 	 */
 	public function statusUrl( array $order ): string {
 		// The key sits in the fragment, which browsers never send to servers, logs, analytics or caches.
-		return add_query_arg( 'invoiceninja_order', rawurlencode( (string) $order['number'] ), home_url( '/' ) ) . '#key=' . $this->key( (string) $order['number'] );
+		$page = $this->plugin->store->pageUrl( 'status' );
+		$base = '' !== $page ? add_query_arg( 'order', rawurlencode( (string) $order['number'] ), $page ) : add_query_arg( 'invoiceninja_order', rawurlencode( (string) $order['number'] ), home_url( '/' ) );
+		return $base . '#key=' . $this->key( (string) $order['number'] );
+	}
+
+	/**
+	 * Remember this browser's latest order for the banner and "back from paying" (30 days).
+	 * The key is in an HttpOnly cookie; a readable flag tells the script there's one.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 */
+	private function rememberOrder( array $order ): void {
+		if ( headers_sent() ) {
+			return;
+		}
+		$args = array(
+			'expires'  => time() + 30 * DAY_IN_SECONDS,
+			'path'     => COOKIEPATH ? COOKIEPATH : '/',
+			'domain'   => COOKIE_DOMAIN ? COOKIE_DOMAIN : '',
+			'secure'   => is_ssl(),
+			'samesite' => 'Lax',
+		);
+		setcookie( 'invoiceninja_order', $order['number'] . '.' . $this->key( (string) $order['number'] ), $args + array( 'httponly' => true ) );
+		setcookie( 'invoiceninja_order_flag', '1', $args + array( 'httponly' => false ) );
+	}
+
+	/**
+	 * This browser's latest order, if its cookie is valid.
+	 *
+	 * @return array<string, mixed>|null
+	 */
+	public function lastOrder(): ?array {
+		$cookie = isset( $_COOKIE['invoiceninja_order'] ) ? sanitize_text_field( wp_unslash( $_COOKIE['invoiceninja_order'] ) ) : '';
+		$parts  = explode( '.', $cookie );
+		if ( 2 !== count( $parts ) || ! preg_match( '/^[A-Za-z0-9-]{1,32}$/', $parts[0] ) ) {
+			return null;
+		}
+		$order = $this->orders->findBy( 'number', $parts[0] );
+		if ( null === $order || ! hash_equals( $this->key( (string) $order['number'] ), $parts[1] ) ) {
+			return null;
+		}
+		return $this->service->refreshStatus( $order );
+	}
+
+	/**
+	 * "Change order" after coming back from the payment page: cancel the unpaid order and
+	 * put its items back in the cart.
+	 *
+	 * @return array<string, mixed>
+	 */
+	public function changeLastOrder(): array {
+		$order = $this->lastOrder();
+		if ( null === $order || 'awaiting_payment' !== $order['status'] ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'not_changeable',
+				'message' => __( 'That order can no longer be changed. If you have paid, your receipt is on its way.', 'invoiceninja' ),
+			);
+		}
+		try {
+			$this->service->cancel( $order );
+		} catch ( \InvoiceNinja\Commerce\OrderConflict | \InvoiceNinja\Api\ApiException $e ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'not_changeable',
+				'message' => __( "We couldn't change that order right now. Please contact us.", 'invoiceninja' ),
+			);
+		}
+		$id = $this->cart->ensureId();
+		foreach ( (array) $order['items'] as $item ) {
+			$this->cart->set( $id, (string) $item['product'], (int) $item['quantity'] );
+		}
+		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s cancelled by the buyer (Change order)', $order['number'] ), array(), 'order', (string) $order['number'] );
+		return array( 'ok' => true );
+	}
+
+	/**
+	 * Find my order: email the status link when the number and email match. The reply is
+	 * the same either way, and requests are limited per address and per email.
+	 *
+	 * @param string $number Order number.
+	 * @param string $email  Email.
+	 * @param string $ip     Requester IP.
+	 */
+	public function findOrder( string $number, string $email, string $ip ): void {
+		$hour  = (int) floor( time() / HOUR_IN_SECONDS );
+		$email = EmailCode::normalize( $email );
+		if ( $this->plugin->options->increment( 'ctr_find_' . substr( md5( self::ipBucket( $ip ) ), 0, 16 ) . '_' . $hour ) > 10
+			|| $this->plugin->options->increment( 'ctr_findmail_' . substr( md5( $email ), 0, 16 ) . '_' . $hour ) > 3 ) {
+			return;
+		}
+		$order = $this->orders->findBy( 'number', strtoupper( trim( $number ) ) );
+		if ( null === $order || ! hash_equals( (string) $order['email'], $email ) ) {
+			return;
+		}
+		$this->plugin->mailer->send(
+			(string) $order['email'],
+			/* translators: %s: order number */
+			sprintf( __( 'Your link for order #%s', 'invoiceninja' ), $order['number'] ),
+			'<p>' . esc_html__( 'Here is the link to your order. It shows its status, and lets you pay while it is unpaid.', 'invoiceninja' ) . '</p><p><a href="' . esc_url( $this->statusUrl( $order ) ) . '">' . esc_html__( 'View your order', 'invoiceninja' ) . '</a></p><p style="color:#50575e;font-size:13px">' . esc_html__( "Didn't ask for this? You can ignore this email.", 'invoiceninja' ) . '</p>'
+		);
 	}
 
 	/**

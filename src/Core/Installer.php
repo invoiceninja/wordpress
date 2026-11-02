@@ -83,6 +83,12 @@ final class Installer {
 		dbDelta( Logger::schema() );
 		dbDelta( \InvoiceNinja\Sync\Mapping::schema() );
 		dbDelta( \InvoiceNinja\Commerce\Orders::schema() );
+		/**
+		 * Modules create or update their tables here (dbDelta is loaded).
+		 *
+		 * @since 2.0.0
+		 */
+		do_action( 'invoiceninja_create_tables' );
 	}
 
 	/**
@@ -147,6 +153,7 @@ final class Installer {
 					)
 				);
 				$this->logger->info( 'upgrade', sprintf( 'Kept the 1.x store settings: %s, login required, legacy display', $mode ) );
+				$this->options->set( 'welcome_pending', 1 );
 			},
 			8 => static function (): void {
 				// Orders gained placed_at; createTables() above added it.

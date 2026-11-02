@@ -247,7 +247,7 @@ final class Orders {
 	/**
 	 * List orders for the admin screen, newest first.
 	 *
-	 * @param array{status?: string, search?: string, page?: int, per_page?: int} $filters Filters.
+	 * @param array{status?: string, search?: string, month?: string, page?: int, per_page?: int} $filters Filters.
 	 * @return array{items: list<array<string, mixed>>, total: int, counts: array<string, int>}
 	 */
 	public function list( array $filters = array() ): array {
@@ -260,6 +260,12 @@ final class Orders {
 		} elseif ( ! empty( $filters['status'] ) && in_array( $filters['status'], self::STATUSES, true ) ) {
 			$where[]  = 'status = %s';
 			$params[] = $filters['status'];
+		}
+		if ( ! empty( $filters['month'] ) && preg_match( '/^(\d{4})-(\d{2})$/', (string) $filters['month'], $m ) ) {
+			$start    = sprintf( '%04d-%02d-01 00:00:00', (int) $m[1], (int) $m[2] );
+			$where[]  = 'created_at >= %s AND created_at < %s';
+			$params[] = $start;
+			$params[] = gmdate( 'Y-m-d H:i:s', (int) strtotime( $start . ' UTC +1 month' ) );
 		}
 		if ( ! empty( $filters['search'] ) ) {
 			$like     = '%' . $wpdb->esc_like( (string) $filters['search'] ) . '%';

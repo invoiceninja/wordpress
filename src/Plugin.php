@@ -73,6 +73,10 @@ final class Plugin {
 
 	public readonly AbandonedOrders $abandoned;
 
+	public readonly \InvoiceNinja\Catalog\Statics $statics;
+
+	public readonly \InvoiceNinja\Frontend\Store $store;
+
 	/**
 	 * Set while Settings > Store and the 1.x purchase option are being synced.
 	 */
@@ -111,7 +115,36 @@ final class Plugin {
 			new StockCheck( $this, $this->cart, $this->mapping )
 		);
 		$this->abandoned     = new AbandonedOrders( $this, $this->orders, $this->orderService );
+		$this->statics       = new \InvoiceNinja\Catalog\Statics( $this );
+		$this->store         = new \InvoiceNinja\Frontend\Store( $this );
 		$this->diagnostics   = new Diagnostics( $this );
+	}
+
+	/**
+	 * Feature modules, created when their class exists.
+	 */
+	public const MODULES = array(
+		'portal'        => 'InvoiceNinja\\Portal\\PortalModule',
+		'forms'         => 'InvoiceNinja\\Forms\\FormsModule',
+		'webhooks'      => 'InvoiceNinja\\Webhooks\\WebhooksModule',
+		'subscriptions' => 'InvoiceNinja\\Subscriptions\\SubscriptionsModule',
+		'woocommerce'   => 'InvoiceNinja\\WooCommerce\\WooCommerceModule',
+	);
+
+	/**
+	 * Created modules.
+	 *
+	 * @var array<string, Module>
+	 */
+	private array $modules = array();
+
+	/**
+	 * A module, if it exists.
+	 *
+	 * @param string $name Key in MODULES.
+	 */
+	public function module( string $name ): ?Module {
+		return $this->modules[ $name ] ?? null;
 	}
 
 	/**
@@ -185,6 +218,15 @@ final class Plugin {
 	 */
 	private function hooks(): void {
 		add_action( 'plugins_loaded', array( $this->installer, 'maybeUpgrade' ), 5 );
+		$this->store->register();
+		foreach ( self::MODULES as $name => $class ) {
+			// @phpstan-ignore-next-line function.impossibleType, function.alreadyNarrowedType -- a module exists only when its files ship.
+			if ( class_exists( $class ) && is_subclass_of( $class, Module::class ) ) {
+				$this->modules[ $name ] = new $class( $this );
+				$this->modules[ $name ]->register();
+			}
+		}
+		add_action( 'invoiceninja_connected', array( $this->statics, 'refresh' ) );
 
 		add_action(
 			'action_scheduler_init',
@@ -288,6 +330,7 @@ final class Plugin {
 				$this->notifications->connectionRecovered();
 			}
 		}
+		$this->statics->refresh();
 		// Orders whose placing request died: send them again.
 		foreach ( $this->orders->staleClaims() as $order_id ) {
 			$this->queue->push( 'invoiceninja_place_order', array( 'order_id' => $order_id ), 0, true );
@@ -295,6 +338,12 @@ final class Plugin {
 		if ( $this->abandoned->enabled() ) {
 			$this->queue->push( AbandonedOrders::HOOK, array(), 0, true );
 		}
+		/**
+		 * Daily work for modules (runs in the background).
+		 *
+		 * @since 2.0.0
+		 */
+		do_action( 'invoiceninja_daily_tasks' );
 		$this->options->set( 'heartbeat', time() );
 	}
 }

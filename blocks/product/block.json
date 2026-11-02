@@ -1,0 +1,87 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/product",
+	"title": "Product",
+	"category": "invoiceninja",
+	"description": "One product's price, stock and Add to cart button.",
+	"icon": "products",
+	"keywords": [
+		"price",
+		"stock",
+		"buy"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {
+		"productId": {
+			"type": "string",
+			"default": ""
+		},
+		"show": {
+			"type": "string",
+			"default": "all",
+			"enum": [
+				"all",
+				"price",
+				"stock",
+				"button"
+			]
+		},
+		"quantity": {
+			"type": "boolean",
+			"default": true
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": [
+			"wide",
+			"full"
+		],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	},
+	"variations": [
+		{
+			"name": "product-price",
+			"title": "Product Price",
+			"description": "A product's price, in your Invoice Ninja currency.",
+			"icon": "tag",
+			"attributes": {
+				"show": "price"
+			},
+			"scope": [
+				"inserter",
+				"transform"
+			],
+			"isActive": [
+				"show"
+			]
+		},
+		{
+			"name": "product-stock",
+			"title": "Product Stock",
+			"description": "Sold out, or how many are left.",
+			"icon": "archive",
+			"attributes": {
+				"show": "stock"
+			},
+			"scope": [
+				"inserter",
+				"transform"
+			],
+			"isActive": [
+				"show"
+			]
+		}
+	]
+}

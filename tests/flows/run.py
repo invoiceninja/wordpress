@@ -16,8 +16,14 @@ import traceback
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import lib  # noqa: E402
-import test_v1
-import test_v2  # noqa: E402
+import glob  # noqa: E402
+import importlib  # noqa: E402
+
+# test_v1 first (1.x behaviour), then test_v2, then each module's test_<module>.py.
+_names = ['test_v1', 'test_v2'] + sorted(
+    os.path.splitext(os.path.basename(f))[0] for f in glob.glob(os.path.join(os.path.dirname(os.path.abspath(__file__)), 'test_*.py'))
+    if os.path.basename(f) not in ('test_v1.py', 'test_v2.py'))
+SUITES = [importlib.import_module(n) for n in _names]
 
 PLUGIN_PATH_MARKER = '/plugins/invoiceninja/'
 
@@ -37,6 +43,8 @@ def setup():
     lib.wp('plugin', 'activate', 'invoiceninja')
     # localhost looks like a copy, so orders are paused until confirmed
     lib.wp('invoiceninja', 'environment', 'confirm')
+    # The 1.x flows run against the legacy display; 2.0 store flows switch to blocks themselves.
+    lib.wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('store' => array('display' => 'legacy')));")
 
     for name, value in {
         'invoiceninja_api_url': 'https://in.test',
@@ -75,7 +83,7 @@ def main():
     print('Setting up WordPress at %s ...' % lib.BASE, flush=True)
     setup()
 
-    tests = [t for t in test_v1.TESTS + test_v2.TESTS if pattern in t.__name__]
+    tests = [t for suite in SUITES for t in suite.TESTS if pattern in t.__name__]
     failures = []
     started = time.time()
     for fn in tests:

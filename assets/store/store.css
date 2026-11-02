@@ -1,0 +1,254 @@
+/**
+ * Invoice Ninja store. Inherits the theme's fonts, colours and buttons (wp-element-button);
+ * only layout lives here. Override any --invoiceninja-* property in your theme.
+ */
+.invoiceninja-products,
+.invoiceninja-product,
+.invoiceninja-checkout,
+.invoiceninja-status,
+.invoiceninja-minicart,
+.invoiceninja-banner {
+	--invoiceninja-gap: 1.5rem;
+	--invoiceninja-radius: 0.75rem;
+	--invoiceninja-border: color-mix(in srgb, currentColor 18%, transparent);
+	--invoiceninja-muted: color-mix(in srgb, currentColor 70%, transparent);
+	--invoiceninja-surface: color-mix(in srgb, currentColor 5%, transparent);
+	--invoiceninja-warning: #8a4b00;
+	--invoiceninja-error: #b32d2e;
+	--invoiceninja-success: #1e7a3c;
+	box-sizing: border-box;
+}
+
+.invoiceninja-sr {
+	position: absolute !important;
+	inline-size: 1px;
+	block-size: 1px;
+	overflow: hidden;
+	clip: rect(0 0 0 0);
+	clip-path: inset(50%);
+	white-space: nowrap;
+}
+
+.invoiceninja-muted { color: var(--invoiceninja-muted); }
+.invoiceninja-loading { color: var(--invoiceninja-muted); }
+
+/* Grid */
+.invoiceninja-products__grid {
+	display: grid;
+	grid-template-columns: repeat(var(--invoiceninja-columns, 3), minmax(0, 1fr));
+	gap: var(--invoiceninja-gap);
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+@media (max-width: 781px) {
+	.invoiceninja-products__grid { grid-template-columns: repeat(min(2, var(--invoiceninja-columns, 3)), minmax(0, 1fr)); }
+}
+@media (max-width: 480px) {
+	.invoiceninja-products__grid { grid-template-columns: minmax(0, 1fr); }
+}
+.invoiceninja-card { display: flex; flex-direction: column; gap: 0.5rem; }
+.invoiceninja-card__media {
+	position: relative;
+	display: block;
+	aspect-ratio: 1 / 1;
+	border-radius: var(--invoiceninja-radius);
+	overflow: hidden;
+	background: var(--invoiceninja-surface);
+}
+.invoiceninja-card__media img { inline-size: 100%; block-size: 100%; object-fit: cover; display: block; }
+.invoiceninja-card__noimage {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	block-size: 100%;
+	font-size: 3em;
+	color: var(--invoiceninja-muted);
+	border: 1px dashed var(--invoiceninja-border);
+	border-radius: var(--invoiceninja-radius);
+	box-sizing: border-box;
+}
+.invoiceninja-card__title { margin: 0.25rem 0 0; font-size: 1.1em; }
+.invoiceninja-card__title a { text-decoration: none; }
+.invoiceninja-card__meta,
+.invoiceninja-product__meta { margin: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }
+.invoiceninja-price { font-weight: 600; }
+.invoiceninja-stock.is-low { color: var(--invoiceninja-warning); }
+.invoiceninja-stock.is-out { color: var(--invoiceninja-muted); }
+.invoiceninja-badge {
+	position: absolute;
+	inset-block-start: 0.75rem;
+	inset-inline-start: 0.75rem;
+	padding: 0.15em 0.6em;
+	border: 1px solid currentColor;
+	border-radius: 0.35rem;
+	background: Canvas;
+	color: CanvasText;
+	font-size: 0.8em;
+	font-weight: 700;
+}
+.invoiceninja-products__pages { margin-block-start: var(--invoiceninja-gap); }
+
+/* Add to cart */
+.invoiceninja-add { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.25rem 0 0; }
+.invoiceninja-add__qty { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9em; }
+.invoiceninja-add__qty input { inline-size: 5.5em; min-block-size: 2.75rem; }
+.invoiceninja-add__button[disabled] { opacity: 0.6; cursor: not-allowed; }
+.invoiceninja-toast { margin: 0.5rem 0 0; padding: 0.6rem 0.9rem; border-radius: 0.5rem; background: var(--invoiceninja-surface); }
+.invoiceninja-toast.is-error { color: var(--invoiceninja-error); }
+
+/* Mini Cart */
+.invoiceninja-minicart { position: relative; display: inline-block; }
+.invoiceninja-minicart__button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.5rem;
+	min-block-size: 2.75rem;
+	padding: 0 1rem;
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.invoiceninja-minicart__count {
+	min-inline-size: 1.4em;
+	padding: 0 0.35em;
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	text-align: center;
+	font-size: 0.8em;
+	font-weight: 700;
+}
+.invoiceninja-minicart__panel {
+	position: absolute;
+	inset-inline-end: 0;
+	inset-block-start: calc(100% + 0.5rem);
+	z-index: 100;
+	inline-size: min(22rem, calc(100vw - 2rem));
+	padding: 1.25rem;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: var(--invoiceninja-radius);
+	background: Canvas;
+	color: CanvasText;
+	box-shadow: 0 12px 32px rgb(0 0 0 / 12%);
+	display: flex;
+	flex-direction: column;
+	gap: 0.75rem;
+}
+.invoiceninja-minicart__panel[hidden] { display: none; }
+.invoiceninja-minicart__head,
+.invoiceninja-minicart__total { display: flex; justify-content: space-between; align-items: center; margin: 0; }
+.invoiceninja-minicart__lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
+.invoiceninja-minicart__lines li { display: flex; justify-content: space-between; gap: 1rem; }
+
+/* Shared controls */
+.invoiceninja-iconbutton {
+	min-inline-size: 2.75rem;
+	min-block-size: 2.75rem;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: 999px;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: 1.2em;
+	cursor: pointer;
+}
+.invoiceninja-iconbutton[disabled] { opacity: 0.45; cursor: not-allowed; }
+.invoiceninja-linkbutton {
+	min-block-size: 2.75rem;
+	padding: 0;
+	border: 0;
+	background: none;
+	color: inherit;
+	font: inherit;
+	text-decoration: underline;
+	cursor: pointer;
+}
+.invoiceninja-secondary {
+	background: transparent !important;
+	color: inherit !important;
+	border: 1px solid currentColor !important;
+}
+.invoiceninja-actions { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: center; }
+.invoiceninja-pay { display: inline-flex; align-items: center; gap: 0.5rem; }
+
+/* Checkout */
+.invoiceninja-checkout,
+.invoiceninja-status { display: flex; flex-direction: column; gap: 1rem; }
+.invoiceninja-heading:focus { outline: none; }
+.invoiceninja-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
+.invoiceninja-columns > form { flex: 999 1 26rem; min-inline-size: 0; display: flex; flex-direction: column; gap: 1rem; }
+.invoiceninja-aside { flex: 1 1 18rem; padding: 1.25rem; border-radius: var(--invoiceninja-radius); background: var(--invoiceninja-surface); }
+.invoiceninja-aside h3 { margin-block-start: 0; }
+.invoiceninja-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
+@media (max-width: 480px) {
+	.invoiceninja-row { grid-template-columns: minmax(0, 1fr); }
+}
+.invoiceninja-field { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; }
+.invoiceninja-field label { font-weight: 600; }
+.invoiceninja-field input { min-block-size: 2.75rem; font: inherit; }
+.invoiceninja-help { color: var(--invoiceninja-muted); font-size: 0.9em; }
+.invoiceninja-code { inline-size: 11em; font-size: 1.6em !important; letter-spacing: 0.3em; font-variant-numeric: tabular-nums; }
+.invoiceninja-check label { display: inline-flex; gap: 0.5rem; align-items: center; min-block-size: 2.75rem; }
+.invoiceninja-summary { display: flex; flex-direction: column; gap: 0.5rem; }
+.invoiceninja-lines { list-style: none; margin: 0; padding: 0; }
+.invoiceninja-line {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto auto;
+	gap: 0.5rem 1rem;
+	align-items: center;
+	padding: 0.75rem 0;
+	border-block-end: 1px solid var(--invoiceninja-border);
+}
+.invoiceninja-line__title { display: flex; flex-direction: column; }
+.invoiceninja-line__total { font-weight: 600; text-align: end; }
+@media (max-width: 480px) {
+	.invoiceninja-line { grid-template-columns: minmax(0, 1fr) auto; }
+	.invoiceninja-line .invoiceninja-stepper { grid-column: 1 / -1; }
+}
+.invoiceninja-stepper { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
+.invoiceninja-stepper__value { min-inline-size: 2em; text-align: center; font-weight: 600; }
+.invoiceninja-summary__row { display: flex; justify-content: space-between; gap: 1rem; margin: 0; }
+.invoiceninja-panel { padding: 1.25rem; border-radius: var(--invoiceninja-radius); background: var(--invoiceninja-surface); display: flex; flex-direction: column; gap: 0.75rem; }
+.invoiceninja-panel h2 { margin: 0; }
+
+/* Notices and pills */
+.invoiceninja-notice {
+	padding: 0.85rem 1rem;
+	border-radius: 0.6rem;
+	border-inline-start: 4px solid currentColor;
+	background: var(--invoiceninja-surface);
+}
+.invoiceninja-notice--error { border-inline-start-color: var(--invoiceninja-error); }
+.invoiceninja-notice--warning { border-inline-start-color: var(--invoiceninja-warning); }
+.invoiceninja-notice--admin { border-inline-start-color: #2271b1; font-size: 0.95em; }
+.invoiceninja-pill {
+	display: inline-block;
+	padding: 0.2em 0.8em;
+	border: 1px solid currentColor;
+	border-radius: 999px;
+	font-weight: 700;
+	font-size: 0.9em;
+}
+.invoiceninja-pill--paid { color: var(--invoiceninja-success); }
+.invoiceninja-pill--waiting { color: var(--invoiceninja-warning); }
+
+/* Banner */
+.invoiceninja-banner {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem 1.25rem;
+	align-items: center;
+	margin-block-end: 1.5rem;
+	padding: 0.75rem 1.25rem;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: var(--invoiceninja-radius);
+	background: var(--invoiceninja-surface);
+}
+.invoiceninja-banner__text { flex: 1 1 18rem; }
+
+@media (prefers-reduced-motion: no-preference) {
+	.invoiceninja-minicart__panel { transition: opacity 0.12s ease; }
+}

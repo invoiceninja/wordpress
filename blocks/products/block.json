@@ -1,0 +1,81 @@
+{
+	"$schema": "https://schemas.wp.org/trunk/block.json",
+	"apiVersion": 3,
+	"name": "invoiceninja/products",
+	"title": "Products",
+	"category": "invoiceninja",
+	"description": "Your Invoice Ninja products as a grid. Prices and stock update by themselves.",
+	"icon": "grid-view",
+	"keywords": [
+		"shop",
+		"store",
+		"catalog",
+		"invoice ninja"
+	],
+	"textdomain": "invoiceninja",
+	"attributes": {
+		"columns": {
+			"type": "integer",
+			"default": 3
+		},
+		"perPage": {
+			"type": "integer",
+			"default": 12
+		},
+		"orderBy": {
+			"type": "string",
+			"default": "title",
+			"enum": [
+				"title",
+				"price",
+				"date"
+			]
+		},
+		"showImage": {
+			"type": "boolean",
+			"default": true
+		},
+		"showPrice": {
+			"type": "boolean",
+			"default": true
+		},
+		"showStock": {
+			"type": "boolean",
+			"default": true
+		},
+		"showExcerpt": {
+			"type": "boolean",
+			"default": false
+		},
+		"showButton": {
+			"type": "boolean",
+			"default": true
+		},
+		"soldOut": {
+			"type": "string",
+			"default": "show",
+			"enum": [
+				"show",
+				"hide"
+			]
+		}
+	},
+	"supports": {
+		"html": false,
+		"align": [
+			"wide",
+			"full"
+		],
+		"spacing": {
+			"margin": true,
+			"padding": true
+		},
+		"typography": {
+			"fontSize": true
+		},
+		"color": {
+			"text": true,
+			"background": true
+		}
+	}
+}

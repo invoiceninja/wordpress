@@ -6,352 +6,356 @@
 
 namespace InvoiceNinja\Controllers;
 
-use \InvoiceNinja\WordPress\PostApi;
-use \InvoiceNinja\Api\ProductApi;
+use InvoiceNinja\WordPress\PostApi;
+use InvoiceNinja\Api\ProductApi;
 
-class ProductController extends BaseController
-{
-    private $posts;
+class ProductController extends BaseController {
 
-    public function __construct()
-    {
-        parent::__construct();
+	private $posts;
 
-        $this->posts = new PostApi();
-    }
+	public function __construct() {
+		parent::__construct();
 
-    public function register()
-    {
-        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
+		$this->posts = new PostApi();
+	}
 
-        $product_label = get_option( 'invoiceninja_product_label', 'Product' );
-        $products_label = get_option( 'invoiceninja_products_label', 'Products' );
+	public function register() {
+		$profile = json_decode( get_option( 'invoiceninja_profile' ) );
 
-        $types = [
-            [
-                'id' => 'invoiceninja_product',
-                'name' => $products_label,
-                'singular_name' => $product_label,
-            ]
-        ];
+		$product_label  = get_option( 'invoiceninja_product_label', 'Product' );
+		$products_label = get_option( 'invoiceninja_products_label', 'Products' );
 
-        $this->posts
-            ->setPostTypes($types)
-            ->register();
+		$types = [
+			[
+				'id'            => 'invoiceninja_product',
+				'name'          => $products_label,
+				'singular_name' => $product_label,
+			],
+		];
 
-        add_action('init', [ $this, 'registerCron' ] );
-        add_action('invoiceninja_auto_refresh', [ $this, 'autoRefresh' ] );
+		$this->posts
+			->setPostTypes( $types )
+			->register();
 
-        // 2.0 syncs hourly; keep the 1.x products page in step with it
-        add_action( 'invoiceninja_products_synced', function ( $result ) {
-            if ( ! empty( $result['created'] ) || ! empty( $result['updated'] ) || ! empty( $result['drafted'] ) ) {
-                self::rebuildProductPage();
-            }
-        } );
-    }
+		add_action( 'init', [ $this, 'registerCron' ] );
+		add_action( 'invoiceninja_auto_refresh', [ $this, 'autoRefresh' ] );
 
-    public function registerCron()
-    {
-        // One-time cleanup of the event scheduled by older versions under a generic hook name
-        if ( ! get_option( 'invoiceninja_legacy_cron_cleared' ) ) {
-            wp_clear_scheduled_hook( 'auto_refresh' );
-            update_option( 'invoiceninja_legacy_cron_cleared', 1 );
-        }
+		// 2.0 syncs hourly; keep the 1.x products page in step with it
+		add_action(
+			'invoiceninja_products_synced',
+			function ( $result ) {
+				if ( ! empty( $result['created'] ) || ! empty( $result['updated'] ) || ! empty( $result['drafted'] ) ) {
+					self::rebuildProductPage();
+				}
+			}
+		);
+	}
 
-        if ( \InvoiceNinja\Plugin::booted() ) {
-            // 2.0 syncs products in place on Action Scheduler
-            wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
+	public function registerCron() {
+		// One-time cleanup of the event scheduled by older versions under a generic hook name
+		if ( ! get_option( 'invoiceninja_legacy_cron_cleared' ) ) {
+			wp_clear_scheduled_hook( 'auto_refresh' );
+			update_option( 'invoiceninja_legacy_cron_cleared', 1 );
+		}
 
-            return;
-        }
+		if ( \InvoiceNinja\Plugin::booted() ) {
+			// 2.0 syncs products in place on Action Scheduler
+			wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
 
-        if ( ! wp_next_scheduled('invoiceninja_auto_refresh') ) {
-            wp_schedule_event( time(), 'hourly', 'invoiceninja_auto_refresh' );
-        }
-    }
+			return;
+		}
 
-    public function autoRefresh()
-    {
-        try {
-            SettingsController::loadProfile();
+		if ( ! wp_next_scheduled( 'invoiceninja_auto_refresh' ) ) {
+			wp_schedule_event( time(), 'hourly', 'invoiceninja_auto_refresh' );
+		}
+	}
 
-            if ( get_option( 'invoiceninja_sync_products' ) ) {
-                ProductController::loadProducts();
-            }
-        } catch ( \Throwable $e ) {
-            error_log( 'Invoice Ninja auto_refresh failed: ' . $e->getMessage() );
-        }
-    }
+	public function autoRefresh() {
+		try {
+			SettingsController::loadProfile();
 
-    public static function loadProducts()
-    {
-        if ( \InvoiceNinja\Plugin::booted() ) {
-            // 2.0 updates posts in place (ids and URLs stay) and never deletes because of an outage
-            $result = \InvoiceNinja\Plugin::instance()->products->run( true );
-            if ( $result['status'] !== 'synced' ) {
-                return 0;
-            }
-            self::rebuildProductPage();
+			if ( get_option( 'invoiceninja_sync_products' ) ) {
+				self::loadProducts();
+			}
+		} catch ( \Throwable $e ) {
+			error_log( 'Invoice Ninja auto_refresh failed: ' . $e->getMessage() );
+		}
+	}
 
-            return $result['total'];
-        }
+	public static function loadProducts() {
+		if ( \InvoiceNinja\Plugin::booted() ) {
+			// 2.0 updates posts in place (ids and URLs stay) and never deletes because of an outage
+			$result = \InvoiceNinja\Plugin::instance()->products->run( true );
+			if ( $result['status'] !== 'synced' ) {
+				return 0;
+			}
+			self::rebuildProductPage();
 
-        // Fetch first: if the API is unreachable or returns nothing, keep the existing
-        // products rather than deleting the whole catalog
-        $products = ProductApi::load();
+			return $result['total'];
+		}
 
-        if ( ! is_array( $products ) || empty( $products ) ) {
-            error_log( 'Invoice Ninja: product import skipped, no products were returned by the API' );
+		// Fetch first: if the API is unreachable or returns nothing, keep the existing
+		// products rather than deleting the whole catalog
+		$products = ProductApi::load();
 
-            return 0;
-        }
+		if ( ! is_array( $products ) || empty( $products ) ) {
+			error_log( 'Invoice Ninja: product import skipped, no products were returned by the API' );
 
-        $args = [
-            'post_type' => 'invoiceninja_product',
-            'posts_per_page' => -1,
-        ];
-        
-        $query = new \WP_Query( $args );
-        
+			return 0;
+		}
 
-        /*
-        // Disable email notifications for new posts
-        function disable_post_email_notifications() {
-            remove_action( 'publish_post', 'wp_notify_postauthor' );
-        }
-        add_action( 'pre_insert_post', 'disable_post_email_notifications' );
+		$args = [
+			'post_type'      => 'invoiceninja_product',
+			'posts_per_page' => -1,
+		];
 
-        // Re-enable email notifications after post insertion
-        function enable_post_email_notifications() {
-            add_action( 'publish_post', 'wp_notify_postauthor' );
-        }
-        add_action( 'wp_insert_post', 'enable_post_email_notifications' );
-        */
-                
-        if ( $query->have_posts() ) {
-            while ( $query->have_posts() ) {
-                $query->the_post();
-                $post_id = get_the_ID();
-                $product_id = get_post_meta( $post_id, 'product_id', true );
+		$query = new \WP_Query( $args );
 
-                if ( $product_id && is_string( $product_id ) ) {
-                    $args = array(
-                        'post_type'      => 'attachment',
-                        'post_status'    => 'inherit',
-                        'posts_per_page' => 1,
-                        'fields'         => 'ids',
-                        's'              => $product_id,
-                    );
+		/*
+		// Disable email notifications for new posts
+		function disable_post_email_notifications() {
+			remove_action( 'publish_post', 'wp_notify_postauthor' );
+		}
+		add_action( 'pre_insert_post', 'disable_post_email_notifications' );
 
-                    $attachments = get_posts( $args );
+		// Re-enable email notifications after post insertion
+		function enable_post_email_notifications() {
+			add_action( 'publish_post', 'wp_notify_postauthor' );
+		}
+		add_action( 'wp_insert_post', 'enable_post_email_notifications' );
+		*/
 
-                    if ( $attachments ) {
-                        $attachment_id = $attachments[0];                    
-                        $result = wp_delete_attachment( $attachment_id, true );
-                    }
-                }
+		if ( $query->have_posts() ) {
+			while ( $query->have_posts() ) {
+				$query->the_post();
+				$post_id    = get_the_ID();
+				$product_id = get_post_meta( $post_id, 'product_id', true );
 
-                wp_delete_post( $post_id, true );
-            }
+				if ( $product_id && is_string( $product_id ) ) {
+					$args = array(
+						'post_type'      => 'attachment',
+						'post_status'    => 'inherit',
+						'posts_per_page' => 1,
+						'fields'         => 'ids',
+						's'              => $product_id,
+					);
 
-            wp_reset_postdata();
-        }
+					$attachments = get_posts( $args );
 
-        foreach ($products as $product)
-        {             
-            $post_data = array(
-                'post_title' => esc_attr( $product->product_key ),
-                'post_content' => esc_attr( $product->notes ),
-                'post_status' => 'publish', // publish, draft, pending, private, trash
-                'post_type' => 'invoiceninja_product',
-                'meta_input' => [
-                    'product_id' => esc_attr( $product->id ),
-                    'price' => esc_attr( $product->price ),
-                    'quantity' => esc_attr( $product->quantity ),
-                    'max_quantity' => esc_attr( $product->max_quantity ),
-                    'in_stock_quantity' => esc_attr( $product->in_stock_quantity ),
-                    'custom_value1' => esc_attr( $product->custom_value1 ),
-                    'custom_value2' => esc_attr( $product->custom_value2 ),
-                    'custom_value3' => esc_attr( $product->custom_value3 ),
-                    'custom_value4' => esc_attr( $product->custom_value4 ),
-                    'cost' => esc_attr( $product->cost ),
-                    'tax_name1' => esc_attr( $product->tax_name1 ),
-                    'tax_rate1' => esc_attr( $product->tax_rate1 ),
-                    'tax_name2' => esc_attr( $product->tax_name2 ),
-                    'tax_rate2' => esc_attr( $product->tax_rate2 ),
-                    'tax_name3' => esc_attr( $product->tax_name3 ),
-                    'tax_rate3' => esc_attr( $product->tax_rate3 ),
-                    'tax_id' => esc_attr( $product->tax_id ),
-                ],
-            );
+					if ( $attachments ) {
+						$attachment_id = $attachments[0];
+						$result        = wp_delete_attachment( $attachment_id, true );
+					}
+				}
 
-            $post_id = wp_insert_post($post_data); 
-            
-            if ( $product->product_image && $post_id && ! is_wp_error( $post_id ) ) 
-            {                
-                $file_extension = pathinfo( $product->product_image, PATHINFO_EXTENSION );
-                $allowed_mime_types = wp_get_mime_types();
-                $post_mime_type = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
-                $filename = $product->id . '.' . $file_extension;
-                
-                // This code results in '429: Too Many Requests"
-                /*
-                $image_response = wp_remote_get( $product->product_image );
-                if ( ! $image_data = wp_remote_retrieve_body( $image_response ) ) {
-                    echo 'Error: ' . json_encode( $image_response );
-                    exit;
-                }
-                */
-                
-                $image_data = @file_get_contents( $product->product_image );
+				wp_delete_post( $post_id, true );
+			}
 
-                if ( filter_var($product->product_image, FILTER_VALIDATE_URL) && $image_data ) 
-                {                
-                    $upload = wp_upload_bits( $filename, null, $image_data );
+			wp_reset_postdata();
+		}
 
-                    if ( ! $upload['error'] ) {
-                        $attachment_id = wp_insert_attachment( 
-                            [
-                                'post_mime_type' => $post_mime_type,
-                                'post_title' => sanitize_file_name( $filename ),
-                                'post_content' => $product->product_key,
-                                'post_status' => 'inherit'
-                            ], 
-                            $upload['file']
-                        );
+		foreach ( $products as $product ) {
+			$post_data = array(
+				'post_title'   => esc_attr( $product->product_key ),
+				'post_content' => esc_attr( $product->notes ),
+				'post_status'  => 'publish', // publish, draft, pending, private, trash
+				'post_type'    => 'invoiceninja_product',
+				'meta_input'   => [
+					'product_id'        => esc_attr( $product->id ),
+					'price'             => esc_attr( $product->price ),
+					'quantity'          => esc_attr( $product->quantity ),
+					'max_quantity'      => esc_attr( $product->max_quantity ),
+					'in_stock_quantity' => esc_attr( $product->in_stock_quantity ),
+					'custom_value1'     => esc_attr( $product->custom_value1 ),
+					'custom_value2'     => esc_attr( $product->custom_value2 ),
+					'custom_value3'     => esc_attr( $product->custom_value3 ),
+					'custom_value4'     => esc_attr( $product->custom_value4 ),
+					'cost'              => esc_attr( $product->cost ),
+					'tax_name1'         => esc_attr( $product->tax_name1 ),
+					'tax_rate1'         => esc_attr( $product->tax_rate1 ),
+					'tax_name2'         => esc_attr( $product->tax_name2 ),
+					'tax_rate2'         => esc_attr( $product->tax_rate2 ),
+					'tax_name3'         => esc_attr( $product->tax_name3 ),
+					'tax_rate3'         => esc_attr( $product->tax_rate3 ),
+					'tax_id'            => esc_attr( $product->tax_id ),
+				],
+			);
 
-                        set_post_thumbnail( $post_id, $attachment_id );
-                    }
-                }
-            }
-        }     
-        
-        self::rebuildProductPage();
+			$post_id = wp_insert_post( $post_data );
 
-        return count( $products );
-    }
+			if ( $product->product_image && $post_id && ! is_wp_error( $post_id ) ) {
+				$file_extension     = pathinfo( $product->product_image, PATHINFO_EXTENSION );
+				$allowed_mime_types = wp_get_mime_types();
+				$post_mime_type     = isset( $allowed_mime_types[ $file_extension ] ) ? $allowed_mime_types[ $file_extension ] : 'image/jpeg';
+				$filename           = $product->id . '.' . $file_extension;
 
-    public static function rebuildProductPage()
-    {
-        $profile = json_decode( get_option( 'invoiceninja_profile' ) );
-        $page = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
-        
-        $count = 0;
-        $args = [
-            'post_type' => 'invoiceninja_product',
-            'post_status' => 'publish',
-            'posts_per_page' => -1,
-            'order_by' => 'title', // date, menu_order
-            'order' => 'ASC',
-        ];
-        
-        $query = new \WP_Query( $args );
-        
-        if ( $query->have_posts() ) {
-            while ( $query->have_posts() ) {
-                $query->the_post();
-                $post_id = get_the_ID();
-                $product_id = get_post_meta( $post_id, 'product_id', true );
-                $price = get_post_meta( $post_id, 'price', true );
+				// This code results in '429: Too Many Requests"
+				/*
+				$image_response = wp_remote_get( $product->product_image );
+				if ( ! $image_data = wp_remote_retrieve_body( $image_response ) ) {
+					echo 'Error: ' . json_encode( $image_response );
+					exit;
+				}
+				*/
 
-                if ($count % 3 == 0) {
-                    $page .= '<div class="wp-block-columns" style="padding:0px; margin:0px;">';
-                }
+				$image_data = @file_get_contents( $product->product_image );
 
-                $page .= '<div class="wp-block-column">';
-                $template = get_option( 'invoiceninja_product_template' );
-                if ( ! $template ) {
-                    $template = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
-                }
+				if ( filter_var( $product->product_image, FILTER_VALIDATE_URL ) && $image_data ) {
+					$upload = wp_upload_bits( $filename, null, $image_data );
 
-                $image = '';
+					if ( ! $upload['error'] ) {
+						$attachment_id = wp_insert_attachment(
+							[
+								'post_mime_type' => $post_mime_type,
+								'post_title'     => sanitize_file_name( $filename ),
+								'post_content'   => $product->product_key,
+								'post_status'    => 'inherit',
+							],
+							$upload['file']
+						);
 
-                if ( has_post_thumbnail( $post_id ) ) {
-                    $image_url = get_the_post_thumbnail_url( $post_id, 'medium' );
-                    $image_template = get_option( 'invoiceninja_image_template' );
-                    if ( ! $image_template ) {
-                        $image_template = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
-                    }
-                    $image = str_replace( [ 
-                        '$image_url',
-                        '$title',
-                    ], [ 
-                        $image_url,
-                        get_the_title(),
-                    ], $image_template );
-                }
+						set_post_thumbnail( $post_id, $attachment_id );
+					}
+				}
+			}
+		}
 
-                $template = str_replace( [
-                    '$product_id',
-                    '$page_url',
-                    '$product',
-                    '$description',
-                    '$price',
-                    '$image',
-                    '$custom1',
-                    '$custom2',
-                    '$custom3',
-                    '$custom4',
-                ], [
-                    $product_id,
-                    get_permalink(),
-                    get_the_title(),
-                    get_the_content(),
-                    \InvoiceNinja\Utils\Formatting::formatMoney( $price ),
-                    $image,
-                    get_post_meta( $post_id, 'custom_value1', true ),
-                    get_post_meta( $post_id, 'custom_value2', true ),
-                    get_post_meta( $post_id, 'custom_value3', true ),
-                    get_post_meta( $post_id, 'custom_value4', true ),
-                ], $template );
+		self::rebuildProductPage();
 
-                $page .= $template;
-                $page .= '</div>';
+		return count( $products );
+	}
 
-                if ($count % 3 == 2) {
-                    $page .= '</div>';
-                }
-    
-                $count++;
-    
-            }
-            wp_reset_postdata();
-        }
+	public static function rebuildProductPage() {
+		// In the 2.0 blocks display the Shop page holds the Products block; leave it alone.
+		if ( \InvoiceNinja\Plugin::booted() && ! \InvoiceNinja\Plugin::instance()->store->legacy() ) {
+			return;
+		}
+		$profile = json_decode( get_option( 'invoiceninja_profile' ) );
+		$page    = '<div class="wp-block-query alignwide is-layout-flow wp-block-query-is-layout-flow">';
 
-        while ($count % 3 != 0) {
-            $page .= '<div class="wp-block-column" style="margin-left:16px;margin-right:16px;"></div>';
-            $count++;
-        }        
+		$count = 0;
+		$args  = [
+			'post_type'      => 'invoiceninja_product',
+			'post_status'    => 'publish',
+			'posts_per_page' => -1,
+			'order_by'       => 'title', // date, menu_order
+			'order'          => 'ASC',
+		];
 
-        $products_label = get_option( 'invoiceninja_products_label', 'Products' );
-        $post_status = 'draft';
+		$query = new \WP_Query( $args );
 
-        if ( $post_id = get_option( 'invoiceninja_product_page_id' ) ) {
-            if ( $post = get_post($post_id) ) {
-                if ( $post->post_status == 'trash' ) {
-                    $post_id = '';
-                    update_option( 'invoiceninja_product_page_id', '' );
-                } else {
-                    $post_status = $post->post_status;
-                }
-            }
-        }
+		if ( $query->have_posts() ) {
+			while ( $query->have_posts() ) {
+				$query->the_post();
+				$post_id    = get_the_ID();
+				$product_id = get_post_meta( $post_id, 'product_id', true );
+				$price      = get_post_meta( $post_id, 'price', true );
 
-        $page_data = [
-            'ID' => $post_id,
-            'post_title' => $products_label,
-            'post_content' => $page,
-            'post_status' => $post_status,
-            'post_author' => 1,
-            'post_type' => 'page',
-            'post_name' => sanitize_title( strtolower( $products_label ) ),
-        ];
+				if ( $count % 3 == 0 ) {
+					$page .= '<div class="wp-block-columns" style="padding:0px; margin:0px;">';
+				}
 
-        $page_id = wp_insert_post( $page_data );
+				$page    .= '<div class="wp-block-column">';
+				$template = get_option( 'invoiceninja_product_template' );
+				if ( ! $template ) {
+					$template = INVOICENINJA_DEFAULT_PRODUCT_TEMPLATE;
+				}
 
-        if ( ! is_wp_error( $page_id ) ) {
-            update_option( 'invoiceninja_product_page_id', $page_id );
-        }
+				$image = '';
 
-    }
+				if ( has_post_thumbnail( $post_id ) ) {
+					$image_url      = get_the_post_thumbnail_url( $post_id, 'medium' );
+					$image_template = get_option( 'invoiceninja_image_template' );
+					if ( ! $image_template ) {
+						$image_template = INVOICENINJA_DEFAULT_IMAGE_TEMPLATE;
+					}
+					$image = str_replace(
+						[
+							'$image_url',
+							'$title',
+						],
+						[
+							$image_url,
+							get_the_title(),
+						],
+						$image_template
+					);
+				}
+
+				$template = str_replace(
+					[
+						'$product_id',
+						'$page_url',
+						'$product',
+						'$description',
+						'$price',
+						'$image',
+						'$custom1',
+						'$custom2',
+						'$custom3',
+						'$custom4',
+					],
+					[
+						$product_id,
+						get_permalink(),
+						get_the_title(),
+						get_the_content(),
+						\InvoiceNinja\Utils\Formatting::formatMoney( $price ),
+						$image,
+						get_post_meta( $post_id, 'custom_value1', true ),
+						get_post_meta( $post_id, 'custom_value2', true ),
+						get_post_meta( $post_id, 'custom_value3', true ),
+						get_post_meta( $post_id, 'custom_value4', true ),
+					],
+					$template
+				);
+
+				$page .= $template;
+				$page .= '</div>';
+
+				if ( $count % 3 == 2 ) {
+					$page .= '</div>';
+				}
+
+				++$count;
+
+			}
+			wp_reset_postdata();
+		}
+
+		while ( $count % 3 != 0 ) {
+			$page .= '<div class="wp-block-column" style="margin-left:16px;margin-right:16px;"></div>';
+			++$count;
+		}
+
+		$products_label = get_option( 'invoiceninja_products_label', 'Products' );
+		$post_status    = 'draft';
+
+		if ( $post_id = get_option( 'invoiceninja_product_page_id' ) ) {
+			if ( $post = get_post( $post_id ) ) {
+				if ( $post->post_status == 'trash' ) {
+					$post_id = '';
+					update_option( 'invoiceninja_product_page_id', '' );
+				} else {
+					$post_status = $post->post_status;
+				}
+			}
+		}
+
+		$page_data = [
+			'ID'           => $post_id,
+			'post_title'   => $products_label,
+			'post_content' => $page,
+			'post_status'  => $post_status,
+			'post_author'  => 1,
+			'post_type'    => 'page',
+			'post_name'    => sanitize_title( strtolower( $products_label ) ),
+		];
+
+		$page_id = wp_insert_post( $page_data );
+
+		if ( ! is_wp_error( $page_id ) ) {
+			update_option( 'invoiceninja_product_page_id', $page_id );
+		}
+	}
 }

@@ -557,12 +557,17 @@
 
 	function Settings() {
 		const params = new URLSearchParams( window.location.search );
-		const [ tab, setTab ] = useState( [ 'store', 'advanced' ].includes( params.get( 'tab' ) ) ? params.get( 'tab' ) : 'connection' );
-		const tabs = [ [ 'connection', __( 'Connection', 'invoiceninja' ) ], [ 'store', __( 'Store', 'invoiceninja' ) ], [ 'advanced', __( 'Advanced', 'invoiceninja' ) ] ];
+		const extra = extensionTabs.filter( ( x ) => ! x.can || x.can( boot ) );
+		const ids = [ 'connection', 'store', 'advanced' ].concat( extra.map( ( x ) => x.id ) );
+		const [ tab, setTab ] = useState( ids.includes( params.get( 'tab' ) ) ? params.get( 'tab' ) : 'connection' );
+		const tabs = [ [ 'connection', __( 'Connection', 'invoiceninja' ) ], [ 'store', __( 'Store', 'invoiceninja' ) ] ]
+			.concat( extra.map( ( x ) => [ x.id, x.label ] ) )
+			.concat( [ [ 'advanced', __( 'Advanced', 'invoiceninja' ) ] ] );
+		const ext = extra.find( ( x ) => x.id === tab );
 		return h( Fragment, null,
 			h( 'h1', null, __( 'Settings', 'invoiceninja' ) ),
 			h( Tabs, { tabs, tab, setTab } ),
-			tab === 'connection' ? h( ConnectionSettings ) : h( AdvancedSettings, { key: tab, section: tab } ) );
+			tab === 'connection' ? h( ConnectionSettings ) : ext ? h( ext.render, { key: tab } ) : h( AdvancedSettings, { key: tab, section: tab } ) );
 	}
 
 	function Tabs( { tabs, tab, setTab } ) {
@@ -656,6 +661,34 @@
 			h( 'aside', { className: 'in-aside' }, h( ConnectionCard, { connection: conn } ) ) );
 	}
 
+	function StorePages() {
+		const [ pages, setPages ] = useState( null );
+		const [ busy, setBusy ] = useState( false );
+		const [ message, setMessage ] = useState( '' );
+		const create = async () => {
+			setBusy( true );
+			setMessage( '' );
+			try {
+				const r = await api( '/pages', { method: 'POST', data: { pages: [ 'shop', 'checkout', 'status' ] } } );
+				setPages( r.pages );
+				setMessage( __( 'Your store pages are ready.', 'invoiceninja' ) );
+			} catch ( e ) {
+				setMessage( errorText( e ) );
+			}
+			setBusy( false );
+		};
+		const labels = { shop: __( 'Shop', 'invoiceninja' ), checkout: __( 'Checkout', 'invoiceninja' ), status: __( 'Order Status', 'invoiceninja' ) };
+		const saved = ( boot.settings && boot.settings.pages ) || {};
+		return h( Fragment, null,
+			h( 'h2', null, __( 'Store pages', 'invoiceninja' ) ),
+			h( 'p', { className: 'in-muted' }, __( 'Shop lists your products, Checkout holds the cart and payment steps, and Order Status opens from the link in order emails. You can edit them like any page.', 'invoiceninja' ) ),
+			pages ? h( 'ul', null, Object.keys( pages ).map( ( k ) => h( 'li', { key: k }, h( 'strong', null, labels[ k ] || k ), ' ', h( 'a', { href: pages[ k ].url }, __( 'View', 'invoiceninja' ) ), ' · ', h( 'a', { href: pages[ k ].edit }, __( 'Edit', 'invoiceninja' ) ) ) ) )
+				: h( 'p', null, Object.keys( labels ).map( ( k ) => saved[ k ] ? null : labels[ k ] ).filter( Boolean ).length
+					? sprintf( /* translators: %s: page names */ __( 'Not created yet: %s.', 'invoiceninja' ), Object.keys( labels ).filter( ( k ) => ! saved[ k ] ).map( ( k ) => labels[ k ] ).join( ', ' ) )
+					: __( 'All store pages exist.', 'invoiceninja' ) ),
+			h( 'p', { className: 'in-row' }, h( Button, { busy, onClick: create }, __( 'Create missing pages', 'invoiceninja' ) ), h( 'span', { role: 'status' }, message ) ) );
+	}
+
 	function AdvancedSettings( { section } ) {
 		const [ s, setS ] = useState( boot.settings );
 		const [ busy, setBusy ] = useState( false );
@@ -712,7 +745,11 @@
 						[ 'off', __( 'Off', 'invoiceninja' ), __( 'Show products and prices only.', 'invoiceninja' ) ],
 					] ) ),
 					row( __( 'Who can order', 'invoiceninja' ), null, check( 'store', 'require_login', __( 'Require customers to log in', 'invoiceninja' ), __( 'Off: guests confirm their email with a 6-digit code instead.', 'invoiceninja' ) ) ),
-					null ) ),
+					row( __( 'Display', 'invoiceninja' ), null, radios( 'store', 'display', __( 'Display', 'invoiceninja' ), [
+						[ 'blocks', __( 'Blocks', 'invoiceninja' ), __( 'The new store: blocks that use your theme’s styles, the cart and checkout with an email code.', 'invoiceninja' ) ],
+						[ 'legacy', __( 'Legacy 1.x', 'invoiceninja' ), __( 'Keeps the products page and cart exactly as they were in 1.x.', 'invoiceninja' ) ],
+					] ) ) ) ),
+				h( StorePages ),
 				h( 'h2', null, __( 'Unpaid orders', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
 				row( __( 'Clean up', 'invoiceninja' ), null, h( Fragment, null,
@@ -1053,6 +1090,72 @@
 		return sprintf( /* translators: 1: added, 2: updated, 3: unpublished */ __( 'Products synced: %1$d added, %2$d updated, %3$d unpublished.', 'invoiceninja' ), r.created, r.updated, r.drafted );
 	}
 
+	// ---------- Welcome to 2.0 ----------
+
+	function Welcome() {
+		const w = boot.welcome || {};
+		const [ display, setDisplay ] = useState( w.display || 'legacy' );
+		const [ busy, setBusy ] = useState( '' );
+		const [ message, setMessage ] = useState( '' );
+		const [ confirming, setConfirming ] = useState( false );
+		const act = async ( action ) => {
+			setBusy( action );
+			setMessage( '' );
+			try {
+				const r = await api( '/store/display', { method: 'POST', data: { action } } );
+				if ( action === 'preview' && r.url ) {
+					window.open( r.url, '_blank', 'noopener' );
+				} else if ( action === 'blocks' ) {
+					setDisplay( 'blocks' );
+					setMessage( __( 'Your shop now uses the blocks. The Shop, Checkout and Order Status pages are ready.', 'invoiceninja' ) );
+				} else if ( action === 'legacy' ) {
+					setDisplay( 'legacy' );
+					setMessage( __( 'Your shop is back on the 1.x display.', 'invoiceninja' ) );
+				}
+			} catch ( e ) {
+				setMessage( errorText( e ) );
+			}
+			setConfirming( false );
+			setBusy( '' );
+		};
+		const card = ( title, body, extra ) => h( 'section', { className: 'in-card' }, h( 'h3', null, title ), h( 'p', null, body ), extra || null );
+		const features = [
+			[ __( 'Guest checkout', 'invoiceninja' ), __( 'Buyers check out without an account, confirming their email with a code.', 'invoiceninja' ) ],
+			[ __( 'Customer account', 'invoiceninja' ), __( 'Invoices, quotes, payments and subscriptions on your own site.', 'invoiceninja' ) ],
+			[ __( 'Quote requests', 'invoiceninja' ), __( 'A form that creates draft quotes in Invoice Ninja.', 'invoiceninja' ) ],
+			[ __( 'Subscriptions', 'invoiceninja' ), __( 'Pricing tables and subscribe buttons for your Invoice Ninja subscriptions.', 'invoiceninja' ) ],
+			[ __( 'WooCommerce invoicing', 'invoiceninja' ), __( 'Every WooCommerce order becomes an invoice and payment in Invoice Ninja.', 'invoiceninja' ) ],
+		];
+		return h( Fragment, null,
+			h( 'h1', null, __( 'Welcome to Invoice Ninja 2.0', 'invoiceninja' ) ),
+			h( 'p', { className: 'in-lead' }, __( 'A rebuilt plugin with guest checkout, a customer account, quotes, subscriptions and WooCommerce invoicing. Your shop looks exactly the same until you choose otherwise. Nothing from 1.x is deleted.', 'invoiceninja' ) ),
+			message ? h( Notice, { type: 'info' }, h( 'p', { role: 'status' }, message ) ) : null,
+			h( 'h2', null, __( 'What’s different', 'invoiceninja' ) ),
+			h( 'div', { className: 'in-tools' },
+				card( __( 'Your shop looks the same', 'invoiceninja' ), __( 'Product pages, the cart and your templates use the 1.x display. Product links don’t change, and buyers still log in to check out, as in 1.x.', 'invoiceninja' ) ),
+				card( __( 'Buyers confirm their email once', 'invoiceninja' ), __( 'With the new blocks, guests enter a 6-digit code from their email at checkout. It keeps invoices going only to people who own the address.', 'invoiceninja' ) ),
+				card( __( 'Carts in progress were emptied', 'invoiceninja' ), __( 'Buyers who had items in their cart during the update just add them again.', 'invoiceninja' ) ) ),
+			h( 'h2', null, __( 'Try the new blocks', 'invoiceninja' ) ),
+			h( Card, null,
+				h( 'p', null, __( 'The new display is built from blocks you arrange in the editor. It follows your theme’s styles and adds the Mini Cart, Checkout and Order Status blocks.', 'invoiceninja' ) ),
+				h( 'p', null, h( 'strong', null, __( 'Current display:', 'invoiceninja' ) ), ' ', display === 'blocks' ? h( Pill, { tone: 'success' }, __( 'Blocks', 'invoiceninja' ) ) : h( Pill, null, __( 'Legacy 1.x', 'invoiceninja' ) ) ),
+				w.customisations && w.customisations.length ? h( Notice, { type: 'warning', title: __( 'Your 1.x customisations won’t carry over to blocks', 'invoiceninja' ) },
+					h( 'p', null, sprintf( /* translators: %s: list of customisations */ __( 'We found %s. They keep working in the 1.x display.', 'invoiceninja' ), w.customisations.join( ', ' ) ) ) ) : null,
+				h( 'p', { className: 'in-row' },
+					h( Button, { busy: busy === 'preview', onClick: () => act( 'preview' ) }, __( 'Preview with blocks', 'invoiceninja' ), ' ', h( 'span', { 'aria-hidden': 'true' }, '↗' ), h( 'span', { className: 'screen-reader-text' }, __( '(opens a draft copy of your Shop page in a new tab)', 'invoiceninja' ) ) ),
+					display === 'blocks'
+						? h( Button, { busy: busy === 'legacy', onClick: () => act( 'legacy' ) }, __( 'Switch back to 1.x display', 'invoiceninja' ) )
+						: confirming
+							? h( Fragment, null,
+								h( 'span', null, __( 'Switch your shop to the blocks? Your Shop page keeps a revision, and you can switch back in Settings → Store.', 'invoiceninja' ) ),
+								h( Button, { onClick: () => setConfirming( false ) }, __( 'Not now', 'invoiceninja' ) ),
+								h( Button, { primary: true, busy: busy === 'blocks', onClick: () => act( 'blocks' ) }, __( 'Switch to blocks', 'invoiceninja' ) ) )
+							: h( Button, { primary: true, onClick: () => setConfirming( true ) }, __( 'Switch to blocks…', 'invoiceninja' ) ) ) ),
+			h( 'h2', null, __( 'New in 2.0', 'invoiceninja' ) ),
+			h( 'div', { className: 'in-tools' }, features.map( ( [ title, body ] ) => h( 'section', { key: title, className: 'in-card' }, h( 'h3', null, title ), h( 'p', null, body ) ) ) ),
+			h( 'p', { className: 'in-row' }, h( 'a', { className: 'button button-primary', href: boot.urls.home }, __( 'Go to Home', 'invoiceninja' ) ), h( 'a', { href: boot.urls.settings + '&tab=store' }, __( 'Store settings', 'invoiceninja' ) ) ) );
+	}
+
 	// ---------- Orders ----------
 
 	const ORDER_STATUS = {
@@ -1077,7 +1180,9 @@
 
 	function Orders() {
 		const params = new URLSearchParams( window.location.search );
-		const [ filters, setFilters ] = useState( { status: params.get( 'status' ) || '', search: params.get( 's' ) || '', page: 1 } );
+		const [ filters, setFilters ] = useState( { status: params.get( 'status' ) || '', search: params.get( 's' ) || '', month: '', page: 1 } );
+		const [ selected, setSelected ] = useState( [] );
+		const [ bulk, setBulk ] = useState( '' );
 		const [ data, setData ] = useState( null );
 		const [ error, setError ] = useState( '' );
 		const [ message, setMessage ] = useState( '' );
@@ -1093,8 +1198,9 @@
 			const ticket = ++latest.current;
 			setError( '' );
 			try {
-				const q = new URLSearchParams( { status: f.status, search: f.search, page: String( f.page ) } );
+				const q = new URLSearchParams( { status: f.status, search: f.search, month: f.month || '', page: String( f.page ) } );
 				const result = await api( '/admin/orders?' + q.toString() );
+				setSelected( [] );
 				if ( ticket === latest.current ) {
 					setData( result );
 				}
@@ -1107,7 +1213,33 @@
 		};
 		useEffect( () => {
 			load( filters );
-		}, [ filters.status, filters.page ] );
+		}, [ filters.status, filters.page, filters.month ] );
+		const months = [];
+		for ( let i = 0; i < 12; i++ ) {
+			const d = new Date();
+			d.setDate( 1 );
+			d.setMonth( d.getMonth() - i );
+			months.push( [ d.getFullYear() + '-' + String( d.getMonth() + 1 ).padStart( 2, '0' ), d.toLocaleDateString( undefined, { month: 'long', year: 'numeric' } ) ] );
+		}
+		const applyBulk = async () => {
+			if ( ! bulk || ! selected.length ) {
+				return;
+			}
+			// eslint-disable-next-line no-alert
+			if ( bulk === 'cancel' && ! window.confirm( sprintf( /* translators: %d: number of orders */ _n( 'Cancel %d order? Its invoice is cancelled in Invoice Ninja and its payment link stops working. Buyers are emailed.', 'Cancel %d orders? Their invoices are cancelled in Invoice Ninja and their payment links stop working. Buyers are emailed.', selected.length, 'invoiceninja' ), selected.length ) ) ) {
+				return;
+			}
+			setBusy( ( prev ) => Object.assign( {}, prev, { bulk: true } ) );
+			try {
+				const r = await api( '/admin/orders/bulk', { method: 'POST', data: { action: bulk, ids: selected, email: true } } );
+				setMessage( sprintf( /* translators: 1: done, 2: failed */ __( '%1$d done, %2$d skipped.', 'invoiceninja' ), r.done, r.failed.length ) + ( r.failed.length ? ' ' + r.failed.map( ( f ) => f.message ).filter( Boolean ).join( ' ' ) : '' ) );
+			} catch ( e ) {
+				setMessage( errorText( e ) );
+			}
+			setBusy( ( prev ) => Object.assign( {}, prev, { bulk: false } ) );
+			load( filtersRef.current );
+		};
+		const toggle = ( id ) => setSelected( ( prev ) => ( prev.includes( id ) ? prev.filter( ( x ) => x !== id ) : prev.concat( [ id ] ) ) );
 		useEffect( () => {
 			if ( confirming && keepRef.current ) {
 				keepRef.current.focus();
@@ -1179,12 +1311,24 @@
 			h( 'form', { className: 'in-filters in-filters--orders', role: 'search', onSubmit: ( e ) => { e.preventDefault(); const f = Object.assign( {}, filters, { page: 1 } ); setFilters( f ); load( f ); } },
 				h( 'span', { className: 'in-field' }, h( 'label', { htmlFor: 'in-order-q' }, __( 'Order, invoice or email', 'invoiceninja' ) ),
 					h( 'input', { id: 'in-order-q', type: 'search', value: filters.search, onChange: ( e ) => setFilters( Object.assign( {}, filters, { search: e.target.value } ) ) } ) ),
-				h( 'button', { type: 'submit', className: 'button' }, __( 'Search', 'invoiceninja' ) ) ),
+				h( 'button', { type: 'submit', className: 'button' }, __( 'Search', 'invoiceninja' ) ),
+				h( 'span', { className: 'in-field' }, h( 'label', { htmlFor: 'in-order-month' }, __( 'Placed', 'invoiceninja' ) ),
+					h( 'select', { id: 'in-order-month', value: filters.month, onChange: ( e ) => setFilters( Object.assign( {}, filters, { month: e.target.value, page: 1 } ) ) },
+						h( 'option', { value: '' }, __( 'All dates', 'invoiceninja' ) ),
+						months.map( ( [ v, l ] ) => h( 'option', { key: v, value: v }, l ) ) ) ),
+				boot.can.manage ? h( 'span', { className: 'in-field' }, h( 'label', { htmlFor: 'in-order-bulk' }, __( 'Bulk actions', 'invoiceninja' ) ),
+					h( 'span', { className: 'in-row' },
+						h( 'select', { id: 'in-order-bulk', value: bulk, onChange: ( e ) => setBulk( e.target.value ) },
+							h( 'option', { value: '' }, __( 'Bulk actions', 'invoiceninja' ) ),
+							h( 'option', { value: 'resend' }, __( 'Resend payment email', 'invoiceninja' ) ),
+							h( 'option', { value: 'cancel' }, __( 'Cancel…', 'invoiceninja' ) ) ),
+						h( Button, { busy: !! busy.bulk, disabled: ! bulk || ! selected.length, onClick: applyBulk }, __( 'Apply', 'invoiceninja' ) ) ) ) : null ),
 			h( 'div', { role: 'status', className: 'in-live' },
 				error ? h( Notice, { type: 'error' }, h( 'p', null, error ) ) : null,
 				message ? h( Notice, { type: 'info' }, h( 'p', null, message ) ) : null ),
 			h( 'table', { className: 'wp-list-table widefat striped in-orders' },
 				h( 'thead', null, h( 'tr', null,
+					boot.can.manage ? h( 'td', { className: 'check-column' }, h( 'input', { type: 'checkbox', 'aria-label': __( 'Select all orders on this page', 'invoiceninja' ), checked: !! ( data && data.items.length && selected.length === data.items.length ), onChange: ( e ) => setSelected( e.target.checked && data ? data.items.map( ( o ) => o.id ) : [] ) } ) ) : null,
 					h( 'th', { scope: 'col' }, __( 'Order', 'invoiceninja' ) ),
 					h( 'th', { scope: 'col' }, __( 'Customer', 'invoiceninja' ) ),
 					h( 'th', { scope: 'col' }, __( 'Status', 'invoiceninja' ) ),
@@ -1192,8 +1336,8 @@
 					h( 'th', { scope: 'col' }, __( 'Invoice', 'invoiceninja' ) ),
 					h( 'th', { scope: 'col' }, __( 'Placed', 'invoiceninja' ) ) ) ),
 				h( 'tbody', null,
-					! data ? h( 'tr', null, h( 'td', { colSpan: 6 }, __( 'Loading…', 'invoiceninja' ) ) ) : null,
-					data && data.items.length === 0 ? h( 'tr', null, h( 'td', { colSpan: 6 },
+					! data ? h( 'tr', null, h( 'td', { colSpan: boot.can.manage ? 7 : 6 }, __( 'Loading…', 'invoiceninja' ) ) ) : null,
+					data && data.items.length === 0 ? h( 'tr', null, h( 'td', { colSpan: boot.can.manage ? 7 : 6 },
 						filters.status || filters.search ? __( 'No orders match.', 'invoiceninja' ) : __( 'No orders yet. They appear here as soon as someone checks out.', 'invoiceninja' ) ) ) : null,
 					data ? data.items.map( ( o ) => {
 						const [ tone, label ] = ORDER_STATUS[ o.status ] || [ 'neutral', o.status ];
@@ -1218,6 +1362,7 @@
 						}
 						return h( Fragment, { key: o.id },
 							h( 'tr', { className: o.status === 'attention' ? 'is-attention' : '' },
+								boot.can.manage ? h( 'th', { scope: 'row', className: 'check-column' }, h( 'input', { type: 'checkbox', 'aria-label': sprintf( /* translators: %s: order number */ __( 'Select order %s', 'invoiceninja' ), o.number ), checked: selected.includes( o.id ), onChange: () => toggle( o.id ) } ) ) : null,
 								h( 'td', null,
 									h( 'strong', null, o.number ),
 									h( 'div', { className: 'in-row-actions' }, actions.map( ( a, i ) => h( Fragment, { key: i }, i ? h( 'span', { className: 'in-sep', 'aria-hidden': 'true' }, ' | ' ) : null, a ) ) ) ),
@@ -1230,7 +1375,7 @@
 								h( 'td', { className: 'in-num' }, money( o.total, o.currency ) ),
 								h( 'td', null, o.invoice_url ? h( External, { href: o.invoice_url }, o.invoice_number || __( 'Invoice', 'invoiceninja' ) ) : h( 'span', { className: 'in-muted' }, __( 'Not yet', 'invoiceninja' ) ) ),
 								h( 'td', null, new Date( o.created_at.replace( ' ', 'T' ) + 'Z' ).toLocaleString() ) ),
-							confirming === o.id ? h( 'tr', { className: 'in-confirm-row' }, h( 'td', { colSpan: 6 },
+							confirming === o.id ? h( 'tr', { className: 'in-confirm-row' }, h( 'td', { colSpan: boot.can.manage ? 7 : 6 },
 								h( 'div', { className: 'in-confirm', id: 'in-confirm-' + o.id, role: 'group', 'aria-labelledby': 'in-confirm-q-' + o.id, onKeyDown: ( e ) => { if ( e.key === 'Escape' ) { e.stopPropagation(); closeConfirm(); } } },
 									h( 'p', null, h( 'strong', { id: 'in-confirm-q-' + o.id }, sprintf( /* translators: %s: order number */ __( 'Cancel order %s?', 'invoiceninja' ), o.number ) ), ' ',
 										o.invoice_number ? sprintf( /* translators: %s: invoice number */ __( 'Invoice %s is cancelled in Invoice Ninja, and its payment link stops working.', 'invoiceninja' ), o.invoice_number ) : __( "It hasn't reached Invoice Ninja, so nothing is created there.", 'invoiceninja' ) ),
@@ -1248,13 +1393,38 @@
 					h( Button, { disabled: filters.page >= pages, onClick: () => setFilters( Object.assign( {}, filters, { page: filters.page + 1 } ) ), 'aria-label': __( 'Next page', 'invoiceninja' ) }, '›' ) ) ) );
 	}
 
+	// ---------- Extensions (modules add Settings tabs) ----------
+
+	const extensionTabs = [];
+	const extensionScreens = {};
+	/**
+	 * Saves a module's settings group and keeps boot.settings in step.
+	 *
+	 * @param {Object} partial e.g. { forms: { ... } }
+	 */
+	const saveSettings = async ( partial ) => {
+		const saved = await api( '/settings', { method: 'POST', data: partial } );
+		boot.settings = saved;
+		return saved;
+	};
+	window.invoiceNinjaAdminUI = {
+		h, Fragment, useState, useEffect, useRef, __, _n, sprintf, api, errorText, saveSettings,
+		Button, Notice, Card, Pill, External, StatusIcon, boot,
+		addTab( tab ) {
+			extensionTabs.push( tab );
+		},
+		addScreen( name, Component ) {
+			extensionScreens[ name ] = Component;
+		},
+	};
+
 	// ---------- Mount ----------
 
-	const SCREENS = { home: Home, setup: Setup, settings: Settings, status: Status, orders: Orders };
+	const SCREENS = { home: Home, setup: Setup, settings: Settings, status: Status, orders: Orders, welcome: Welcome };
 
 	wp.domReady( () => {
 		const root = document.getElementById( 'invoiceninja-app' );
-		const Screen = root && SCREENS[ root.dataset.screen ];
+		const Screen = root && ( SCREENS[ root.dataset.screen ] || extensionScreens[ root.dataset.screen ] );
 		if ( Screen ) {
 			createRoot( root ).render( h( Screen ) );
 		}
