@@ -12,8 +12,19 @@ def test(fn):
 
 
 def member():
-    wp_eval("$u = get_user_by('login', 'member'); foreach (array('_invoiceninja_verified_at', '_invoiceninja_verified_email_hash', '_invoiceninja_client_id', '_invoiceninja_contact_id') as $k) { delete_user_meta($u->ID, $k); }")
+    wp_eval("$u = get_user_by('login', 'member'); foreach (array('_invoiceninja_verified_at', '_invoiceninja_verified_email_hash', '_invoiceninja_client_id', '_invoiceninja_contact_id', '_invoiceninja_link_email_hash') as $k) { delete_user_meta($u->ID, $k); }")
     return Browser().login('member', 'pass')
+
+
+def pay_form(ago=10):
+    """A Pay Invoice form token as if the block was rendered `ago` seconds ago."""
+    return wp_eval("echo InvoiceNinja\\Portal\\Account::formToken(time() - %d, InvoiceNinja\\Plugin::instance()->secrets->get('secret'));" % ago)
+
+
+def pay_invoice(number, email, **extra):
+    data = {'number': number, 'email': email, 'website': '', 'form': pay_form(), 'elapsed': 10}
+    data.update(extra)
+    return Browser().api('POST', '/pay-invoice', data)
 
 
 def member_id():
@@ -60,12 +71,58 @@ def changing_the_email_clears_verification():
     wp_eval("InvoiceNinja\\Plugin::instance()->module('portal')->verification->mark(%s, 'admin');" % uid)
     _, me = m.api('GET', '/account')
     check(me['verified'], 'verified by an admin')
+    m.api('GET', '/account')  # links the client found for a+b@x.com
+    check(wp_eval("echo get_user_meta(%s, '_invoiceninja_client_id', true);" % uid) == 'CLIENT_PLUS', 'linked by email')
     wp('user', 'update', uid, '--user_email=changed@x.com')
     try:
         _, me = Browser().login('member', 'pass').api('GET', '/account')
         check(not me['verified'], 'a new email must be verified again', me)
+        check(wp_eval("echo get_user_meta(%s, '_invoiceninja_client_id', true);" % uid) == '', 'the link made for the old email is gone')
     finally:
         wp('user', 'update', uid, '--user_email=a+b@x.com')
+
+
+@test
+def a_link_made_for_another_email_never_opens_its_invoices():
+    # The takeover: an account registered with someone else's email gets linked to their
+    # client (e.g. by a guest order), then switches to an email it can verify.
+    store_ready()
+    m = member()
+    uid = member_id()
+    wp_eval("InvoiceNinja\\Plugin::instance()->module('portal')->links->link(%s, 'a+b@x.com', 'CLIENT_PLUS', 'C1');" % uid)
+    wp('user', 'update', uid, '--user_email=mallory@x.com')
+    try:
+        wp_eval("InvoiceNinja\\Plugin::instance()->module('portal')->verification->mark(%s, 'admin');" % uid)
+        m = Browser().login('member', 'pass')
+        _, me = m.api('GET', '/account')
+        check(me['verified'] and not me['linked'], "verified for the new email, but not linked to the old email's client", me)
+        _, rows = m.api('GET', '/account/invoices')
+        check(rows.get('rows') == [], 'no invoices of the old client', rows)
+        status, location, _ = m.get('/?invoiceninja=portal')
+        check('in.test' not in (location or ''), "never redirected into the old client's portal", (status, location))
+        # Even a link someone wrote straight into user meta for the old email is ignored
+        wp_eval("update_user_meta(%s, '_invoiceninja_client_id', 'CLIENT_PLUS'); update_user_meta(%s, '_invoiceninja_contact_id', 'C1');" % (uid, uid))
+        status, location, _ = m.get('/?invoiceninja=portal')
+        check('in.test' not in (location or ''), 'a link without the email it was made for is not trusted', (status, location))
+    finally:
+        wp('user', 'update', uid, '--user_email=a+b@x.com')
+
+
+@test
+def bulk_verify_needs_the_form_nonce():
+    b = admin()
+    uid = member_id()
+    member()
+    # A forged link (what users.php passes on after dropping the nonce)
+    status, _, _ = b.get('/wp-admin/users.php?action=invoiceninja_verify&users[]=%s' % uid)
+    verified = wp_eval("echo InvoiceNinja\\Plugin::instance()->module('portal')->verification->isVerified(%s) ? 'yes' : 'no';" % uid)
+    check(verified == 'no', 'a link without the bulk-users nonce verifies nobody', (status, verified))
+    _, _, html = b.get('/wp-admin/users.php')
+    import re
+    nonce = re.search(r'name="_wpnonce" value="([^"]+)"', html).group(1)
+    status, location, _ = b.get('/wp-admin/users.php?_wpnonce=%s&_wp_http_referer=%%2Fwp-admin%%2Fusers.php&action=invoiceninja_verify&users[]=%s' % (nonce, uid))
+    verified = wp_eval("echo InvoiceNinja\\Plugin::instance()->module('portal')->verification->isVerified(%s) ? 'yes' : 'no';" % uid)
+    check(verified == 'yes' and 'invoiceninja_verified=1' in (location or ''), 'the real bulk action still works', (status, location, verified))
 
 
 @test
@@ -108,8 +165,25 @@ def pay_invoice_emails_the_link_with_the_same_reply_either_way():
     _, order = checkout(shopper(), 'a+b@x.com')
     number = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_number'];" % order['number'])
     reset_mock_log()
-    _, a = Browser().api('POST', '/pay-invoice', {'number': number, 'email': 'a+b@x.com'})
-    _, z = Browser().api('POST', '/pay-invoice', {'number': number, 'email': 'wrong@x.com'})
+    _, a = pay_invoice(number, 'a+b@x.com')
+    _, z = pay_invoice(number, 'wrong@x.com')
     check(a == z == {'ok': True}, 'the same reply', (a, z))
     sent = mails('a+b@x.com')
     check(len(sent) == 1 and 'INVITE' in sent[0]['body'], 'the payment link goes to the email on the invoice', (sent, describe(api_calls())))
+    check([c for c in api_calls() if 'invoices?' in c['url'] and 'number=' in c['url'] and 'filter=' not in c['url']],
+          "the invoice is looked up by its exact number", describe(api_calls()))
+
+
+@test
+def pay_invoice_drops_bots_and_rushed_submits():
+    store_ready()
+    _, order = checkout(shopper(), 'a+b@x.com')
+    number = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_number'];" % order['number'])
+    reset_mock_log()
+    _, r = pay_invoice(number, 'a+b@x.com', website='http://spam.example')
+    check(r == {'ok': True}, 'the spam trap gets the usual reply', r)
+    status, r = pay_invoice(number, 'a+b@x.com', elapsed=1)
+    check(status == 422 and r['code'] == 'too_fast', 'too fast to be a person', (status, r))
+    status, r = pay_invoice(number, 'a+b@x.com', form='1.forged')
+    check(status == 400, 'a forged form token is refused', (status, r))
+    check(not api_calls() and not mails('a+b@x.com'), 'nothing looked up or sent', describe(api_calls()))

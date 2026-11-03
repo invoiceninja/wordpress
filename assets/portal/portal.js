@@ -221,10 +221,24 @@
 	// ---------- Pay Invoice ----------
 
 	function initPayInvoice( root ) {
+		const started = Date.now();
+		const trap = root.querySelector( '.invoiceninja-sr' );
+		const problem = el( 'div', { class: 'invoiceninja-payinvoice__error' } );
 		const form = el( 'form', { class: 'invoiceninja-find', onSubmit: async ( e ) => {
 			e.preventDefault();
 			const data = new FormData( form );
-			await api( 'POST', '/pay-invoice', { number: data.get( 'number' ), email: data.get( 'email' ) } );
+			problem.textContent = '';
+			const result = await api( 'POST', '/pay-invoice', {
+				number: data.get( 'number' ),
+				email: data.get( 'email' ),
+				website: data.get( 'website' ) || '',
+				form: root.getAttribute( 'data-form' ) || '',
+				elapsed: Math.floor( ( Date.now() - started ) / 1000 ),
+			} );
+			if ( result.httpStatus >= 400 ) {
+				problem.appendChild( notice( 'error', result.message || t.error ) );
+				return;
+			}
 			root.textContent = '';
 			const h = el( 'h2', { class: 'invoiceninja-heading', tabindex: '-1', text: t.linkOnWay } );
 			root.appendChild( h );
@@ -232,8 +246,10 @@
 			h.focus();
 		} },
 			el( 'h2', { class: 'invoiceninja-heading', text: t.payInvoiceTitle } ),
+			problem,
 			el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-pay-number', text: t.invoiceNumber } ), el( 'input', { id: 'invoiceninja-pay-number', name: 'number', required: true } ) ),
 			el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-pay-email', text: t.email } ), el( 'input', { id: 'invoiceninja-pay-email', name: 'email', type: 'email', autocomplete: 'email', required: true } ) ),
+			trap,
 			el( 'p', { class: 'invoiceninja-actions' }, el( 'button', { type: 'submit', class: 'wp-element-button' }, t.payInvoiceSend ) ) );
 		root.appendChild( form );
 	}

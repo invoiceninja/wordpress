@@ -38,7 +38,9 @@ final class Users {
 		add_filter( 'manage_users_columns', array( $this, 'column' ) );
 		add_filter( 'manage_users_custom_column', array( $this, 'cell' ), 10, 3 );
 		add_filter( 'bulk_actions-users', array( $this, 'bulkActions' ) );
-		add_filter( 'handle_bulk_actions-users', array( $this, 'bulk' ), 10, 3 );
+		// Not handle_bulk_actions-users: users.php drops the bulk-users nonce before that
+		// filter runs, so it can't tell a real submit from a forged link.
+		add_action( 'load-users.php', array( $this, 'maybeBulk' ) );
 		add_action( 'admin_notices', array( $this, 'bulkNotice' ) );
 		add_action( 'cli_init', array( $this, 'cli' ) );
 	}
@@ -142,20 +144,43 @@ final class Users {
 	}
 
 	/**
+	 * The bulk action, on load-users.php (before core's users.php strips the nonce).
+	 */
+	public function maybeBulk(): void {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- checked in bulk().
+		$redirect = $this->bulk( wp_unslash( $_REQUEST ) );
+		if ( null !== $redirect ) {
+			wp_safe_redirect( $redirect );
+			exit;
+		}
+	}
+
+	/**
 	 * Run the bulk action.
 	 *
-	 * @param string    $redirect Redirect.
-	 * @param string    $action   Action.
-	 * @param list<int> $ids      User ids.
+	 * @param array<string, mixed> $request The request ($_REQUEST, unslashed).
+	 * @return string|null Where to go next, or null when it isn't our action.
 	 */
-	public function bulk( $redirect, $action, $ids ): string {
-		if ( 'invoiceninja_verify' !== $action || ! current_user_can( Capabilities::MANAGE ) ) {
-			return (string) $redirect;
+	public function bulk( array $request ): ?string {
+		$action = (string) ( is_scalar( $request['action'] ?? null ) ? $request['action'] : '-1' );
+		if ( '-1' === $action ) {
+			$action = (string) ( is_scalar( $request['action2'] ?? null ) ? $request['action2'] : '' );
 		}
-		foreach ( (array) $ids as $id ) {
-			$this->verification->mark( (int) $id, 'bulk' );
+		if ( 'invoiceninja_verify' !== $action || empty( $request['users'] ) ) {
+			return null;
 		}
-		return add_query_arg( 'invoiceninja_verified', count( (array) $ids ), (string) $redirect );
+		$nonce = is_scalar( $request['_wpnonce'] ?? null ) ? (string) $request['_wpnonce'] : '';
+		if ( ! current_user_can( Capabilities::MANAGE ) || ! wp_verify_nonce( $nonce, 'bulk-users' ) ) {
+			wp_die( esc_html__( 'The link you followed has expired.', 'invoiceninja' ), '', array( 'response' => 403 ) );
+		}
+		$marked = 0;
+		foreach ( array_filter( array_map( 'intval', (array) $request['users'] ) ) as $id ) {
+			if ( current_user_can( 'edit_user', $id ) ) {
+				$this->verification->mark( $id, 'bulk' );
+				++$marked;
+			}
+		}
+		return add_query_arg( 'invoiceninja_verified', $marked, admin_url( 'users.php' ) );
 	}
 
 	/**

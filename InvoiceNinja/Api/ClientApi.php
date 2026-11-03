@@ -148,7 +148,8 @@ class ClientApi extends BaseApi
         }
 
         if ( $client = self::find( $user->user_email ) ) {
-            if ( get_option( 'invoiceninja_match_found' ) == 'update' ) {
+            // Anyone can register with someone else's email: only a verified owner updates the client.
+            if ( get_option( 'invoiceninja_match_found' ) == 'update' && self::userVerified( $user->ID ?? 0 ) ) {
                 $client = self::update( $client, $user );
             }
         } else {
@@ -198,9 +199,8 @@ class ClientApi extends BaseApi
         }
 
         if ( $client = self::find( $email ) ) {
-            if ( get_option( 'invoiceninja_match_found' ) === 'update' ) {
-                return self::updateFromOrder( $client, $order );
-            }
+            // A guest order proves nothing about the billing email: an existing client is
+            // never changed from one, even with "update when found".
             return $client;
         }
 
@@ -215,13 +215,25 @@ class ClientApi extends BaseApi
         }
 
         if ( $client = self::find( $email ) ) {
-            if ( get_option( 'invoiceninja_match_found' ) === 'update' ) {
+            // Only update when the billing email is the buyer's own, verified account email.
+            if ( get_option( 'invoiceninja_match_found' ) === 'update' && self::ownsEmail( $user, $email ) ) {
                 return self::updateFromOrder( $client, $order, $user );
             }
             return $client;
         }
 
         return self::createFromOrder( $order, $user );
+    }
+
+    /**
+     * Whether $email is the user's own account email and they've verified it.
+     */
+    public static function ownsEmail( $user, $email )
+    {
+        return is_object( $user )
+            && strtolower( trim( (string) ( $user->user_email ?? '' ) ) ) === strtolower( trim( (string) $email ) )
+            && '' !== trim( (string) $email )
+            && self::userVerified( $user->ID ?? 0 );
     }
 
     public static function convertOrder( $order, $user = null )

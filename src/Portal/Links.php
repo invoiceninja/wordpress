@@ -10,17 +10,25 @@ declare(strict_types=1);
 namespace InvoiceNinja\Portal;
 
 use InvoiceNinja\Api\ApiException;
+use InvoiceNinja\Api\ErrorKind;
 use InvoiceNinja\Plugin;
 
 /**
  * A link is the client and the user's own contact in it (user meta). By default users are
  * linked when they buy or ask for a quote; Settings > Customers can also create clients
  * when users register, for chosen roles, and export existing users in the background.
+ *
+ * A link is only trusted for the email it was made for: a keyed hash of that email is
+ * stored with it, a link whose email no longer matches the account is ignored, and it is
+ * cleared when the email changes. Before customer data is shown or a portal link opened,
+ * confirmed() also checks with Invoice Ninja that the linked contact still uses the
+ * account's email. Everything that links a user goes through link().
  */
 final class Links {
 
 	public const CLIENT  = '_invoiceninja_client_id';
 	public const CONTACT = '_invoiceninja_contact_id';
+	public const EMAIL   = '_invoiceninja_link_email_hash';
 
 	/**
 	 * Constructor.
@@ -40,29 +48,43 @@ final class Links {
 	}
 
 	/**
-	 * The user's client and contact ids.
+	 * The user's client and contact ids, when the link was made for their current email.
 	 *
 	 * @param int $user_id User id.
 	 * @return array{client_id: string, contact_id: string}|null
 	 */
 	public function get( int $user_id ): ?array {
 		$client = (string) get_user_meta( $user_id, self::CLIENT, true );
-		return '' === $client ? null : array(
+		if ( '' === $client || ! $this->boundToEmail( $user_id ) ) {
+			return null;
+		}
+		return array(
 			'client_id'  => $client,
 			'contact_id' => (string) get_user_meta( $user_id, self::CONTACT, true ),
 		);
 	}
 
 	/**
-	 * Save a link.
+	 * Link a user to the client found or made for $email, when that is the account's own
+	 * email and the user has no trusted link yet.
 	 *
 	 * @param int    $user_id    User id.
+	 * @param string $email      The email the client was found or made for.
 	 * @param string $client_id  Client id.
 	 * @param string $contact_id Contact id.
+	 * @return bool Whether the link was saved.
 	 */
-	public function set( int $user_id, string $client_id, string $contact_id ): void {
-		update_user_meta( $user_id, self::CLIENT, sanitize_text_field( $client_id ) );
-		update_user_meta( $user_id, self::CONTACT, sanitize_text_field( $contact_id ) );
+	public function link( int $user_id, string $email, string $client_id, string $contact_id ): bool {
+		$user = $user_id > 0 ? get_userdata( $user_id ) : false;
+		if ( ! $user || '' === trim( $client_id ) || '' === self::normal( $email ) || self::normal( (string) $user->user_email ) !== self::normal( $email ) ) {
+			return false;
+		}
+		if ( null !== $this->get( $user_id ) ) {
+			return false;
+		}
+		$this->clear( $user_id );
+		$this->set( $user_id, $client_id, $contact_id );
+		return true;
 	}
 
 	/**
@@ -73,6 +95,24 @@ final class Links {
 	public function clear( int $user_id ): void {
 		delete_user_meta( $user_id, self::CLIENT );
 		delete_user_meta( $user_id, self::CONTACT );
+		delete_user_meta( $user_id, self::EMAIL );
+		foreach ( Account::TABS as $tab ) {
+			delete_transient( 'invoiceninja_acct_' . $user_id . '_' . $tab );
+		}
+	}
+
+	/**
+	 * Remove a link that wasn't made for the user's current email.
+	 *
+	 * @param int $user_id User id.
+	 * @return bool Whether a link was removed.
+	 */
+	public function clearStale( int $user_id ): bool {
+		if ( '' === (string) get_user_meta( $user_id, self::CLIENT, true ) || $this->boundToEmail( $user_id ) ) {
+			return false;
+		}
+		$this->clear( $user_id );
+		return true;
 	}
 
 	/**
@@ -94,10 +134,81 @@ final class Links {
 		}
 		$found = $this->plugin->clients->find( $this->plugin->api(), (string) $user->user_email );
 		if ( null === $found ) {
+			$this->clearStale( $user_id );
+			return $this->get( $user_id );
+		}
+		$this->clear( $user_id );
+		$this->set( $user_id, $found['client_id'], $found['contact_id'] );
+		return $this->get( $user_id );
+	}
+
+	/**
+	 * The link, checked with Invoice Ninja: the linked contact must still exist and use the
+	 * account's current email. Otherwise the link is dropped and the client looked up again
+	 * by email. Use this before showing customer data or opening a portal link.
+	 *
+	 * @param int $user_id User id.
+	 * @return array{client_id: string, contact_id: string, contact: array<string, mixed>}|null
+	 * @throws ApiException When Invoice Ninja can't be asked.
+	 */
+	public function confirmed( int $user_id ): ?array {
+		$link = $this->discover( $user_id );
+		$user = get_userdata( $user_id );
+		if ( null === $link || '' === $link['contact_id'] || ! $user ) {
+			return null;
+		}
+		$email = (string) $user->user_email;
+		$api   = $this->plugin->api();
+		try {
+			$client = $api->get( 'clients/' . rawurlencode( $link['client_id'] ), array(), 5.0 )->data();
+		} catch ( ApiException $e ) {
+			if ( ErrorKind::NotFound !== $e->kind ) {
+				throw $e;
+			}
+			$client = array();
+		}
+		$contact = self::matchingContact( $client, $link['contact_id'], $email );
+		if ( null !== $contact ) {
+			return $link + array( 'contact' => $contact );
+		}
+		// The client was deleted or the contact's email changed: look again by email.
+		$this->clear( $user_id );
+		$found = $this->plugin->clients->find( $api, $email );
+		if ( null === $found ) {
+			return null;
+		}
+		$contact = self::matchingContact( $found['client'], $found['contact_id'], $email );
+		if ( null === $contact ) {
 			return null;
 		}
 		$this->set( $user_id, $found['client_id'], $found['contact_id'] );
-		return $this->get( $user_id );
+		return array(
+			'client_id'  => $found['client_id'],
+			'contact_id' => $found['contact_id'],
+			'contact'    => $contact,
+		);
+	}
+
+	/**
+	 * The contact with this id in a client record, when it uses this email (and neither
+	 * the client nor the contact is deleted).
+	 *
+	 * @param array<string, mixed> $client     Client record from Invoice Ninja.
+	 * @param string               $contact_id Contact id.
+	 * @param string               $email      Email.
+	 * @return array<string, mixed>|null
+	 */
+	public static function matchingContact( array $client, string $contact_id, string $email ): ?array {
+		if ( '' === $contact_id || '' === self::normal( $email ) || ! empty( $client['is_deleted'] ) ) {
+			return null;
+		}
+		foreach ( (array) ( $client['contacts'] ?? array() ) as $contact ) {
+			if ( is_array( $contact ) && (string) ( $contact['id'] ?? '' ) === $contact_id && empty( $contact['is_deleted'] )
+				&& self::normal( (string) ( $contact['email'] ?? '' ) ) === self::normal( $email ) ) {
+				return $contact;
+			}
+		}
+		return null;
 	}
 
 	/**
@@ -106,14 +217,7 @@ final class Links {
 	 * @param array<string, mixed> $order Order.
 	 */
 	public function fromOrder( array $order ): void {
-		$user_id = (int) ( $order['user_id'] ?? 0 );
-		$user    = $user_id > 0 ? get_userdata( $user_id ) : false;
-		if ( ! $user || strtolower( (string) $user->user_email ) !== strtolower( (string) $order['email'] ) || '' === (string) $order['client_id'] ) {
-			return;
-		}
-		if ( null === $this->get( $user_id ) ) {
-			$this->set( $user_id, (string) $order['client_id'], (string) ( $order['customer']['contact_id'] ?? '' ) );
-		}
+		$this->link( (int) ( $order['user_id'] ?? 0 ), (string) ( $order['email'] ?? '' ), (string) ( $order['client_id'] ?? '' ), (string) ( $order['customer']['contact_id'] ?? '' ) );
 	}
 
 	/**
@@ -139,9 +243,10 @@ final class Links {
 		if ( ! $user || null !== $this->get( $user_id ) || ! $this->plugin->environment->writesAllowed() ) {
 			return;
 		}
+		$email = (string) $user->user_email;
 		$found = $this->plugin->clients->findOrCreate(
 			$this->plugin->api(),
-			(string) $user->user_email,
+			$email,
 			array(
 				'first_name' => (string) $user->first_name,
 				'last_name'  => (string) $user->last_name,
@@ -149,7 +254,7 @@ final class Links {
 				'phone'      => (string) get_user_meta( $user_id, 'billing_phone', true ),
 			)
 		);
-		$this->set( $user_id, $found['client_id'], $found['contact_id'] );
+		$this->link( $user_id, $email, $found['client_id'], $found['contact_id'] );
 	}
 
 	/**
@@ -192,6 +297,53 @@ final class Links {
 		} else {
 			$this->plugin->logger->info( 'customers', 'Customer export finished' );
 		}
+	}
+
+	/**
+	 * Save a link for the user's current email. Callers have checked the client was found
+	 * or made for that email.
+	 *
+	 * @param int    $user_id    User id.
+	 * @param string $client_id  Client id.
+	 * @param string $contact_id Contact id.
+	 */
+	private function set( int $user_id, string $client_id, string $contact_id ): void {
+		$user = get_userdata( $user_id );
+		if ( ! $user ) {
+			return;
+		}
+		update_user_meta( $user_id, self::CLIENT, sanitize_text_field( $client_id ) );
+		update_user_meta( $user_id, self::CONTACT, sanitize_text_field( $contact_id ) );
+		update_user_meta( $user_id, self::EMAIL, $this->hash( (string) $user->user_email ) );
+	}
+
+	/**
+	 * Whether the stored link was made for the user's current email.
+	 *
+	 * @param int $user_id User id.
+	 */
+	private function boundToEmail( int $user_id ): bool {
+		$user   = $user_id > 0 ? get_userdata( $user_id ) : false;
+		$stored = (string) get_user_meta( $user_id, self::EMAIL, true );
+		return $user && '' !== $stored && hash_equals( $this->hash( (string) $user->user_email ), $stored );
+	}
+
+	/**
+	 * Keyed hash of an email (a different context from the verification hash).
+	 *
+	 * @param string $email Email.
+	 */
+	private function hash( string $email ): string {
+		return hash_hmac( 'sha256', 'link|' . self::normal( $email ), $this->plugin->secrets->get( 'secret' ) );
+	}
+
+	/**
+	 * An email compared case-insensitively, without surrounding spaces.
+	 *
+	 * @param string $email Email.
+	 */
+	private static function normal( string $email ): string {
+		return strtolower( trim( $email ) );
 	}
 
 	/**

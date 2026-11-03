@@ -175,10 +175,8 @@ final class WooCustomerSync {
 			$client->put( 'clients/' . rawurlencode( $found['client_id'] ), self::updateBody( $found['client'], $email, $details ), array(), 10.0 );
 			$this->plugin->logger->log( LogLevel::Info, 'customers', 'Updated an Invoice Ninja client from a WooCommerce customer', array(), 'user', (string) $user_id );
 		}
-		if ( '' === (string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ) && strtolower( (string) $user->user_email ) === $email ) {
-			update_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, $found['client_id'] );
-			update_user_meta( $user_id, \InvoiceNinja\Portal\Links::CONTACT, $found['contact_id'] );
-		}
+		// Links the account when its billing email is the account's own email.
+		( new \InvoiceNinja\Portal\Links( $this->plugin ) )->link( $user_id, $email, $found['client_id'], $found['contact_id'] );
 		return $found['client_id'];
 	}
 

@@ -50,9 +50,10 @@ The hook API follows semantic versioning: names and payload shapes don't change 
 | `invoiceninja_subscription_eligible` | filter | `bool\|string $eligible, string $subscription_id, array $buyer` | Answer Invoice Ninja's `is_eligible` callback; return true or a refusal message (fails open) |
 | `invoiceninja_relay_allow_private` | filter | `bool $allow, string $url` | Let the provisioning relay post to a private address |
 | `invoiceninja_lead_received` / `invoiceninja_lead_quoted` | action | `array $lead` / `array $lead, array $quote` | A quote request was saved, or became a quote |
-| `invoiceninja_captcha` | filter | `bool $ok, array $input, string $form` | Add a CAPTCHA to the Quote Request Form |
+| `invoiceninja_captcha` | filter | `bool $ok, array $input, string $form` | Add a CAPTCHA to the Quote Request Form (`quote_form`) or Pay Invoice (`pay_invoice`) |
 | `invoiceninja_quote_request_spam` | filter | `bool $spam, array $fields` | Your own spam check |
 | `invoiceninja_quote_form_min_seconds` | filter | `int $seconds` | Minimum time to fill the form |
+| `invoiceninja_pay_invoice_min_seconds` | filter | `int $seconds` | Minimum time to fill the Pay Invoice form |
 | `invoiceninja_quote_tags` / `invoiceninja_quote_request_body` | filter | `array $names, array $lead` / `array $body, array $lead` | Change the quote's tags or body |
 | `invoiceninja_woo_invoice_created` | action | `int $order_id, array $invoice` | A WooCommerce order's invoice was created |
 | `invoiceninja_woo_invoice_body` | filter | `array $body, WC_Order $order` | Change the invoice sent for a WooCommerce order |

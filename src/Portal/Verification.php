@@ -109,16 +109,18 @@ final class Verification {
 	}
 
 	/**
-	 * A changed email is no longer verified.
+	 * A changed email is no longer verified, and a client link made for the old email is
+	 * dropped (it's looked up again by the new email once that is verified).
 	 *
 	 * @param int      $user_id  User id.
 	 * @param \WP_User $old_user Previous data.
 	 */
 	public function emailChanged( int $user_id, $old_user ): void {
 		$user = get_userdata( $user_id );
-		if ( $user && $old_user instanceof \WP_User && strtolower( (string) $old_user->user_email ) !== strtolower( (string) $user->user_email ) ) {
+		if ( $user && $old_user instanceof \WP_User && strtolower( trim( (string) $old_user->user_email ) ) !== strtolower( trim( (string) $user->user_email ) ) ) {
 			$this->clear( $user_id );
 		}
+		( new Links( $this->plugin ) )->clearStale( $user_id );
 	}
 
 	/**

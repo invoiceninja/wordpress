@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '8', 'schema at 8', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '9', 'schema at 9', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -42,11 +42,15 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     # One process: every wp-cli call boots the plugin, which would run the upgrade itself
     wp_eval("delete_option('invoiceninja_version'); delete_option('invoiceninja_upgraded_from'); update_option('invoiceninja_schema_version', 0);"
             "update_option('invoiceninja_api_token', 'goodtoken-legacy-plain');"
+            "update_option('invoiceninja_profile', wp_json_encode(array('company_key' => 'ck_legacy_key', 'settings' => array('name' => 'Mock Company', 'postmark_secret' => 'pm_legacy_secret'))));"
             "InvoiceNinja\\Plugin::instance()->installer->maybeUpgrade();")
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '8', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '9', 'all migrations ran')
+    profile = wp('option', 'get', 'invoiceninja_profile')
+    check('Mock Company' in profile and 'ck_legacy_key' not in profile and 'pm_legacy_secret' not in profile,
+          'the 1.x company profile keeps only its allowlist', profile)
     reset_mock_log()
     wp_eval('InvoiceNinja\\Controllers\\ProductController::loadProducts();')
     calls = api_calls()

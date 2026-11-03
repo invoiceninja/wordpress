@@ -128,14 +128,10 @@ class PostApi {
 
 		if ( isset( $_SESSION['invoiceninja_cart'] ) && ! empty( $_SESSION['invoiceninja_cart'] ) ) {
 			$cart  = $_SESSION['invoiceninja_cart'];
-			$color = '#0000EE';
-
-			if ( ! empty( $profile->settings->primary_color ) ) {
-				$color = $profile->settings->primary_color;
-			}
+			$color = self::primaryColor( $profile );
 
 			$str = '<div class="invoiceninja-cart">
-                    <div class="cart-header" style="background-color: ' . $color . ';">';
+                    <div class="cart-header" style="background-color: ' . esc_attr( $color ) . ';">';
 
 			/*
 			if ( count($cart) == 1 ) {
@@ -236,11 +232,7 @@ class PostApi {
 		if ( $product_page_id && get_the_ID() === $product_page_id ) {
 			wp_enqueue_style( 'products-styles', plugins_url( '/../../assets/css/products.css', __FILE__ ), [], INVOICENINJA_VERSION );
 
-			$color   = '#0000EE';
-			$profile = json_decode( get_option( 'invoiceninja_profile' ) );
-			if ( ! empty( $profile->settings->primary_color ) ) {
-				$color = $profile->settings->primary_color;
-			}
+			$color = self::primaryColor( json_decode( (string) get_option( 'invoiceninja_profile' ) ) );
 
 			$custom_css = esc_attr( get_option( 'invoiceninja_products_css' ) ) . '
                 a:hover div.divider {
@@ -256,6 +248,17 @@ class PostApi {
 
 			wp_enqueue_script( 'frontend-scripts', plugins_url( '/../../assets/js/frontend.js', __FILE__ ), [], INVOICENINJA_VERSION, false );
 		}
+	}
+
+	/**
+	 * The company's primary colour from the profile, only when it's a hex colour.
+	 */
+	public static function primaryColor( $profile ) {
+		$color = is_object( $profile ) && isset( $profile->settings->primary_color ) && is_string( $profile->settings->primary_color )
+			? sanitize_hex_color( trim( $profile->settings->primary_color ) )
+			: '';
+
+		return $color ? $color : '#0000EE';
 	}
 
 	public function setPostTypes( $types ) {
@@ -292,9 +295,11 @@ class PostApi {
 					if ( $is_single ) {
 						if ( ! is_user_logged_in() ) {
 							$this->redirectToLogin();
-						} elseif ( $invoice = InvoiceApi::create( [ $product_id => 1 ] ) ) {
-							wp_redirect( $invoice->invitations[0]->link );
-							exit;
+						} else {
+							$notice = $this->purchase( [ $product_id => 1 ] );
+							if ( '' !== $notice ) {
+								return $notice;
+							}
 						}
 					} else {
 						if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
@@ -361,10 +366,11 @@ class PostApi {
 				} elseif ( $action == 'checkout' ) {
 					if ( ! is_user_logged_in() ) {
 						$this->redirectToLogin();
-					} elseif ( isset( $_SESSION['invoiceninja_cart'] ) && $invoice = InvoiceApi::create( $_SESSION['invoiceninja_cart'] ) ) {
-						unset( $_SESSION['invoiceninja_cart'] );
-						wp_redirect( $invoice->invitations[0]->link );
-						exit;
+					} elseif ( isset( $_SESSION['invoiceninja_cart'] ) ) {
+						$notice = $this->purchase( $_SESSION['invoiceninja_cart'], true );
+						if ( '' !== $notice ) {
+							return $notice;
+						}
 					}
 				}
 			}
@@ -478,6 +484,41 @@ class PostApi {
 		}
 
 		return max( 0, $max );
+	}
+
+	/**
+	 * Create the invoice and send a verified buyer to their own invitation. Unverified buyers
+	 * are sent to confirm their email first (2.0's Account page), never to an invoice.
+	 *
+	 * @return string A notice to show instead, or '' (after a redirect).
+	 */
+	private function purchase( $cart, $empty_cart = false ) {
+		$result = InvoiceApi::purchase( $cart );
+
+		if ( 'verify' === $result['status'] ) {
+			$account = \InvoiceNinja\Plugin::booted() ? \InvoiceNinja\Plugin::instance()->store->pageUrl( 'account' ) : '';
+			if ( '' !== $account && ! headers_sent() ) {
+				wp_safe_redirect( add_query_arg( 'invoiceninja_verify', '1', $account ) );
+				exit;
+			}
+
+			return '<p class="invoiceninja-notice">' . esc_html__( 'Please confirm your email address before you buy.', 'invoiceninja' )
+				. ' <a href="' . esc_url( wp_lostpassword_url( get_permalink() ) ) . '">' . esc_html__( 'Reset your password to confirm it.', 'invoiceninja' ) . '</a></p>';
+		}
+
+		if ( 'ok' === $result['status'] ) {
+			if ( $empty_cart ) {
+				unset( $_SESSION['invoiceninja_cart'] );
+			}
+			wp_redirect( $result['link'] ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- the buyer's own invitation on Invoice Ninja.
+			exit;
+		}
+
+		if ( 'failed' === $result['status'] ) {
+			return '<p class="invoiceninja-notice">' . esc_html__( "We couldn't create your invoice. Please try again later.", 'invoiceninja' ) . '</p>';
+		}
+
+		return '';
 	}
 
 	private function redirectToLogin() {

@@ -90,6 +90,17 @@ class BaseApi
         return null;
     }
 
+    /**
+     * Whether a user has proved they own their account email (2.0's verification, through
+     * the invoiceninja_is_verified filter). Nobody counts as verified without it.
+     */
+    public static function userVerified( $user_id )
+    {
+        $user_id = (int) $user_id;
+
+        return $user_id > 0 && (bool) apply_filters( 'invoiceninja_is_verified', false, $user_id );
+    }
+
     public static function hasEncryptedToken()
     {
         return strpos( (string) get_option( 'invoiceninja_api_token' ), 'in1:' ) === 0;

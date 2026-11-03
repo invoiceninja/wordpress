@@ -112,7 +112,34 @@ final class Account {
 		unset( $a );
 		$this->plugin->store->enqueue();
 		wp_enqueue_script( 'invoiceninja-portal' );
-		return '<div class="invoiceninja-payinvoice" data-invoiceninja-payinvoice data-invoiceninja-store></div>';
+		// The signed time and the spam trap are moved into the form by portal.js.
+		return '<div class="invoiceninja-payinvoice" data-invoiceninja-payinvoice data-invoiceninja-store data-form="' . esc_attr( self::formToken( time(), $this->plugin->secrets->get( 'secret' ) ) ) . '">'
+			. '<p class="invoiceninja-sr" aria-hidden="true"><label for="invoiceninja-pay-website">' . esc_html__( 'Leave this empty', 'invoiceninja' ) . '</label><input type="text" id="invoiceninja-pay-website" name="website" tabindex="-1" autocomplete="off"></p>'
+			. '</div>';
+	}
+
+	/**
+	 * A signed record of when the Pay Invoice form was rendered.
+	 *
+	 * @param int    $time   Unix time.
+	 * @param string $secret Signing secret.
+	 */
+	public static function formToken( int $time, #[\SensitiveParameter] string $secret ): string {
+		return $time . '.' . hash_hmac( 'sha256', 'pay_invoice|' . $time, $secret );
+	}
+
+	/**
+	 * When a Pay Invoice form token was made, or null when it's forged or damaged.
+	 *
+	 * @param string $token  Token.
+	 * @param string $secret Signing secret.
+	 */
+	public static function formTime( string $token, #[\SensitiveParameter] string $secret ): ?int {
+		$parts = explode( '.', $token );
+		if ( 2 !== count( $parts ) || ! ctype_digit( $parts[0] ) || strlen( $parts[0] ) > 12 ) {
+			return null;
+		}
+		return hash_equals( hash_hmac( 'sha256', 'pay_invoice|' . $parts[0], $secret ), $parts[1] ) ? (int) $parts[0] : null;
 	}
 
 	// ---------- REST ----------
@@ -160,26 +187,36 @@ final class Account {
 		if ( ! $this->verification->isVerified( $user_id ) ) {
 			return Routes::fail( 'not_verified', __( 'Confirm your email to see your account.', 'invoiceninja' ), 403 );
 		}
-		$tab  = (string) $request->get_param( 'tab' );
-		$link = $this->links->get( $user_id );
-		if ( null === $link ) {
-			return new \WP_REST_Response( array( 'rows' => array() ) );
-		}
-		if ( 'subscriptions' === $tab ) {
-			/** This filter is documented in the module brief: rows from the subscriptions module. */
-			$rows = (array) apply_filters( 'invoiceninja_account_subscriptions', array(), $link['client_id'], $user_id );
-			return new \WP_REST_Response( array( 'rows' => array_values( $rows ) ) );
-		}
+		$tab   = (string) $request->get_param( 'tab' );
+		$link  = $this->links->get( $user_id );
 		$cache = 'invoiceninja_acct_' . $user_id . '_' . $tab;
-		$rows  = get_transient( $cache );
-		if ( ! is_array( $rows ) ) {
-			try {
-				$rows = $this->rows( $tab, $link['client_id'] );
-			} catch ( ApiException $e ) {
-				return Routes::fail( 'unavailable', __( 'Your invoices are temporarily unavailable. Please try again later.', 'invoiceninja' ), 503 );
-			}
-			set_transient( $cache, $rows, MINUTE_IN_SECONDS );
+		$rows  = null === $link || 'subscriptions' === $tab ? false : get_transient( $cache );
+		// Cached rows are only kept for a minute after the link was confirmed for this email.
+		if ( is_array( $rows ) && ( $rows['client_id'] ?? null ) === $link['client_id'] && is_array( $rows['rows'] ?? null ) ) {
+			return new \WP_REST_Response( array( 'rows' => $rows['rows'] ) );
 		}
+		try {
+			$link = $this->links->confirmed( $user_id );
+			if ( null === $link ) {
+				return new \WP_REST_Response( array( 'rows' => array() ) );
+			}
+			if ( 'subscriptions' === $tab ) {
+				/** This filter is documented in the module brief: rows from the subscriptions module. */
+				$rows = (array) apply_filters( 'invoiceninja_account_subscriptions', array(), $link['client_id'], $user_id );
+				return new \WP_REST_Response( array( 'rows' => array_values( $rows ) ) );
+			}
+			$rows = $this->rows( $tab, $link['client_id'] );
+		} catch ( ApiException $e ) {
+			return Routes::fail( 'unavailable', __( 'Your invoices are temporarily unavailable. Please try again later.', 'invoiceninja' ), 503 );
+		}
+		set_transient(
+			$cache,
+			array(
+				'client_id' => $link['client_id'],
+				'rows'      => $rows,
+			),
+			MINUTE_IN_SECONDS
+		);
 		return new \WP_REST_Response( array( 'rows' => $rows ) );
 	}
 
@@ -373,9 +410,32 @@ final class Account {
 		$email  = strtolower( sanitize_email( (string) $request->get_param( 'email' ) ) );
 		$hour   = (int) floor( time() / HOUR_IN_SECONDS );
 		$reply  = new \WP_REST_Response( array( 'ok' => true ) );
+		$trap   = $request->get_param( 'website' );
+		// Bots that fill the hidden field get the same reply as people, and nothing is sent.
+		if ( ! is_scalar( $trap ) || '' !== trim( (string) $trap ) ) {
+			return $reply;
+		}
+		$started = self::formTime( (string) ( is_scalar( $request->get_param( 'form' ) ) ? $request->get_param( 'form' ) : '' ), $this->plugin->secrets->get( 'secret' ) );
+		if ( null === $started ) {
+			return Routes::fail( 'form_changed', __( 'This form has changed since the page loaded. Reload the page and try again.', 'invoiceninja' ), 400 );
+		}
+		/**
+		 * Seconds a person needs at least to fill in the Pay Invoice form.
+		 *
+		 * @since 2.0.0
+		 * @param int $seconds Seconds.
+		 */
+		$min     = max( 0, (int) apply_filters( 'invoiceninja_pay_invoice_min_seconds', 3 ) );
+		$elapsed = $request->get_param( 'elapsed' );
+		if ( time() - $started < $min || (int) ( is_numeric( $elapsed ) ? $elapsed : 0 ) < $min ) {
+			return Routes::fail( 'too_fast', __( 'That was quick! Please check your details, then send again.', 'invoiceninja' ), 422 );
+		}
+		/** This filter is documented in src/Forms/QuoteForm.php */
+		if ( ! apply_filters( 'invoiceninja_captcha', true, (array) $request->get_params(), 'pay_invoice' ) ) {
+			return Routes::fail( 'captcha', __( 'Please complete the check to show you are not a robot.', 'invoiceninja' ), 422 );
+		}
 		if ( '' === $number || ! is_email( $email )
-			|| $this->plugin->options->increment( 'ctr_pay_' . substr( md5( Checkout::ipBucket( Routes::clientIp() ) ), 0, 16 ) . '_' . $hour ) > 10
-			|| $this->plugin->options->increment( 'ctr_paymail_' . substr( md5( $email ), 0, 16 ) . '_' . $hour ) > 3 ) {
+			|| $this->plugin->options->increment( 'ctr_pay_' . substr( md5( Checkout::ipBucket( Routes::clientIp() ) ), 0, 16 ) . '_' . $hour ) > 10 ) {
 			return $reply;
 		}
 		try {
@@ -383,8 +443,9 @@ final class Account {
 			foreach ( $api->get(
 				'invoices',
 				array(
-					'filter'   => $number,
-					'per_page' => 20,
+					'number'     => $number, // An exact match (Invoice Ninja's `filter` is a fuzzy search).
+					'is_deleted' => 'false',
+					'per_page'   => 20,
 				),
 				5.0
 			)->data() as $invoice ) {
@@ -392,10 +453,15 @@ final class Account {
 					continue;
 				}
 				$contact = $api->get( 'clients/' . rawurlencode( (string) $invoice['client_id'] ), array(), 5.0 )->data();
+				if ( ! empty( $contact['is_deleted'] ) ) {
+					continue;
+				}
 				foreach ( (array) ( $contact['contacts'] ?? array() ) as $person ) {
-					if ( is_array( $person ) && strtolower( (string) ( $person['email'] ?? '' ) ) === $email ) {
+					if ( is_array( $person ) && empty( $person['is_deleted'] ) && strtolower( trim( (string) ( $person['email'] ?? '' ) ) ) === $email ) {
 						$link = $this->invitationLink( $invoice, (string) ( $person['id'] ?? '' ) );
-						if ( '' !== $link ) {
+						// Only real sends count towards the per-invoice limit, so nobody can use
+						// up a customer's emails by guessing.
+						if ( '' !== $link && $this->plugin->options->increment( 'ctr_paymail_' . substr( md5( $email . '|' . $number ), 0, 16 ) . '_' . $hour ) <= 3 ) {
 							$this->plugin->mailer->send(
 								$email,
 								/* translators: %s: invoice number */
@@ -426,6 +492,20 @@ final class Account {
 			}
 		}
 		return '';
+	}
+
+	/**
+	 * Whether an invoice, quote or credit may be opened by this client: theirs, not
+	 * deleted, and not a draft (drafts aren't the customer's business yet).
+	 *
+	 * @param array<string, mixed> $entity    Entity from Invoice Ninja.
+	 * @param string               $client_id The visitor's client id.
+	 */
+	public static function opensFor( array $entity, string $client_id ): bool {
+		return '' !== $client_id
+			&& (string) ( $entity['client_id'] ?? '' ) === $client_id
+			&& empty( $entity['is_deleted'] )
+			&& ! in_array( (string) ( $entity['status_id'] ?? '' ), array( '', '1' ), true );
 	}
 
 	/**
@@ -479,19 +559,17 @@ final class Account {
 			exit;
 		}
 		try {
-			$link = $this->links->discover( $user_id );
-			if ( null === $link || '' === $link['contact_id'] ) {
+			// The linked contact must still use this account's (verified) email.
+			$link = $this->links->confirmed( $user_id );
+			if ( null === $link ) {
 				wp_safe_redirect( $back );
 				exit;
 			}
 			$api = $this->plugin->api();
 			if ( 'portal' === $action ) {
-				$client = $api->get( 'clients/' . rawurlencode( $link['client_id'] ), array(), 5.0 )->data();
-				foreach ( (array) ( $client['contacts'] ?? array() ) as $contact ) {
-					if ( is_array( $contact ) && (string) ( $contact['id'] ?? '' ) === $link['contact_id'] && ! empty( $contact['link'] ) ) {
-						wp_redirect( (string) $contact['link'] ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- the customer's own Invoice Ninja portal, which lives on another host.
-						exit;
-					}
+				if ( ! empty( $link['contact']['link'] ) ) {
+					wp_redirect( (string) $link['contact']['link'] ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- the customer's own Invoice Ninja portal, which lives on another host.
+					exit;
 				}
 				wp_safe_redirect( $back );
 				exit;
@@ -501,8 +579,8 @@ final class Account {
 				exit;
 			}
 			$entity = $api->get( $type . 's/' . rawurlencode( $id ), array(), 5.0 )->data();
-			if ( (string) ( $entity['client_id'] ?? '' ) !== $link['client_id'] ) {
-				wp_safe_redirect( $back ); // Not theirs.
+			if ( ! self::opensFor( $entity, $link['client_id'] ) ) {
+				wp_safe_redirect( $back ); // Not theirs, deleted or still a draft.
 				exit;
 			}
 			if ( 'pdf' === $action ) {

@@ -18,7 +18,7 @@ use InvoiceNinja\Connection\Credentials;
  */
 final class Installer {
 
-	public const SCHEMA = 8;
+	public const SCHEMA = 9;
 
 	/**
 	 * Constructor.
@@ -158,6 +158,12 @@ final class Installer {
 			8 => static function (): void {
 				// Orders gained placed_at; createTables() above added it.
 			},
+			9 => function (): void {
+				// 1.x stored the whole company record (company key, mail secrets); keep only what it reads.
+				if ( self::reduceLegacyProfile() ) {
+					$this->logger->info( 'upgrade', 'Removed secrets from the saved 1.x company profile' );
+				}
+			},
 		);
 		foreach ( $steps as $version => $step ) {
 			if ( $version > $from ) {
@@ -165,6 +171,25 @@ final class Installer {
 				$this->options->set( 'schema_version', $version, true );
 			}
 		}
+	}
+
+	/**
+	 * Rewrite the stored 1.x company profile (invoiceninja_profile) to its allowlist.
+	 *
+	 * @return bool Whether it changed.
+	 */
+	public static function reduceLegacyProfile(): bool {
+		$stored = get_option( 'invoiceninja_profile', false );
+		if ( ! is_string( $stored ) || '' === $stored ) {
+			return false;
+		}
+		$reduced = \InvoiceNinja\Api\ProfileApi::reduce( json_decode( $stored ) );
+		$value   = null === $reduced ? '' : (string) wp_json_encode( $reduced );
+		if ( $value === $stored ) {
+			return false;
+		}
+		update_option( 'invoiceninja_profile', $value );
+		return true;
 	}
 
 	/**

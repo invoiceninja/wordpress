@@ -19,6 +19,9 @@ use InvoiceNinja\Plugin;
  */
 final class Privacy {
 
+	public const ERASE_BATCH     = 200;
+	public const ERASE_MAX_PAGES = 500;
+
 	/**
 	 * Constructor.
 	 *
@@ -135,10 +138,11 @@ final class Privacy {
 	 * @return array{items_removed: bool, items_retained: bool, messages: list<string>, done: bool}
 	 */
 	public function erase( string $email, int $page = 1 ): array {
-		unset( $page );
 		global $wpdb;
 		$removed = false;
-		foreach ( $this->orders( $email, 1, 500 ) as $order ) {
+		// Erased orders no longer match, so every page starts from the top.
+		$batch = $this->orders( $email, 1, self::ERASE_BATCH );
+		foreach ( $batch as $order ) {
 			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- our own table.
 			$wpdb->update(
 				Orders::table(),
@@ -146,6 +150,7 @@ final class Privacy {
 					'email'    => 'deleted-' . $order['id'] . '@example.invalid',
 					'customer' => '{}',
 					'user_id'  => 0,
+					'pay_link' => '', // An invitation link opens the invoice for whoever has it.
 				),
 				array( 'id' => (int) $order['id'] )
 			);
@@ -153,7 +158,7 @@ final class Privacy {
 		}
 		$user = get_user_by( 'email', $email );
 		if ( $user ) {
-			foreach ( array( \InvoiceNinja\Portal\Links::CLIENT, \InvoiceNinja\Portal\Links::CONTACT, '_invoiceninja_verified_at', '_invoiceninja_verified_email_hash', '_invoiceninja_verified_by' ) as $key ) {
+			foreach ( array( \InvoiceNinja\Portal\Links::CLIENT, \InvoiceNinja\Portal\Links::CONTACT, \InvoiceNinja\Portal\Links::EMAIL, '_invoiceninja_verified_at', '_invoiceninja_verified_email_hash', '_invoiceninja_verified_by' ) as $key ) {
 				$removed = delete_user_meta( $user->ID, $key ) || $removed;
 			}
 		}
@@ -161,7 +166,8 @@ final class Privacy {
 			'items_removed'  => $removed,
 			'items_retained' => $removed,
 			'messages'       => $removed ? array( __( 'Order numbers and totals were kept for your records; names and emails were removed. The invoices in Invoice Ninja are not changed.', 'invoiceninja' ) ) : array(),
-			'done'           => true,
+			// A full batch means there may be more; stop after many pages in case a row won't update.
+			'done'           => count( $batch ) < self::ERASE_BATCH || $page >= self::ERASE_MAX_PAGES,
 		);
 	}
 
@@ -189,8 +195,11 @@ final class Privacy {
 	private function orders( string $email, int $page, int $per = 50 ): array {
 		global $wpdb;
 		$table = Orders::table();
+		// Also the account's own orders placed under an earlier email.
+		$user    = get_user_by( 'email', $email );
+		$user_id = $user ? (int) $user->ID : 0;
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
-		$ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE email = %s ORDER BY id LIMIT %d OFFSET %d", strtolower( $email ), $per, max( 0, $page - 1 ) * $per ) );
+		$ids = $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE email = %s OR ( user_id > 0 AND user_id = %d ) ORDER BY id LIMIT %d OFFSET %d", strtolower( trim( $email ) ), $user_id, $per, max( 0, $page - 1 ) * $per ) );
 		return array_values( array_filter( array_map( fn( $id ) => $this->plugin->orders->find( (int) $id ), (array) $ids ) ) );
 	}
 }
