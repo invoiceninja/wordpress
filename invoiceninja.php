@@ -3,7 +3,7 @@
  * Plugin Name:       Invoice Ninja
  * Plugin URI:        https://invoiceninja.com
  * Description:       Sell, bill and get paid from WordPress, with Invoice Ninja keeping the books.
- * Version:           2.0.0-alpha.1
+ * Version:           2.0.0-beta.1
  * Requires at least: 6.7
  * Requires PHP:      8.1
  * Author:            Invoice Ninja
@@ -20,7 +20,7 @@
 defined( 'ABSPATH' ) || exit;
 
 if ( ! defined( 'INVOICENINJA_VERSION' ) ) {
-	define( 'INVOICENINJA_VERSION', '2.0.0-alpha.1' );
+	define( 'INVOICENINJA_VERSION', '2.0.0-beta.1' );
 }
 if ( ! defined( 'INVOICENINJA_FILE' ) ) {
 	define( 'INVOICENINJA_FILE', __FILE__ );
