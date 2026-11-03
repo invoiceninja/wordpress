@@ -57,9 +57,12 @@ final class OrderService {
 		$client = $this->client();
 		try {
 			$client_id = $this->clientFor( $client, $order );
-			$order     = (array) $this->orders->find( (int) $order['id'] );
-			$existing  = $this->findExisting( $client, $order, $client_id );
-			$invoice   = $existing ?? $this->createInvoice( $client, $order, $client_id );
+			if ( null === $client_id ) {
+				return $this->currencyMismatch( $order );
+			}
+			$order    = (array) $this->orders->find( (int) $order['id'] );
+			$existing = $this->findExisting( $client, $order, $client_id );
+			$invoice  = $existing ?? $this->createInvoice( $client, $order, $client_id );
 		} catch ( ApiException $e ) {
 			return $this->failed( $order, $e, $inline, $client );
 		}
@@ -329,19 +332,80 @@ final class OrderService {
 	}
 
 	/**
-	 * Find the client whose contact has this email, or create one.
+	 * Find the client whose contact has this email, or create one. An existing client
+	 * that uses another currency would get an invoice in that currency for the store's
+	 * amounts, so it gets none.
 	 *
 	 * @param HttpClient           $client Client.
 	 * @param array<string, mixed> $order  Order.
+	 * @return string|null The client id, or null when its currency isn't the store's.
+	 * @throws ApiException When Invoice Ninja can't be asked.
 	 */
-	private function clientFor( HttpClient $client, array $order ): string {
-		if ( '' !== (string) $order['client_id'] ) {
+	private function clientFor( HttpClient $client, array $order ): ?string {
+		// A currency mismatch is looked up again: an admin may have changed the client since.
+		if ( '' !== (string) $order['client_id'] && 'currency' !== (string) $order['note'] ) {
 			return (string) $order['client_id'];
 		}
-		$customer = (array) $order['customer'];
-		$found    = $this->plugin->clients->findOrCreate( $client, (string) $order['email'], $customer );
+		$found = $this->plugin->clients->findOrCreate( $client, (string) $order['email'], $this->newClient( $order ) );
 		$this->remember( $order, $found['client_id'], $found['contact_id'] );
+		$company = (string) ( $this->plugin->state->get()['company']['currency_id'] ?? '' );
+		if ( ! $found['created'] && self::currencyDiffers( $found['client'], $company ) ) {
+			return null;
+		}
 		return $found['client_id'];
+	}
+
+	/**
+	 * Whether an existing client's currency differs from the store's (the company's).
+	 * A client without its own currency uses the company's.
+	 *
+	 * @param array<string, mixed> $client           Client record.
+	 * @param string               $company_currency Company currency id.
+	 */
+	public static function currencyDiffers( array $client, string $company_currency ): bool {
+		$theirs = (string) ( is_array( $client['settings'] ?? null ) ? ( $client['settings']['currency_id'] ?? '' ) : '' );
+		return '' !== $theirs && '' !== $company_currency && $theirs !== $company_currency;
+	}
+
+	/**
+	 * Details for a new client: the buyer's name and phone, the tax address when it was
+	 * asked for, and the store's currency plus the buyer's language.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 * @return array<string, mixed>
+	 */
+	private function newClient( array $order ): array {
+		$customer = (array) $order['customer'];
+		$details  = array_intersect_key( $customer, array_flip( array( 'first_name', 'last_name', 'phone', 'country_id', 'postal_code' ) ) );
+		$settings = array_filter(
+			array(
+				'currency_id' => (string) ( $this->plugin->state->get()['company']['currency_id'] ?? '' ),
+				'language_id' => $this->plugin->statics->languageId( (string) ( $customer['locale'] ?? '' ) ),
+			),
+			static fn( string $v ): bool => '' !== $v
+		);
+		if ( $settings ) {
+			// Invoice Ninja keeps both in the client's settings.
+			$details['client'] = array( 'settings' => $settings );
+		}
+		return $details;
+	}
+
+	/**
+	 * The matching client uses another currency: no invoice. The buyer is told we can't
+	 * take the order online, and an admin is asked to sort it out.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 * @return array<string, mixed>
+	 */
+	private function currencyMismatch( array $order ): array {
+		if ( ! $this->orders->transition( (int) $order['id'], array( 'placing' ), 'attention', array( 'note' => 'currency' ) ) ) {
+			return (array) $this->orders->find( (int) $order['id'] );
+		}
+		$order = (array) $this->orders->find( (int) $order['id'] );
+		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Error, 'checkout', sprintf( "Order %s wasn't invoiced: the matching Invoice Ninja client uses another currency", $order['number'] ), array(), 'order', (string) $order['number'] );
+		do_action( 'invoiceninja_order_needs_attention', $order );
+		return $order;
 	}
 
 	/**
@@ -381,16 +445,31 @@ final class OrderService {
 				'quantity'    => (int) $item['quantity'],
 			) + (array) ( $item['tax'] ?? array() );
 		}
-		return $client->post(
-			'invoices',
-			array(
-				'client_id'  => $client_id,
-				'po_number'  => (string) $order['number'],
-				'line_items' => $lines,
-			),
-			array( 'mark_sent' => 'true' ),
-			self::CREATE_BUDGET
-		)->data();
+		$body = array(
+			'client_id'            => $client_id,
+			'po_number'            => (string) $order['number'],
+			'line_items'           => $lines,
+			// Left out, Invoice Ninja uses the client's or company's setting, which may not be
+			// how the order total was worked out.
+			'uses_inclusive_taxes' => self::inclusive( $order ),
+			// Shown on the PDF and invoice page. Invoice Ninja puts a client's own public notes
+			// in place of these when the client has some.
+			/* translators: 1: order number, 2: order status link */
+			'public_notes'         => sprintf( __( 'Order #%1$s · Order status: %2$s', 'invoiceninja' ), (string) $order['number'], $this->plugin->checkout->statusUrl( $order ) ),
+		);
+		return $client->post( 'invoices', $body, array( 'mark_sent' => 'true' ), self::CREATE_BUDGET )->data();
+	}
+
+	/**
+	 * Whether the order's prices included tax when it was placed.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 */
+	public static function inclusive( array $order ): bool {
+		foreach ( (array) $order['items'] as $item ) {
+			return is_array( $item ) && ! empty( $item['inclusive'] );
+		}
+		return false;
 	}
 
 	/**

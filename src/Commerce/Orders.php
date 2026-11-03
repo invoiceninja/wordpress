@@ -189,7 +189,9 @@ final class Orders {
 	}
 
 	/**
-	 * Orders stuck in a placing claim for more than five minutes.
+	 * Orders the daily sweep sends again: stuck in a placing claim for more than five
+	 * minutes, or queued for more than 15 minutes with no job left to place them (lost
+	 * when the plugin was deactivated, or when Action Scheduler dropped it).
 	 *
 	 * @return list<int>
 	 */
@@ -197,7 +199,28 @@ final class Orders {
 		global $wpdb;
 		$table = self::table();
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
-		return array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'placing' AND updated_at < %s LIMIT 100", gmdate( 'Y-m-d H:i:s', time() - 300 ) ) ) );
+		$ids = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'placing' AND updated_at < %s LIMIT 100", gmdate( 'Y-m-d H:i:s', time() - 300 ) ) ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		$queued = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'queued' AND updated_at < %s ORDER BY id ASC LIMIT 100", gmdate( 'Y-m-d H:i:s', time() - 15 * MINUTE_IN_SECONDS ) ) ) );
+		foreach ( $queued as $id ) {
+			if ( ! \InvoiceNinja\Core\Queue::waiting( 'invoiceninja_place_order', array( 'order_id' => $id ) ) ) {
+				$ids[] = $id;
+			}
+		}
+		return $ids;
+	}
+
+	/**
+	 * Unpaid orders for an email in the last day (queued, being placed, awaiting payment
+	 * or needing attention).
+	 *
+	 * @param string $email Email.
+	 */
+	public function openFor( string $email ): int {
+		global $wpdb;
+		$table = self::table();
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE email = %s AND status IN ('queued', 'placing', 'awaiting_payment', 'attention') AND created_at > %s", strtolower( $email ), gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ) ) );
 	}
 
 	/**
@@ -322,6 +345,7 @@ final class Orders {
 			'cleanup_failed' => __( "The unpaid-orders cleanup couldn't close this order. Check its invoice in Invoice Ninja.", 'invoiceninja' ),
 			'kept_unpaid'    => __( 'Left open by the unpaid-orders cleanup: its invoice has a payment or credit.', 'invoiceninja' ),
 			'check_invoice'  => __( "Cancelled, but Invoice Ninja couldn't be checked for an invoice. Look there for this order number as the PO number.", 'invoiceninja' ),
+			'currency'       => __( "Not invoiced: the buyer's client in Invoice Ninja uses another currency. Change the client's currency and retry, or invoice it there.", 'invoiceninja' ),
 		);
 		return $notes[ $note ] ?? $note;
 	}

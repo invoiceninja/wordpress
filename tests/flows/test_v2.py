@@ -384,8 +384,12 @@ def store_ready():
     sync(b)
     wp('option', 'delete', 'in_mock_invoices', check_ok=False)
     wp('option', 'delete', 'in_mock_paid', check_ok=False)
-    # Every flow checks out from the same IP: start each with fresh rate-limit counters.
-    wp_eval("global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_ctr\\\\_%'\");")
+    # Flows add to the cart and check out at once; abuse_protection tests the minimum time.
+    option('in_mock_checkout_min_seconds', '0')
+    # Every flow checks out from the same IP: start each with fresh rate-limit counters,
+    # and orders from earlier flows don't count towards today's unpaid orders per email.
+    wp_eval("global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_ctr\\\\_%'\");"
+            "$wpdb->query($wpdb->prepare('UPDATE ' . InvoiceNinja\\Commerce\\Orders::table() . ' SET created_at = %s WHERE created_at > %s', gmdate('Y-m-d H:i:s', time() - 2 * DAY_IN_SECONDS), gmdate('Y-m-d H:i:s', time() - 2 * DAY_IN_SECONDS)));")
     reset_mock_log()
 
 
@@ -412,6 +416,32 @@ def cart_uses_synced_prices_and_limits():
 def anon_base():
     from lib import BASE
     return BASE
+
+
+def json_loads(raw):
+    import json
+    return json.loads(raw.decode() if isinstance(raw, bytes) else raw)
+
+
+def run_jobs(hook):
+    """Run the pending queue jobs for a hook now (Action Scheduler would, a moment later)."""
+    wp_eval("foreach (as_get_scheduled_actions(array('hook' => '%s', 'status' => 'pending', 'per_page' => 100), 'ids') as $id) {"
+            " ActionScheduler::runner()->process_action($id); }" % hook)
+
+
+def order_row(number):
+    import json
+    return json.loads(wp_eval("echo wp_json_encode(InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'));" % number))
+
+
+def invoice_bodies():
+    import json
+    return [json.loads(c['body']) for c in api_calls() if c['method'] == 'POST' and c['url'].startswith('https://in.test/api/v1/invoices') and '/bulk' not in c['url']]
+
+
+def client_bodies():
+    import json
+    return [json.loads(c['body']) for c in api_calls() if c['method'] == 'POST' and c['url'].split('?')[0] == 'https://in.test/api/v1/clients']
 
 
 @test
@@ -851,6 +881,187 @@ def final_review_regressions():
     check(status == 200, 'a shop manager saves Advanced settings without admin-only fields', (status, r))
 
 
+@test
+def checkout_abuse_protection():
+    store_ready()
+    # The spam trap: the reply people get, but no code is sent
+    s = shopper()
+    status, r = s.api('POST', '/checkout/start', {'email': 'trap.bot@example.com', 'website': 'http://spam.example'})
+    check(status == 200 and r['next'] == 'code', 'a filled spam trap gets the usual reply', r)
+    check(not mails('trap.bot@example.com'), 'but no code is sent')
+    status, r = s.api('POST', '/checkout/confirm', {'email': 'trap.bot@example.com', 'code': '123456', 'website': 'x'})
+    check(status == 422 and not order_count('trap.bot@example.com'), 'and nothing is ordered', r)
+    # Minimum time from the first add to checkout
+    option('in_mock_checkout_min_seconds', '30')
+    try:
+        fast = shopper()
+        status, r = fast.api('POST', '/checkout/start', {'email': 'too.fast@example.com'})
+        check(status == 422 and r['code'] == 'too_fast' and 0 < r['retry_after'] <= 30, 'checking out a moment after the first add waits', r)
+        check(not mails('too.fast@example.com'), 'no code sent')
+    finally:
+        option('in_mock_checkout_min_seconds', '0')
+    # A CAPTCHA plugin can refuse the code (the mock's invoiceninja_captcha filter)
+    option('in_mock_captcha_fail', '1')
+    try:
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'robot@example.com'})
+        check(status == 422 and r['code'] == 'captcha' and not mails('robot@example.com'), 'a failed CAPTCHA sends no code', r)
+    finally:
+        wp('option', 'delete', 'in_mock_captcha_fail', check_ok=False)
+    # The total the shopper saw: a price change since is shown before the code
+    s = shopper()
+    status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com', 'total': 1.0})
+    check(status == 422 and r['code'] == 'cart_changed' and r['cart']['total'] == 20.0, 'a different total than the page showed is flagged', r)
+    status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com', 'total': 20.0})
+    check(status == 200 and r['next'] == 'code', 'the total as shown goes on', r)
+    code = last_code('price.watch@example.com')
+    status, r = s.api('POST', '/checkout/confirm', {'email': 'price.watch@example.com', 'code': code, 'total': 18.0})
+    check(status == 422 and r['code'] == 'cart_changed', 'a price change between the code and the order is flagged too', r)
+    status, r = s.api('POST', '/checkout/confirm', {'email': 'price.watch@example.com', 'code': code, 'total': 20.0, 'remember': True})
+    check(status == 200 and r['ok'], 'and the same code works once the new total was seen', r)
+    # Unpaid orders per email are capped, even on a remembered device
+    for _ in range(2):
+        s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+        status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com'})
+        check(status == 200 and r['next'] == 'confirm', 'remembered device', r)
+        status, r = s.api('POST', '/checkout/confirm', {'email': 'price.watch@example.com'})
+        check(status == 200 and r['ok'], 'another unpaid order', r)
+    s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+    status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com'})
+    check(status == 422 and r['code'] == 'too_many_orders', 'a fourth unpaid order from the last day is refused', r)
+    status, r = s.api('POST', '/checkout/confirm', {'email': 'price.watch@example.com'})
+    check(status == 422 and r['code'] == 'too_many_orders' and order_count('price.watch@example.com') == 3, 'confirm refuses it too', r)
+    # "Not you?" clears the remembered device
+    status, r = s.api('POST', '/checkout/forget', {})
+    check(status == 200 and 'invoiceninja_device' not in [c.name for c in s.jar], 'the device cookie is cleared', [c.name for c in s.jar])
+    status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com'})
+    check(status == 200 and r['next'] == 'code', 'the next checkout asks for a code', r)
+
+
+def order_count(email):
+    return int(wp_eval("global $wpdb; echo (int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM ' . InvoiceNinja\\Commerce\\Orders::table() . ' WHERE email = %%s', '%s'));" % email))
+
+
+@test
+def existing_client_in_another_currency_gets_no_invoice():
+    store_ready()
+    b = admin()
+    s = shopper()
+    status, r = checkout(s, 'euro@x.com')
+    check(status == 200 and r['problem'] == 'currency' and r['status'] == 'attention' and not r['pay_link'], "the buyer is told we can't take it online", r)
+    check(not invoice_bodies(), 'no invoice in the client\'s other currency', describe(api_calls()))
+    check(not [m for m in mails('euro@x.com') if 'received' in m['subject'] or 'payment' in m['subject']], 'and no payment promised by email')
+    check(any('needs you' in m['subject'] for m in mails()), 'an admin is alerted')
+    _, rows = b.api('GET', '/admin/orders?search=euro@x.com')
+    row = rows['items'][0]
+    check(row['status'] == 'attention' and 'currency' in row['note'] and row['client_url'].startswith('https://in.test/app/clients/CLIENT_EURO'), 'the admin sees why, with a link to the client', row)
+    status, again = b.api('POST', '/admin/orders/%d/retry' % row['id'], {})
+    check(status == 200 and again['status'] == 'attention' and not invoice_bodies(), 'a retry checks the currency again', (status, again))
+
+
+@test
+def new_clients_get_currency_language_and_tax_address():
+    store_ready()
+    b = admin()
+    option('in_mock_calculate_taxes', '1')
+    b.api('POST', '/connection/refresh', {})
+    wp_eval("InvoiceNinja\\Plugin::instance()->statics->refresh();")
+    try:
+        data = json_loads(wp_eval("echo wp_json_encode(InvoiceNinja\\Plugin::instance()->store->scriptData());"))
+        check(data['taxFields'] and ['276', 'Germany'] in data['countries'] and data['country'] == '840', "checkout asks for the country, from Invoice Ninja's list", data)
+        s = shopper()
+        email = 'tax.buyer@example.com'
+        details = {'email': email, 'first_name': 'Tax', 'last_name': 'Payer'}
+        status, r = s.api('POST', '/checkout/start', details)
+        check(status == 422 and r['code'] == 'tax_address' and set(r['fields']) == {'country_id', 'postal_code'}, 'country and postcode are needed before the code', r)
+        check(not mails(email), 'no code yet')
+        details.update(country_id='999', postal_code='10115')
+        status, r = s.api('POST', '/checkout/start', details)
+        check(status == 422 and list(r['fields']) == ['country_id'], 'an unknown country is refused', r)
+        details.update(country_id='276')
+        status, r = s.api('POST', '/checkout/start', details)
+        check(status == 200 and r['next'] == 'code', 'a valid tax address goes on to the code', r)
+        details['code'] = last_code(email)
+        status, r = s.api('POST', '/checkout/confirm', details)
+        check(status == 200 and r['ok'], 'order placed', r)
+        clients = client_bodies()
+        check(len(clients) == 1 and clients[0].get('country_id') == '276' and clients[0].get('postal_code') == '10115', 'the new client has the tax address', clients)
+        check(clients[0].get('settings', {}).get('currency_id') == '1' and clients[0]['settings'].get('language_id') == '1', 'and the store currency and the buyer\'s language', clients)
+        inv = invoice_bodies()[-1]
+        check(inv['uses_inclusive_taxes'] is False and r['number'] in inv['public_notes'] and '#key=' in inv['public_notes'], 'the invoice says how taxes work and links the order status', inv)
+    finally:
+        option('in_mock_calculate_taxes', '0')
+        b.api('POST', '/connection/refresh', {})
+
+
+@test
+def inclusive_tax_prices_total_like_the_invoice():
+    store_ready()
+    b = admin()
+    wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); update_post_meta($m['wp_id'], 'tax_name1', 'VAT'); update_post_meta($m['wp_id'], 'tax_rate1', 10);")
+    try:
+        s = shopper()
+        _, cart = s.api('GET', '/cart')
+        check(cart['total'] == 22.0 and cart['tax'] == 2.0 and not cart['inclusive'], 'tax added on top when prices exclude it', cart)
+        option('in_mock_inclusive_taxes', '1')
+        b.api('POST', '/connection/refresh', {})
+        _, cart = s.api('GET', '/cart')
+        check(cart['total'] == 20.0 and cart['tax'] == 1.82 and cart['inclusive'], 'tax backed out of the price when prices include it', cart)
+        status, r = checkout(s, 'inclusive.buyer@example.com')
+        check(status == 200 and r['total'] == 20.0, 'the order total is the price paid', r)
+        inv = invoice_bodies()[-1]
+        check(inv['uses_inclusive_taxes'] is True, 'the invoice is told prices include tax', inv)
+        receipt = [m for m in mails('inclusive.buyer@example.com') if 'complete your payment' in m['subject']][0]
+        check('$20.00' in receipt['body'], 'the email shows money in the store currency', receipt['body'][:600])
+    finally:
+        option('in_mock_inclusive_taxes', '0')
+        b.api('POST', '/connection/refresh', {})
+        wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); update_post_meta($m['wp_id'], 'tax_rate1', 0); update_post_meta($m['wp_id'], 'tax_name1', '');")
+
+
+@test
+def queued_orders_survive_deactivation_and_paused_sites_change_nothing():
+    store_ready()
+    option('in_mock_mode', 'down')
+    try:
+        _, q = checkout(shopper(), 'parked.buyer@example.com')
+    finally:
+        option('in_mock_mode', 'up')
+    oid = str(order_row(q['number'])['id'])
+    pending = lambda: int(wp_eval("echo count(as_get_scheduled_actions(array('hook' => 'invoiceninja_place_order', 'status' => 'pending', 'search' => '\"order_id\":%s}', 'per_page' => 10), 'ids'));" % oid))
+    check(pending() == 1, 'a retry job is waiting', pending())
+    wp_eval("InvoiceNinja\\Core\\Queue::park();")
+    check(pending() == 0 and wp_eval("echo count((array) get_option('invoiceninja_parked_jobs'));") != '0', 'deactivating sets the job aside')
+    wp_eval("InvoiceNinja\\Core\\Queue::restore();")
+    check(pending() == 1 and not wp_eval("echo get_option('invoiceninja_parked_jobs') ? 'left' : '';"), 'reactivating puts it back')
+    # A queued order whose job was lost is found by the daily sweep
+    wp_eval("as_unschedule_all_actions('invoiceninja_place_order', array(), 'invoiceninja'); global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('updated_at' => gmdate('Y-m-d H:i:s', time() - 3600)), array('id' => %s));" % oid)
+    check(oid in wp_eval("echo implode(',', InvoiceNinja\\Plugin::instance()->orders->staleClaims());").split(','), 'the daily sweep finds the queued order without a job')
+    wp_eval("InvoiceNinja\\Plugin::instance()->daily();")
+    check(pending() == 1, 'and queues it again', pending())
+    # A paused copy of the site can't cancel invoices through Change order
+    b, pages = blocks_store()
+    try:
+        s = shopper()
+        _, r = checkout(s, 'paused.change@example.com')
+        wp('invoiceninja', 'environment', 'pause')
+        try:
+            status, res = s.api('POST', '/orders/last/change', {})
+            check(status == 409 and res['code'] == 'unavailable' and order_row(r['number'])['status'] == 'awaiting_payment', 'Change order is refused while orders are paused', (status, res))
+        finally:
+            wp('invoiceninja', 'environment', 'confirm')
+        # Without an Order Status page, a status link shows the order without creating a page
+        wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('pages' => array('status' => 0)));")
+        try:
+            before = wp('post', 'list', '--post_type=page', '--format=count')
+            st, loc, html = Browser().get('/?invoiceninja_order=' + r['number'])
+            after = wp('post', 'list', '--post_type=page', '--format=count')
+            check(st == 200 and 'data-invoiceninja-status' in html and before == after, 'a visitor never creates a page', (st, loc, before, after))
+        finally:
+            wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('pages' => array('status' => %d)));" % pages['status']['id'])
+    finally:
+        b.api('POST', '/store/display', {'action': 'legacy'})
+
+
 # ---------- M2: store front end ----------
 
 def blocks_store():
@@ -914,7 +1125,20 @@ def status_links_last_order_change_and_find():
         _, a = Browser().api('POST', '/orders/find', {'number': r['number'], 'email': email})
         _, z = Browser().api('POST', '/orders/find', {'number': r['number'], 'email': 'wrong@example.com'})
         check(a == z == {'ok': True}, 'the same reply for a match and a miss', (a, z))
+        check(not mails(email), 'the link is emailed in the background, so the reply takes as long either way')
+        run_jobs('invoiceninja_find_order')
         check(len(mails(email)) == 1 and not mails('wrong@example.com'), 'link emailed only to the buyer')
+        # The status page sends the key in a header, never in the address
+        key = r['status_url'].split('key=')[1]
+        import urllib.request
+        req = urllib.request.Request(anon_base() + '/wp-json/invoiceninja/v1/orders/' + r['number'], headers={'X-Order-Key': key})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            check(resp.status == 200 and json_loads(resp.read())['number'] == r['number'], 'order status with the key in X-Order-Key')
+        import os
+        from lib import ROOT
+        with open(os.path.join(ROOT, 'assets', 'store', 'store.js')) as f:
+            js = f.read()
+        check("'X-Order-Key'" in js and "?key=" not in js, 'store.js sends the key as a header')
         # Old-style link redirects to the page
         st, loc, _ = Browser().get('/?invoiceninja_order=' + r['number'])
         check(st in (301, 302) and 'order-status' in (loc or ''), 'old status links redirect to the Order Status page', (st, loc))

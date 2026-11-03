@@ -88,6 +88,7 @@ final class DeviceRemember {
 		if ( ! headers_sent() ) {
 			setcookie( self::COOKIE, '', time() - HOUR_IN_SECONDS, COOKIEPATH ? COOKIEPATH : '/', COOKIE_DOMAIN ? COOKIE_DOMAIN : '', is_ssl(), true );
 		}
+		unset( $_COOKIE[ self::COOKIE ] );
 	}
 
 	/**

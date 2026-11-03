@@ -59,6 +59,8 @@ final class Store {
 		add_action( 'init', array( $this, 'productTemplate' ), 20 );
 		add_filter( 'the_content', array( $this, 'productContent' ), 9 );
 		add_action( 'template_redirect', array( $this, 'statusRedirect' ) );
+		// Find my order emails are sent in the background, so the reply's timing is the same either way.
+		$this->plugin->queue->handle( \InvoiceNinja\Commerce\Checkout::FIND_HOOK, fn( array $payload ) => $this->plugin->checkout->sendFindLink( $payload ) );
 	}
 
 	/**
@@ -246,13 +248,23 @@ final class Store {
 	 * @return array<string, mixed>
 	 */
 	public function scriptData(): array {
+		$company    = (array) ( $this->plugin->state->get()['company'] ?? array() );
+		$tax_fields = $this->plugin->checkout->taxFields();
+		$countries  = array();
+		foreach ( $tax_fields ? $this->plugin->statics->countries() : array() as $id => $name ) {
+			$countries[] = array( (string) $id, $name );
+		}
 		return array(
 			'rest'         => esc_url_raw( rest_url( 'invoiceninja/v1' ) ),
 			'mode'         => (string) $this->plugin->options->setting( 'store.mode' ),
 			'requireLogin' => (bool) $this->plugin->options->setting( 'store.require_login' ),
 			'loggedIn'     => \InvoiceNinja\Commerce\Checkout::userId() > 0,
 			'loginUrl'     => wp_login_url( (string) get_permalink() ),
-			'taxFields'    => ! empty( $this->plugin->state->get()['company']['calculate_taxes'] ),
+			'taxFields'    => $tax_fields,
+			'countries'    => $countries,
+			'country'      => (string) ( $company['country_id'] ?? '' ),
+			'taxIncluded'  => $this->plugin->cart->inclusiveTaxes(),
+			'contact'      => is_email( (string) ( $company['email'] ?? '' ) ) ? 'mailto:' . (string) $company['email'] : '',
 			'pages'        => array(
 				'shop'     => $this->pageUrl( 'shop' ),
 				'checkout' => $this->pageUrl( 'checkout' ),
@@ -406,25 +418,46 @@ final class Store {
 	}
 
 	/**
-	 * Old status links (?invoiceninja_order=…) go to the Order Status page. The key is in
-	 * the fragment, which browsers keep across the redirect.
+	 * Status links without an Order Status page (?invoiceninja_order=…) go to that page once
+	 * it exists; the key is in the fragment, which browsers keep across the redirect. Until
+	 * then the order is shown on a plain page here. Visitors never create pages.
 	 */
 	public function statusRedirect(): void {
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a link, nothing changes.
-		$number = isset( $_GET['invoiceninja_order'] ) ? sanitize_text_field( wp_unslash( $_GET['invoiceninja_order'] ) ) : '';
-		if ( '' === $number || is_page( (int) $this->plugin->options->setting( 'pages.status' ) ) ) {
+		$number      = isset( $_GET['invoiceninja_order'] ) ? sanitize_text_field( wp_unslash( $_GET['invoiceninja_order'] ) ) : '';
+		$status_page = (int) $this->plugin->options->setting( 'pages.status' );
+		// is_page( 0 ) would be true on any page.
+		if ( '' === $number || ( $status_page > 0 && is_page( $status_page ) ) ) {
 			return;
 		}
+		nocache_headers();
 		$page = $this->pageUrl( 'status' );
-		if ( '' === $page ) {
-			$ids  = $this->createPages( array( 'status' ) );
-			$page = isset( $ids['status'] ) ? (string) get_permalink( $ids['status'] ) : '';
-		}
 		if ( '' !== $page ) {
-			nocache_headers();
 			wp_safe_redirect( add_query_arg( 'order', rawurlencode( $number ), $page ) );
 			exit;
 		}
+		$this->standaloneStatus();
+		exit;
+	}
+
+	/**
+	 * A minimal page with the Order Status block, in the theme's styles.
+	 */
+	private function standaloneStatus(): void {
+		$status = $this->orderStatus( array() );
+		status_header( 200 );
+		header( 'Content-Type: text/html; charset=' . get_option( 'blog_charset' ) );
+		echo '<!doctype html><html ';
+		language_attributes();
+		echo '><head><meta charset="' . esc_attr( (string) get_option( 'blog_charset' ) ) . '"><meta name="viewport" content="width=device-width, initial-scale=1"><meta name="robots" content="noindex">';
+		wp_head();
+		echo '</head><body class="' . esc_attr( implode( ' ', get_body_class( 'invoiceninja-standalone' ) ) ) . '">';
+		wp_body_open();
+		echo '<main style="max-width:720px;margin:0 auto;padding:32px 16px">';
+		echo $status; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts by orderStatus().
+		echo '</main>';
+		wp_footer();
+		echo '</body></html>';
 	}
 
 	/**

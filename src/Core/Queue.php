@@ -21,6 +21,11 @@ final class Queue {
 	public const GROUP = 'invoiceninja';
 
 	/**
+	 * Option holding the jobs set aside while the plugin is deactivated.
+	 */
+	public const PARKED = 'invoiceninja_parked_jobs';
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Logger $logger Logger.
@@ -128,12 +133,112 @@ final class Queue {
 	}
 
 	/**
-	 * Remove every pending job (deactivation and uninstall).
+	 * Whether a job for this payload is waiting to run, at any attempt.
+	 *
+	 * @param string       $hook    Hook.
+	 * @param array<mixed> $payload Payload.
+	 */
+	public static function waiting( string $hook, array $payload ): bool {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return true; // Can't tell: don't queue it twice.
+		}
+		return (bool) as_get_scheduled_actions(
+			array(
+				'hook'     => $hook,
+				'group'    => self::GROUP,
+				'status'   => 'pending',
+				// Jobs are stored with their payload first, then the attempt number. Matching the
+				// whole payload object means order 12 never matches order 120.
+				'search'   => '"payload":' . wp_json_encode( $payload ) . ',',
+				'per_page' => 1,
+				'orderby'  => 'none',
+			),
+			'ids'
+		);
+	}
+
+	/**
+	 * Remove every pending job (uninstall).
 	 */
 	public static function clear(): void {
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( '', array(), self::GROUP );
 		}
+		delete_option( self::PARKED );
+	}
+
+	/**
+	 * Deactivation: set the one-off jobs aside (queued orders, WooCommerce invoices, emails)
+	 * and remove every job. Another plugin's Action Scheduler would otherwise run them with
+	 * no handler and mark them failed. Recurring jobs are scheduled again on the next load.
+	 */
+	public static function park(): void {
+		if ( ! function_exists( 'as_get_scheduled_actions' ) ) {
+			return;
+		}
+		$parked = array();
+		foreach ( (array) as_get_scheduled_actions(
+			array(
+				'group'    => self::GROUP,
+				'status'   => 'pending',
+				'per_page' => 1000,
+			),
+			'objects'
+		) as $action ) {
+			if ( ! is_object( $action ) || ! method_exists( $action, 'get_schedule' ) ) {
+				continue;
+			}
+			$schedule = $action->get_schedule();
+			if ( method_exists( $schedule, 'is_recurring' ) && $schedule->is_recurring() ) {
+				continue;
+			}
+			$date     = method_exists( $schedule, 'get_date' ) ? $schedule->get_date() : null;
+			$parked[] = array(
+				'hook' => (string) $action->get_hook(),
+				'args' => (array) $action->get_args(),
+				'at'   => $date ? $date->getTimestamp() : 0,
+			);
+		}
+		if ( function_exists( 'as_unschedule_all_actions' ) ) {
+			as_unschedule_all_actions( '', array(), self::GROUP );
+		}
+		if ( $parked ) {
+			update_option( self::PARKED, self::mergeParked( (array) get_option( self::PARKED, array() ), $parked ), false );
+		}
+	}
+
+	/**
+	 * Put parked jobs back (after reactivation, once Action Scheduler is ready).
+	 */
+	public static function restore(): void {
+		$parked = get_option( self::PARKED, array() );
+		if ( ! is_array( $parked ) || ! $parked || ! function_exists( 'as_schedule_single_action' ) ) {
+			return;
+		}
+		delete_option( self::PARKED );
+		foreach ( $parked as $job ) {
+			if ( ! is_array( $job ) || ! is_string( $job['hook'] ?? null ) || ! str_starts_with( $job['hook'], 'invoiceninja_' ) ) {
+				continue;
+			}
+			as_schedule_single_action( max( time(), (int) ( $job['at'] ?? 0 ) ), $job['hook'], (array) ( $job['args'] ?? array() ), self::GROUP );
+		}
+	}
+
+	/**
+	 * Add newly parked jobs to those already parked, without duplicates (deactivating twice).
+	 *
+	 * @param array<mixed>       $before Already parked.
+	 * @param list<array<mixed>> $added  Just parked.
+	 * @return list<array<mixed>>
+	 */
+	public static function mergeParked( array $before, array $added ): array {
+		$all = array();
+		foreach ( array_merge( $before, $added ) as $job ) {
+			if ( is_array( $job ) ) {
+				$all[ md5( (string) wp_json_encode( array( $job['hook'] ?? '', $job['args'] ?? array() ) ) ) ] = $job;
+			}
+		}
+		return array_slice( array_values( $all ), -1000 );
 	}
 
 	/**

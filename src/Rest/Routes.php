@@ -21,7 +21,28 @@ final class Routes {
 
 	public const NS = 'invoiceninja/v1';
 
-	public const PUBLIC_ROUTES = array( '/ping', '/cart', '/cart/items', '/checkout/start', '/checkout/confirm', '/orders/(?P<number>[A-Za-z0-9-]+)', '/orders/find', '/orders/last', '/orders/last/change' );
+	public const PUBLIC_ROUTES = array(
+		'/ping',
+		'/cart',
+		'/cart/items',
+		'/checkout/start',
+		'/checkout/confirm',
+		'/checkout/forget',
+		'/orders/(?P<number>[A-Za-z0-9-]+)',
+		'/orders/find',
+		'/orders/last',
+		'/orders/last/change',
+		// Added by modules: webhooks, subscriptions, forms and the portal.
+		'/webhook',
+		'/subscription-callback',
+		'/subscriptions/return',
+		'/quote-requests',
+		'/pay-invoice',
+		'/account',
+		'/account/(?P<tab>invoices|quotes|payments|credits|subscriptions)',
+		'/account/verify/start',
+		'/account/verify/confirm',
+	);
 
 	/**
 	 * Constructor.
@@ -45,6 +66,7 @@ final class Routes {
 		$this->route( '/cart/items', 'POST', array( $this, 'setCartItem' ), $same_site );
 		$this->route( '/checkout/start', 'POST', array( $this, 'checkoutStart' ), $same_site );
 		$this->route( '/checkout/confirm', 'POST', array( $this, 'checkoutConfirm' ), $same_site );
+		$this->route( '/checkout/forget', 'POST', array( $this, 'checkoutForget' ), $same_site );
 		$this->route( '/orders/find', 'POST', array( $this, 'findOrder' ), $same_site );
 		$this->route( '/orders/last', 'GET', array( $this, 'lastOrder' ), '__return_true' );
 		$this->route( '/orders/last/change', 'POST', array( $this, 'changeLastOrder' ), $same_site );
@@ -96,9 +118,13 @@ final class Routes {
 	 * @param string   $method   Method(s).
 	 * @param callable $callback Handler.
 	 * @param string   $access   view, manage, manage_site, logged_in, same_site (public writes from this site's pages) or public (reads, and server-to-server calls that check their own signature).
-	 * @throws \LogicException On an unknown access level.
+	 *                           The last three need the path in PUBLIC_ROUTES.
+	 * @throws \LogicException On an unknown access level, or an open one on a path not in the allowlist.
 	 */
 	public function add( string $path, string $method, callable $callback, string $access ): void {
+		if ( in_array( $access, array( 'logged_in', 'same_site', 'public' ), true ) && ! in_array( $path, self::PUBLIC_ROUTES, true ) ) {
+			throw new \LogicException( 'Route ' . esc_html( $path ) . ' is not in the public allowlist' );
+		}
 		$permissions = array(
 			'view'        => static fn(): bool => current_user_can( Capabilities::VIEW ),
 			'manage'      => static fn(): bool => current_user_can( Capabilities::MANAGE ),
@@ -232,7 +258,7 @@ final class Routes {
 	 * @param \WP_REST_Request $request Request.
 	 */
 	public function checkoutStart( \WP_REST_Request $request ): \WP_REST_Response {
-		$result = $this->plugin->checkout->start( $this->buyer( $request ), self::ip() );
+		$result = $this->plugin->checkout->start( $this->buyer( $request ), self::ip(), $this->form( $request ) );
 		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
 	}
 
@@ -242,8 +268,17 @@ final class Routes {
 	 * @param \WP_REST_Request $request Request.
 	 */
 	public function checkoutConfirm( \WP_REST_Request $request ): \WP_REST_Response {
-		$result = $this->plugin->checkout->confirm( $this->buyer( $request ), (string) $request->get_param( 'code' ), (bool) $request->get_param( 'remember' ), self::ip() );
+		$result = $this->plugin->checkout->confirm( $this->buyer( $request ), (string) $request->get_param( 'code' ), (bool) $request->get_param( 'remember' ), self::ip(), $this->form( $request ) );
 		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
+	}
+
+	/**
+	 * POST /checkout/forget — "Not you?": this device stops skipping the email code.
+	 */
+	public function checkoutForget(): \WP_REST_Response {
+		nocache_headers();
+		$this->plugin->checkout->forgetDevice();
+		return new \WP_REST_Response( array( 'ok' => true ) );
 	}
 
 	/**
@@ -359,11 +394,34 @@ final class Routes {
 	 * @return array<string, string>
 	 */
 	private function buyer( \WP_REST_Request $request ): array {
+		$text = static fn( string $name ): string => is_scalar( $request->get_param( $name ) ) ? sanitize_text_field( (string) $request->get_param( $name ) ) : '';
 		return array(
-			'email'      => sanitize_email( (string) $request->get_param( 'email' ) ),
-			'first_name' => sanitize_text_field( (string) $request->get_param( 'first_name' ) ),
-			'last_name'  => sanitize_text_field( (string) $request->get_param( 'last_name' ) ),
-			'phone'      => sanitize_text_field( (string) $request->get_param( 'phone' ) ),
+			'email'       => sanitize_email( $text( 'email' ) ),
+			'first_name'  => $text( 'first_name' ),
+			'last_name'   => $text( 'last_name' ),
+			'phone'       => $text( 'phone' ),
+			// Asked for when Invoice Ninja works out the tax from the address.
+			'country_id'  => $text( 'country_id' ),
+			'postal_code' => $text( 'postal_code' ),
+		);
+	}
+
+	/**
+	 * The checkout's abuse checks from a request: the spam trap, the total the page showed,
+	 * and everything sent (for a CAPTCHA plugin).
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 * @return array<string, mixed>
+	 */
+	private function form( \WP_REST_Request $request ): array {
+		$input = $request->get_json_params();
+		$input = is_array( $input ) && $input ? $input : $request->get_body_params();
+		$trap  = $request->get_param( 'website' );
+		$total = $request->get_param( 'total' );
+		return array(
+			'website' => is_scalar( $trap ) ? (string) $trap : ( null === $trap ? '' : 'x' ),
+			'total'   => is_numeric( $total ) ? (float) $total : null,
+			'input'   => is_array( $input ) ? $input : array(),
 		);
 	}
 
@@ -721,7 +779,9 @@ final class Routes {
 			'client_url'     => '' !== (string) $order['client_id'] && null !== $app ? $app( 'clients/' . rawurlencode( (string) $order['client_id'] ) ) : '',
 			'note'           => \InvoiceNinja\Commerce\Orders::noteText( (string) $order['note'] ),
 			'created_at'     => (string) $order['created_at'],
-			'status_url'     => $this->plugin->checkout->statusUrl( $order ),
+			// The status page shows the buyer's Pay button (their invitation, which signs into
+			// the client's portal): only for those who may also resend and cancel the order.
+			'status_url'     => current_user_can( Capabilities::MANAGE ) ? $this->plugin->checkout->statusUrl( $order ) : '',
 			'items'          => array_map(
 				static fn( array $i ): array => array(
 					'title'    => (string) $i['title'],

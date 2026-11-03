@@ -78,11 +78,13 @@ register_activation_hook(
 register_deactivation_hook(
 	__FILE__,
 	function () {
-		\InvoiceNinja\Core\Queue::clear();
+		// Queued orders and other one-off jobs are kept aside and put back on reactivation.
+		\InvoiceNinja\Core\Queue::park();
 		wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
 		flush_rewrite_rules();
 	}
 );
+add_action( 'action_scheduler_init', array( \InvoiceNinja\Core\Queue::class, 'restore' ) );
 
 add_action(
 	'before_woocommerce_init',
