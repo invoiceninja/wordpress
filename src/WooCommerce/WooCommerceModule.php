@@ -129,6 +129,8 @@ final class WooCommerceModule implements Module {
 		add_action( 'invoiceninja_admin_assets', array( $this, 'assets' ) );
 		add_action( 'invoiceninja_rest_routes', array( $this, 'routes' ) );
 		add_filter( 'invoiceninja_diagnostics_checks', array( $this, 'checks' ) );
+		// Orders invoiced earlier keep the buyer's invitation link even with the module off.
+		add_filter( 'woocommerce_rest_prepare_shop_order_object', array( OrderMeta::class, 'hideFromRest' ), 99, 1 );
 		if ( ! $this->active() ) {
 			return;
 		}
@@ -279,7 +281,7 @@ final class WooCommerceModule implements Module {
 	 */
 	public function restRetry( \WP_REST_Request $request ): \WP_REST_Response {
 		$order = wc_get_order( (int) $request->get_param( 'id' ) );
-		if ( null === $this->metaBox || ! $order instanceof \WC_Order ) {
+		if ( null === $this->metaBox || ! OrderToInvoice::isOrder( $order ) ) {
 			return Routes::fail( 'not_found', __( 'Order not found.', 'invoiceninja' ), 404 );
 		}
 		$result = $this->metaBox->run( $order );

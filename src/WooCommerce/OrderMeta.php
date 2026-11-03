@@ -33,6 +33,10 @@ final class OrderMeta {
 	public const PAYMENT_AMOUNT = '_invoiceninja_payment_amount';
 	/** Refund id => {amount, at} for refunds mirrored (or skipped) in Invoice Ninja. */
 	public const REFUNDS = '_invoiceninja_refunds';
+	/** {refund_id, amount, baseline, at}: a refund sent to Invoice Ninja whose reply was lost. */
+	public const REFUND_PENDING = '_invoiceninja_refund_pending';
+	/** How many times the order's invoice was replaced after its payment was recorded (part of the payment key). */
+	public const PAYMENT_ROUND = '_invoiceninja_payment_round';
 	/** Balance left open on the invoice after a partial refund. */
 	public const REFUND_BALANCE = '_invoiceninja_refund_balance';
 	/** Invoices this order had that were cancelled (never matched again). */
@@ -59,10 +63,62 @@ final class OrderMeta {
 		self::PAYMENT_ID,
 		self::PAYMENT_AMOUNT,
 		self::REFUNDS,
+		self::REFUND_PENDING,
+		self::PAYMENT_ROUND,
 		self::REFUND_BALANCE,
 		self::CANCELLED_IDS,
 		self::UPDATED_AT,
 	);
+
+	/**
+	 * Keys never handed out by WooCommerce's REST API (and so its webhooks): the
+	 * invitation link logs whoever opens it into the buyer's portal.
+	 *
+	 * @var list<string>
+	 */
+	public const PRIVATE_KEYS = array( self::LINK );
+
+	/**
+	 * The woocommerce_rest_prepare_shop_order_object filter (HPOS and posts alike): drop
+	 * private keys from the order's meta_data.
+	 *
+	 * @param mixed $response REST response.
+	 * @return mixed
+	 */
+	public static function hideFromRest( $response ) {
+		if ( $response instanceof \WP_REST_Response ) {
+			$data = $response->get_data();
+			if ( is_array( $data ) && isset( $data['meta_data'] ) && is_array( $data['meta_data'] ) ) {
+				$data['meta_data'] = self::withoutPrivate( $data['meta_data'] );
+				$response->set_data( $data );
+			}
+		}
+		return $response;
+	}
+
+	/**
+	 * Meta rows (WC_Meta_Data objects or arrays) without the private keys.
+	 *
+	 * @param array<mixed> $rows Rows.
+	 * @return list<mixed>
+	 */
+	public static function withoutPrivate( array $rows ): array {
+		$out = array();
+		foreach ( $rows as $row ) {
+			$key = '';
+			if ( $row instanceof \WC_Meta_Data ) {
+				$key = (string) ( $row->get_data()['key'] ?? '' );
+			} elseif ( is_array( $row ) ) {
+				$key = (string) ( $row['key'] ?? '' );
+			} elseif ( is_object( $row ) && isset( $row->key ) ) {
+				$key = (string) $row->key;
+			}
+			if ( ! in_array( $key, self::PRIVATE_KEYS, true ) ) {
+				$out[] = $row;
+			}
+		}
+		return $out;
+	}
 
 	/**
 	 * A string value.

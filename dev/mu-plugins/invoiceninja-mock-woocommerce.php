@@ -9,6 +9,9 @@
  *   in_mock_lock_invoices        off (default) | when_sent: companies/current reports it, and PUT on a sent invoice is refused
  *   in_mock_woo_invoice_timeout  1: POST invoices saves, then times out
  *   in_mock_payment_timeout      1: POST payments saves, then times out
+ *   in_mock_mark_sent_timeout    1: bulk mark_sent saves, then times out
+ *   in_mock_refund_timeout       1: POST payments/refund saves, then times out; lost: times out without saving
+ *                                (a test can then save it "late" by raising the payment's refunded total)
  *
  * State: in_mock_payments (id => payment).
  */
@@ -155,6 +158,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             }
         }
         update_option( 'in_mock_invoices', $invoices, false );
+        if ( get_option( 'in_mock_mark_sent_timeout' ) ) {
+            return $answer( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 15000 milliseconds' ) );
+        }
         return $answer( in_mock_woo_response( [ 'data' => $changed ] ) );
     }
 
@@ -219,6 +225,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         if ( $amount <= 0 || $payments[ $id ]['refunded'] + $amount > $payments[ $id ]['amount'] + 0.001 ) {
             return $answer( in_mock_woo_response( [ 'message' => 'The given data was invalid.', 'errors' => [ 'amount' => [ 'Refund exceeds the payment' ] ] ], 422 ) );
         }
+        if ( 'lost' === get_option( 'in_mock_refund_timeout' ) ) {
+            return $answer( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 15000 milliseconds' ) );
+        }
         $invoices = get_option( 'in_mock_invoices', [] );
         foreach ( (array) ( $data['invoices'] ?? [] ) as $refunded ) {
             $inv = (string) ( $refunded['invoice_id'] ?? '' );
@@ -232,6 +241,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         $payments[ $id ]['refunds'][] = [ 'amount' => $amount, 'gateway_refund' => $data['gateway_refund'] ?? null, 'send_email' => $data['send_email'] ?? null, 'invoices' => $data['invoices'] ?? [] ];
         update_option( 'in_mock_payments', $payments, false );
         update_option( 'in_mock_invoices', $invoices, false );
+        if ( get_option( 'in_mock_refund_timeout' ) ) {
+            return $answer( new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 15000 milliseconds' ) );
+        }
         $payment = $payments[ $id ];
         unset( $payment['idempotency_key'] );
         return $answer( in_mock_woo_response( [ 'data' => $payment ] ) );

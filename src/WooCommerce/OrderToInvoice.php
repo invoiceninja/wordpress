@@ -13,6 +13,7 @@ use InvoiceNinja\Api\ApiException;
 use InvoiceNinja\Api\ErrorKind;
 use InvoiceNinja\Api\HttpClient;
 use InvoiceNinja\Core\LogLevel;
+use InvoiceNinja\Core\RetryPolicy;
 use InvoiceNinja\Plugin;
 
 /**
@@ -76,6 +77,18 @@ final class OrderToInvoice {
 		add_action( 'woocommerce_saved_order_items', fn( $order_id ) => $this->queue( (int) $order_id ), 20, 1 );
 		add_action( 'woocommerce_order_status_cancelled', fn( $order_id ) => $this->queueCancel( (int) $order_id ), 20, 1 );
 		add_action( 'woocommerce_order_status_failed', fn( $order_id ) => $this->queueCancel( (int) $order_id ), 20, 1 );
+		// A safety net for checkouts that announce the order before it leaves its draft status
+		// (the job is unique while waiting and locked while running, so it never doubles).
+		add_action(
+			'woocommerce_order_status_changed',
+			function ( $order_id, $from ): void {
+				if ( in_array( (string) $from, self::NOT_YET, true ) ) {
+					$this->queue( (int) $order_id );
+				}
+			},
+			20,
+			2
+		);
 
 		$this->plugin->queue->handle( self::HOOK_SYNC, array( $this, 'handleSync' ) );
 		$this->plugin->queue->handle( self::HOOK_CANCEL, array( $this, 'handleCancel' ) );
@@ -93,10 +106,31 @@ final class OrderToInvoice {
 			return;
 		}
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof \WC_Order || in_array( $order->get_status(), self::NOT_YET, true ) ) {
+		if ( ! self::isOrder( $order ) || in_array( $order->get_status(), self::NOT_YET, true ) ) {
 			return;
 		}
 		$this->plugin->queue->push( self::HOOK_SYNC, array( 'order_id' => $order_id ) + $extra, $delay );
+	}
+
+	/**
+	 * Whether this is a real order. Subscriptions (WooCommerce Subscriptions) are orders
+	 * too in code, but only their renewal orders are invoiced.
+	 *
+	 * @param mixed $order Order.
+	 * @phpstan-assert-if-true \WC_Order $order
+	 */
+	public static function isOrder( $order ): bool {
+		return $order instanceof \WC_Order && 'shop_order' === $order->get_type();
+	}
+
+	/**
+	 * Decimal places for the order's currency: Invoice Ninja's own (it rounds the invoice
+	 * with them), or the store's while they aren't known.
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	public function precision( \WC_Order $order ): int {
+		return $this->ids->precision( (string) $order->get_currency() ) ?? ( function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2 );
 	}
 
 	/**
@@ -105,7 +139,7 @@ final class OrderToInvoice {
 	 * @param int $order_id Order id.
 	 */
 	public function queueCancel( int $order_id ): void {
-		if ( $order_id > 0 && $this->plugin->options->setting( 'woo.invoices' ) ) {
+		if ( $order_id > 0 && $this->plugin->options->setting( 'woo.invoices' ) && self::isOrder( wc_get_order( $order_id ) ) ) {
 			$this->plugin->queue->push( self::HOOK_CANCEL, array( 'order_id' => $order_id ) );
 		}
 	}
@@ -114,15 +148,18 @@ final class OrderToInvoice {
 	 * Job: create or update the invoice.
 	 *
 	 * @param array<string, mixed> $payload {order_id, backfill?}.
+	 * @param int                  $attempt Attempt number.
 	 * @throws ApiException To let the queue retry.
+	 * @throws \Throwable Anything else, for the queue to log.
 	 */
-	public function handleSync( array $payload ): void {
+	public function handleSync( array $payload, int $attempt = 1 ): void {
 		$order_id = (int) ( $payload['order_id'] ?? 0 );
 		$run      = (string) ( $payload['backfill'] ?? '' );
 		try {
 			$this->sync( $order_id, '' !== $run, $run );
-		} catch ( ApiException $e ) {
-			if ( '' !== $run && ! $e->kind->retryable() ) {
+		} catch ( \Throwable $e ) {
+			$again = $e instanceof ApiException && $e->kind->retryable() && null !== RetryPolicy::delay( $attempt );
+			if ( '' !== $run && ! $again ) {
 				do_action( 'invoiceninja_woo_backfill_item_done', $order_id, $run ); // Done, if not well: it shows on the order.
 			}
 			throw $e;
@@ -220,18 +257,26 @@ final class OrderToInvoice {
 	 */
 	private function syncLocked( int $order_id, bool $quiet, array $payload = array() ): ?array {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof \WC_Order || in_array( $order->get_status(), self::NOT_YET, true ) ) {
+		if ( ! self::isOrder( $order ) || in_array( $order->get_status(), self::NOT_YET, true ) ) {
 			return null;
 		}
 		if ( ! $this->plugin->environment->writesAllowed() ) {
-			OrderMeta::set( $order, array( OrderMeta::STATUS => 'paused' ) );
+			if ( '' === OrderMeta::text( $order, OrderMeta::INVOICE_ID ) ) {
+				// Only an order without an invoice is "paused"; an invoiced one keeps its state.
+				OrderMeta::set( $order, array( OrderMeta::STATUS => 'paused' ) );
+			}
 			$this->plugin->queue->push( self::HOOK_SYNC, $payload ? $payload : array( 'order_id' => $order_id ), 900, true );
 			return null;
 		}
 		$client = $this->plugin->api();
 		try {
 			if ( '' !== OrderMeta::text( $order, OrderMeta::INVOICE_ID ) ) {
-				return $this->update( $client, $order, $quiet );
+				$invoice = $this->update( $client, $order, $quiet );
+				$fresh   = wc_get_order( $order_id );
+				if ( null !== $invoice && $fresh instanceof \WC_Order && str_starts_with( OrderMeta::text( $fresh, OrderMeta::ERROR ), 'error:' ) ) {
+					OrderMeta::set( $fresh, array( OrderMeta::ERROR => null ) ); // An earlier failure, now behind us.
+				}
+				return $invoice;
 			}
 			if ( in_array( $order->get_status(), array( 'cancelled', 'failed' ), true ) ) {
 				// Cancelled before it was invoiced: nothing to create (a lost reply is handled by cancel()).
@@ -259,9 +304,8 @@ final class OrderToInvoice {
 		if ( null === $found ) {
 			return null;
 		}
-		$plain     = LineItems::fromOrder( $order );
-		$lines     = LineItems::build( $plain );
-		$precision = (int) $plain['precision'];
+		$precision = $this->precision( $order );
+		$lines     = LineItems::build( LineItems::fromOrder( $order, $precision ) );
 		$check     = Totals::reconcile( $lines, (float) $order->get_total(), $precision, __( 'Rounding', 'invoiceninja' ) );
 		$invoice   = $this->findExisting( $client, $order, $found['client_id'] );
 		if ( null === $invoice ) {
@@ -385,14 +429,7 @@ final class OrderToInvoice {
 				throw new ApiException( ErrorKind::InvalidResponse, "Invoice Ninja didn't mark the invoice sent" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 			}
 		}
-		$contact = OrderMeta::text( $order, OrderMeta::CONTACT_ID );
-		$link    = '';
-		// Only the buyer's own invitation: another contact's link would log them in as that contact.
-		foreach ( (array) ( $invoice['invitations'] ?? $created['invitations'] ?? array() ) as $invitation ) {
-			if ( is_array( $invitation ) && '' !== $contact && (string) ( $invitation['client_contact_id'] ?? '' ) === $contact ) {
-				$link = esc_url_raw( (string) ( $invitation['link'] ?? '' ) );
-			}
-		}
+		$link = self::buyerLink( (array) ( $invoice['invitations'] ?? $created['invitations'] ?? array() ), OrderMeta::text( $order, OrderMeta::CONTACT_ID ) );
 		OrderMeta::set(
 			$order,
 			array(
@@ -402,6 +439,52 @@ final class OrderToInvoice {
 			)
 		);
 		return $invoice;
+	}
+
+	/**
+	 * The buyer's own invitation link, or ''. Never another contact's: it would log them
+	 * in as that contact.
+	 *
+	 * @param array<mixed> $invitations Invitations.
+	 * @param string       $contact     The buyer's contact id.
+	 */
+	public static function buyerLink( array $invitations, string $contact ): string {
+		$link = '';
+		foreach ( $invitations as $invitation ) {
+			if ( is_array( $invitation ) && '' !== $contact && (string) ( $invitation['client_contact_id'] ?? '' ) === $contact ) {
+				$link = esc_url_raw( (string) ( $invitation['link'] ?? '' ) );
+			}
+		}
+		return $link;
+	}
+
+	/**
+	 * The invoice is sent (or paid) in Invoice Ninja: make the order say so. A reply that
+	 * was lost after mark_sent, or a pause, would otherwise leave it waiting forever.
+	 *
+	 * @param \WC_Order            $order   Order.
+	 * @param array<string, mixed> $invoice Invoice.
+	 */
+	private function restoreSent( \WC_Order $order, array $invoice ): void {
+		$fields = array();
+		if ( 'sent' !== OrderMeta::text( $order, OrderMeta::STATUS ) ) {
+			$fields[ OrderMeta::STATUS ] = 'sent';
+		}
+		if ( str_starts_with( OrderMeta::text( $order, OrderMeta::ERROR ), 'error:' ) ) {
+			$fields[ OrderMeta::ERROR ] = null;
+		}
+		if ( '' === OrderMeta::text( $order, OrderMeta::LINK ) ) {
+			$link = self::buyerLink( (array) ( $invoice['invitations'] ?? array() ), OrderMeta::text( $order, OrderMeta::CONTACT_ID ) );
+			if ( '' !== $link ) {
+				$fields[ OrderMeta::LINK ] = $link;
+			}
+		}
+		if ( '' === OrderMeta::text( $order, OrderMeta::INVOICE_NUMBER ) && '' !== (string) ( $invoice['number'] ?? '' ) ) {
+			$fields[ OrderMeta::INVOICE_NUMBER ] = (string) $invoice['number'];
+		}
+		if ( $fields ) {
+			OrderMeta::set( $order, $fields );
+		}
 	}
 
 	/**
@@ -432,13 +515,31 @@ final class OrderToInvoice {
 		if ( in_array( $status, array( '5', '6' ), true ) ) {
 			return $invoice; // Cancelled or reversed: nothing to update.
 		}
-		$plain     = LineItems::fromOrder( $order );
-		$lines     = LineItems::build( $plain );
-		$precision = (int) $plain['precision'];
-		if ( LineItems::hash( $lines ) === OrderMeta::text( $order, OrderMeta::HASH ) ) {
+		if ( in_array( $status, array( '2', '3', '4' ), true ) ) {
+			$this->restoreSent( $order, $invoice );
+		}
+		$precision = $this->precision( $order );
+		$lines     = LineItems::build( LineItems::fromOrder( $order, $precision ) );
+		$change    = LineItems::compare( OrderMeta::text( $order, OrderMeta::HASH ), $lines );
+		if ( 'unknown' === $change ) {
+			// A fingerprint from an older version: what the invoice charges decides. Only its
+			// descriptions differing is not worth rewriting a sent invoice for.
+			$change = LineItems::sameAsInvoice( $lines, (array) ( $invoice['line_items'] ?? array() ), __( 'Rounding', 'invoiceninja' ) ) ? 'notes' : 'changed';
+			if ( 'notes' === $change ) {
+				OrderMeta::set( $order, array( OrderMeta::HASH => LineItems::hash( $lines ) ) );
+				$change = 'same';
+			}
+		}
+		if ( 'same' === $change ) {
 			return '1' === $status ? $this->markSent( $client, $order, $invoice ) : $invoice; // Unchanged (or a retry after mark_sent failed).
 		}
-		if ( '4' === $status || (float) ( $invoice['paid_to_date'] ?? 0 ) > 0 ) {
+		$paid = '4' === $status || (float) ( $invoice['paid_to_date'] ?? 0 ) > 0;
+		if ( 'notes' === $change && ( $paid || $this->locked( $client, $invoice ) ) ) {
+			// Only descriptions changed on an invoice that can't be changed: nothing to flag.
+			OrderMeta::set( $order, array( OrderMeta::HASH => LineItems::hash( $lines ) ) );
+			return '1' === $status ? $this->markSent( $client, $order, $invoice ) : $invoice;
+		}
+		if ( $paid ) {
 			// Paid: changing it would leave the payment over or under the total. Flag it instead.
 			OrderMeta::set(
 				$order,
@@ -558,7 +659,7 @@ final class OrderToInvoice {
 	 */
 	public function cancel( int $order_id ): void {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof \WC_Order || ! in_array( $order->get_status(), array( 'cancelled', 'failed' ), true ) ) {
+		if ( ! self::isOrder( $order ) || ! in_array( $order->get_status(), array( 'cancelled', 'failed' ), true ) ) {
 			return; // Reinstated meanwhile.
 		}
 		if ( ! $this->plugin->environment->writesAllowed() ) {
@@ -664,19 +765,29 @@ final class OrderToInvoice {
 	 * @param string    $status New status.
 	 */
 	public function forget( \WC_Order $order, string $reason, string $status = 'failed' ): void {
-		OrderMeta::set(
-			$order,
-			array(
-				OrderMeta::INVOICE_ID     => null,
-				OrderMeta::INVOICE_NUMBER => null,
-				OrderMeta::LINK           => null,
-				OrderMeta::HASH           => null,
-				OrderMeta::MISMATCH       => null,
-				OrderMeta::LOCKED         => null,
-				OrderMeta::STATUS         => $status,
-				OrderMeta::ERROR          => '' !== $reason ? $reason : null,
-			)
+		$fields = array(
+			OrderMeta::INVOICE_ID     => null,
+			OrderMeta::INVOICE_NUMBER => null,
+			OrderMeta::LINK           => null,
+			OrderMeta::HASH           => null,
+			OrderMeta::MISMATCH       => null,
+			OrderMeta::LOCKED         => null,
+			OrderMeta::STATUS         => $status,
+			OrderMeta::ERROR          => '' !== $reason ? $reason : null,
 		);
+		if ( '' !== OrderMeta::text( $order, OrderMeta::PAYMENT_ID ) ) {
+			// The payment (and its refunds) went with the old invoice: the new invoice gets its
+			// own, under a new idempotency key (Invoice Ninja keeps the old one taken).
+			$fields += array(
+				OrderMeta::PAYMENT_ID     => null,
+				OrderMeta::PAYMENT_AMOUNT => null,
+				OrderMeta::REFUNDS        => null,
+				OrderMeta::REFUND_PENDING => null,
+				OrderMeta::REFUND_BALANCE => null,
+				OrderMeta::PAYMENT_ROUND  => (int) OrderMeta::text( $order, OrderMeta::PAYMENT_ROUND ) + 1,
+			);
+		}
+		OrderMeta::set( $order, $fields );
 	}
 
 	/**

@@ -56,7 +56,7 @@ final class OrderMetaBox {
 	 */
 	public function render( $post_or_order ): void {
 		$order = $post_or_order instanceof \WP_Post ? wc_get_order( $post_or_order->ID ) : $post_or_order;
-		if ( ! $order instanceof \WC_Order ) {
+		if ( ! OrderToInvoice::isOrder( $order ) ) {
 			return;
 		}
 		echo wp_kses_post( $this->html( $order ) );
@@ -227,6 +227,7 @@ final class OrderMetaBox {
 			'invoice_gone'      => __( 'The invoice was deleted in Invoice Ninja. Retry to create a new one.', 'invoiceninja' ),
 			'has_payment'       => __( 'The order was cancelled, but its invoice has a payment, so it was left as it was. Refund or adjust it in Invoice Ninja.', 'invoiceninja' ),
 			'payment_key_taken' => __( 'Invoice Ninja already has a payment for this order, but it could not be found. Check the payments in Invoice Ninja.', 'invoiceninja' ),
+			'payment_waiting'   => __( 'The payment was not recorded, because the invoice was not ready in time. Retry to record it.', 'invoiceninja' ),
 			default             => $code,
 		};
 	}
@@ -241,7 +242,7 @@ final class OrderMetaBox {
 		}
 		$order  = wc_get_order( $order_id );
 		$result = 'done';
-		if ( $order instanceof \WC_Order ) {
+		if ( OrderToInvoice::isOrder( $order ) ) {
 			$result = $this->run( $order );
 		}
 		$back = $order instanceof \WC_Order ? $order->get_edit_order_url() : admin_url( 'admin.php?page=wc-orders' );
@@ -271,7 +272,8 @@ final class OrderMetaBox {
 		}
 		try {
 			if ( in_array( $order->get_status(), array( 'cancelled', 'failed' ), true ) ) {
-				$this->invoices->cancel( $order->get_id() );
+				$order_id = $order->get_id();
+				$this->invoices->withLock( $order_id, fn() => $this->invoices->cancel( $order_id ), fn() => $this->invoices->queueCancel( $order_id ) );
 			} else {
 				$this->invoices->sync( $order->get_id() );
 				$this->payments->record( $order->get_id() );

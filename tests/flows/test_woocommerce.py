@@ -70,6 +70,7 @@ def woo_ready(hpos=None):
     php("foreach (array('%s') as $h) { as_unschedule_all_actions($h); }"
         "delete_option('in_mock_invoices'); delete_option('in_mock_payments'); delete_option('in_mock_paid'); delete_option('in_mock_lock_invoices');"
         "delete_option('in_mock_woo_invoice_timeout'); delete_option('in_mock_payment_timeout'); delete_transient('invoiceninja_woo_lock_invoices');"
+        "delete_option('in_mock_mark_sent_timeout'); delete_option('in_mock_refund_timeout');"
         "global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_woo\\\\_lock\\\\_%%'\");" % "','".join(HOOKS))
     reset_mock_log()
     return b
@@ -124,6 +125,16 @@ def sync(order_id):
 
 def record_payment(order_id):
     return php("try { %s->payments->record(%d); echo 'ok'; } catch (Throwable $e) { echo 'error: ' . $e->getMessage(); }" % (M, order_id))
+
+
+def mirror_refund(order_id, refund_id):
+    return php("try { %s->payments->refund(%d, %d); echo 'ok'; } catch (Throwable $e) { echo 'error: ' . $e->getMessage(); }" % (M, order_id, refund_id))
+
+
+def new_refund(order_id, amount):
+    refund_id = int(php("$r = wc_create_refund(array('order_id' => %d, 'amount' => %s, 'reason' => 'flow test')); echo is_wp_error($r) ? 0 : $r->get_id();" % (order_id, amount)))
+    check(refund_id > 0, 'refund created in WooCommerce')
+    return refund_id
 
 
 def mock_invoices():
@@ -390,6 +401,136 @@ def backfill_dry_run_counts_and_the_real_run_queues():
     check(progress['done'] >= 1 and progress['queued'] >= 1, 'progress counts finished orders', progress)
     out = wp('invoiceninja', 'woo', 'backfill', '--status')
     check('done' in out, 'CLI shows progress', out)
+
+    # An order that runs out of retries still counts, so the run can finish.
+    stuck = new_order(email='backfill-stuck@example.com', status='processing', checkout=False)
+    php("update_option('invoiceninja_woo_backfill', array('id' => 'stuckrun', 'status' => 'queued', 'from' => '%s', 'to' => '%s', 'page' => 1,"
+        " 'total' => 1, 'scanned' => 1, 'queued' => 1, 'done' => 0, 'started_at' => time(), 'touched' => time(), 'user' => 1));" % (today, today))
+    wp('option', 'update', 'in_mock_mode', 'down')
+    try:
+        early = php("try { %s->invoices->handleSync(array('order_id' => %d, 'backfill' => 'stuckrun'), 1); echo 'ok'; } catch (Throwable $e) { echo 'error'; }" % (M, stuck))
+        check(early == 'error' and json.loads(php("echo json_encode(get_option('invoiceninja_woo_backfill'));"))['done'] == 0, 'a try that will be retried is not counted yet')
+        php("try { %s->invoices->handleSync(array('order_id' => %d, 'backfill' => 'stuckrun'), 9); } catch (Throwable $e) {}" % (M, stuck))
+    finally:
+        wp('option', 'update', 'in_mock_mode', 'up')
+    progress = json.loads(php("echo json_encode(get_option('invoiceninja_woo_backfill'));"))
+    check(progress['status'] == 'done', 'an order out of retries still counts, so the run finishes', progress)
+
+
+@test
+def a_lost_mark_sent_reply_or_a_pause_still_ends_sent_and_paid():
+    woo_ready()
+    order_id = new_order(email='marksent@example.com')
+    wp('option', 'update', 'in_mock_mark_sent_timeout', '1')
+    try:
+        first = sync(order_id)
+    finally:
+        wp('option', 'delete', 'in_mock_mark_sent_timeout')
+    check(first.startswith('error'), 'the lost mark_sent reply fails the job', first)
+    check(meta(order_id, '_invoiceninja_status') == 'draft', 'the order still says draft', meta(order_id, '_invoiceninja_status'))
+    check(sync(order_id) == 'ok', 'the retry ran')
+    check(meta(order_id, '_invoiceninja_status') == 'sent' and meta(order_id, '_invoiceninja_error') == '', 'the retry sees the invoice sent in Invoice Ninja and says so')
+    link = meta(order_id, '_invoiceninja_invoice_link')
+    check('INVITE' in link and 'OTHER' not in link, "the buyer's link is filled in from the invoice", link)
+    check(len(posts('invoices/bulk')) == 1, 'mark_sent is not sent again', describe(api_calls()))
+
+    # Paused (it looks like a staging copy) after it was invoiced: the order still says sent.
+    php("InvoiceNinja\\Plugin::instance()->environment->pause();")
+    try:
+        sync(order_id)
+        check(meta(order_id, '_invoiceninja_status') == 'sent', 'a pause never hides an invoice that was sent', meta(order_id, '_invoiceninja_status'))
+    finally:
+        wp('invoiceninja', 'environment', 'confirm')
+    php("wc_get_order(%d)->payment_complete('TXN-MS');" % order_id)
+    check(record_payment(order_id) == 'ok' and len(posts('payments')) == 1, 'and the payment is recorded', describe(api_calls()))
+
+
+@test
+def a_refund_whose_reply_was_lost_is_never_mirrored_twice():
+    woo_ready()
+    order_id = new_order(email='slowrefund@example.com')
+    php("wc_get_order(%d)->payment_complete('TXN-SR');" % order_id)
+    record_payment(order_id)
+    refund_id = new_refund(order_id, 5)
+    wp('option', 'update', 'in_mock_refund_timeout', 'lost')
+    try:
+        first = mirror_refund(order_id, refund_id)
+    finally:
+        wp('option', 'delete', 'in_mock_refund_timeout')
+    check(first.startswith('error'), 'no reply, and the refunded total did not move yet: try again later', first)
+    pending = json.loads(meta(order_id, '_invoiceninja_refund_pending') or '{}')
+    check(int(pending.get('refund_id', 0)) == refund_id and abs(float(pending.get('amount', 0)) - 5) < 0.001, 'the refund is kept as pending', pending)
+    # Invoice Ninja saves it late, after we looked.
+    php("$p = get_option('in_mock_payments'); foreach ($p as &$x) { if ($x['id'] === '%s') { $x['refunded'] = round($x['refunded'] + 5, 2); } } update_option('in_mock_payments', $p);" % meta(order_id, '_invoiceninja_payment_id'))
+    reset_mock_log()
+    check(mirror_refund(order_id, refund_id) == 'ok', 'the retry ran')
+    check(not posts('payments/refund'), 'the retry sees it landed and refunds nothing again', describe(api_calls()))
+    refunds = json.loads(meta(order_id, '_invoiceninja_refunds') or '{}')
+    check(refunds.get(str(refund_id), {}).get('result') == 'mirrored', 'remembered as mirrored', refunds)
+    check(meta(order_id, '_invoiceninja_refund_pending') in ('', '[]', 'null'), 'nothing pending any more')
+
+    # A refund whose reply is lost but that Invoice Ninja saved: counted once, right away.
+    second = new_refund(order_id, 2)
+    wp('option', 'update', 'in_mock_refund_timeout', '1')
+    try:
+        check(mirror_refund(order_id, second) == 'ok', 'the refunded total moved, so it counts as done')
+    finally:
+        wp('option', 'delete', 'in_mock_refund_timeout')
+    mirror_refund(order_id, second)
+    check(len(posts('payments/refund')) == 1, 'sent once', describe(api_calls()))
+    check(abs(float(mock_payments()[0]['refunded']) - 7) < 0.001, 'Invoice Ninja shows 7 refunded, not more', mock_payments()[0])
+
+
+@test
+def private_item_meta_stays_off_the_invoice_and_stock_notes_change_nothing():
+    woo_ready()
+    order_id = new_order(email='itemmeta@example.com', checkout=False)
+    php("$o = wc_get_order(%d); foreach ($o->get_items() as $i) { $i->add_meta_data('_wc_cog_item_cost', '4.20'); $i->add_meta_data('Gift note', 'Happy birthday'); $i->save(); }" % order_id)
+    sync(order_id)
+    notes = json.loads(posts('invoices')[0]['body'])['line_items'][0]['notes']
+    check('Gift note: Happy birthday' in notes, 'meta for the customer is on the invoice', notes)
+    check('_wc_cog' not in notes and '4.20' not in notes, 'private meta (the cost) is not', notes)
+    reset_mock_log()
+    php("$o = wc_get_order(%d); foreach ($o->get_items() as $i) { $i->add_meta_data('_reduced_stock', 2, true); $i->save(); } do_action('woocommerce_saved_order_items', %d, array());" % (order_id, order_id))
+    sync(order_id)
+    check(not [c for c in api_calls() if c['method'] == 'PUT'], 'stock reduced after payment does not touch the invoice', describe(api_calls()))
+    # An invoice made by an earlier version (its fingerprint can't tell): no rewrite when it charges the same.
+    php("$o = wc_get_order(%d); $o->update_meta_data('_invoiceninja_lines_hash', sha1('older lines')); $o->save();" % order_id)
+    sync(order_id)
+    check(not [c for c in api_calls() if c['method'] == 'PUT'], 'an older invoice is not rewritten for its descriptions', describe(api_calls()))
+    check(meta(order_id, '_invoiceninja_lines_hash').startswith('v2:'), 'its fingerprint is brought up to date')
+
+
+@test
+def a_paid_order_whose_invoice_was_deleted_gets_a_new_invoice_and_payment():
+    woo_ready()
+    order_id = new_order(email='deleted@example.com')
+    php("wc_get_order(%d)->payment_complete('TXN-D');" % order_id)
+    record_payment(order_id)
+    old_payment = meta(order_id, '_invoiceninja_payment_id')
+    check(old_payment.startswith('PAY'), 'paid')
+    php("$i = get_option('in_mock_invoices'); $i['%s']['is_deleted'] = true; update_option('in_mock_invoices', $i);" % meta(order_id, '_invoiceninja_invoice_id'))
+    sync(order_id)
+    check(meta(order_id, '_invoiceninja_error') == 'invoice_gone' and meta(order_id, '_invoiceninja_payment_id') == '', 'the deleted invoice and its payment are forgotten')
+    reset_mock_log()
+    check(php("echo %s->metaBox->run(wc_get_order(%d));" % (M, order_id)) == 'done', 'Retry ran')
+    live = [i for i in mock_invoices() if i['po_number'] == number(order_id) and not i.get('is_deleted')]
+    check(len(live) == 1 and live[0]['status_id'] == '4', 'a new invoice, paid', live)
+    paid = posts('payments')
+    check(len(paid) == 1 and json.loads(paid[0]['body'])['idempotency_key'].endswith('_%d_r1' % order_id), 'a new payment under a new key', describe(api_calls()))
+    check(meta(order_id, '_invoiceninja_payment_id') not in ('', old_payment), 'the new payment is stored')
+
+
+@test
+def the_rest_api_never_hands_out_the_invitation_link():
+    woo_ready()
+    order_id = new_order(email='rest@example.com')
+    sync(order_id)
+    check(meta(order_id, '_invoiceninja_invoice_link') != '', 'the link is kept on the order')
+    keys = json.loads(php("wp_set_current_user(1); $r = rest_do_request(new WP_REST_Request('GET', '/wc/v3/orders/%d'));"
+                          " $d = rest_get_server()->response_to_data($r, false); echo json_encode(array('status' => $r->get_status(), 'keys' => array_column((array) ($d['meta_data'] ?? array()), 'key')));" % order_id))
+    check(keys['status'] == 200, 'the order is read through the REST API', keys)
+    check('_invoiceninja_invoice_link' not in keys['keys'], 'without the invitation link', keys)
 
 
 @test

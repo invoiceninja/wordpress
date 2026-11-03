@@ -42,7 +42,7 @@ final class Emails {
 	 * @param mixed $email         WC_Email.
 	 */
 	public function render( $order, $sent_to_admin = false, $plain_text = false, $email = null ): void {
-		if ( ! $order instanceof \WC_Order || $sent_to_admin || ! $this->plugin->options->setting( 'woo.email_link' ) ) {
+		if ( ! OrderToInvoice::isOrder( $order ) || $sent_to_admin || ! $this->plugin->options->setting( 'woo.email_link' ) ) {
 			return;
 		}
 		if ( $email instanceof \WC_Email && ! $email->is_customer_email() ) {
