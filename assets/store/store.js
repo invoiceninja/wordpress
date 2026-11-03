@@ -38,6 +38,13 @@
 		return negative ? '-' + out : out;
 	}
 
+	function taxText( inclusive ) {
+		if ( inclusive === undefined ? cfg.taxIncluded : inclusive ) {
+			return t.taxIncluded;
+		}
+		return cfg.taxFields ? t.taxAddress : t.taxLater;
+	}
+
 	function el( tag, attrs ) {
 		const node = document.createElement( tag );
 		Object.keys( attrs || {} ).forEach( ( key ) => {
@@ -120,11 +127,11 @@
 		return match ? decodeURIComponent( match[ 1 ] ) : '';
 	}
 
-	async function api( method, path, body ) {
+	async function api( method, path, body, headers ) {
 		const response = await fetch( cfg.rest + path, {
 			method,
 			credentials: 'same-origin',
-			headers: body ? { 'Content-Type': 'application/json' } : {},
+			headers: Object.assign( body ? { 'Content-Type': 'application/json' } : {}, headers || {} ),
 			body: body ? JSON.stringify( body ) : undefined,
 		} );
 		let data = {};
@@ -318,6 +325,7 @@
 	// ---------- Checkout ----------
 
 	function initCheckout( root ) {
+		const countries = cfg.countries || [];
 		const state = {
 			step: 'cart',
 			details: { email: '', first_name: '', last_name: '', phone: '' },
@@ -326,8 +334,16 @@
 			message: null,
 			order: null,
 			retryAfter: 0,
+			trap: '',
 		};
+		if ( cfg.taxFields ) {
+			state.details.country_id = countries.some( ( c ) => c[ 0 ] === cfg.country ) ? cfg.country : '';
+			state.details.postal_code = '';
+		}
 		let timer = null;
+
+		// What the server checks besides the details: the spam trap and the total the shopper saw.
+		const checks = () => ( { website: state.trap, total: cart.data ? cart.data.total : undefined } );
 
 		const field = ( name, label, attrs, help ) => {
 			const id = 'invoiceninja-' + name;
@@ -355,7 +371,22 @@
 			return el( 'div', { class: 'invoiceninja-summary' },
 				el( 'ul', { class: 'invoiceninja-lines' }, rows ),
 				el( 'p', { class: 'invoiceninja-summary__row' }, el( 'span', { text: t.subtotal } ), el( 'strong', { text: money( data.subtotal ) } ) ),
-				el( 'p', { class: 'invoiceninja-summary__row invoiceninja-muted' }, el( 'span', { text: t.tax } ), el( 'span', { text: cfg.taxFields ? t.taxAddress : t.taxLater } ) ) );
+				el( 'p', { class: 'invoiceninja-summary__row invoiceninja-muted' }, el( 'span', { text: t.tax } ), el( 'span', { text: taxText() } ) ) );
+		};
+
+		const taxFields = () => {
+			if ( ! cfg.taxFields ) {
+				return null;
+			}
+			const select = el( 'select', { id: 'invoiceninja-country_id', name: 'country_id', required: true, autocomplete: 'country', 'aria-describedby': 'invoiceninja-tax-help', onChange: ( e ) => {
+				state.details.country_id = e.target.value;
+			} }, el( 'option', { value: '', text: t.chooseCountry } ), countries.map( ( c ) => el( 'option', { value: c[ 0 ], text: c[ 1 ], selected: c[ 0 ] === state.details.country_id } ) ) );
+			return [
+				el( 'div', { class: 'invoiceninja-row' },
+					el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-country_id', text: t.country } ), select ),
+					field( 'postal_code', t.postcode, { input: { autocomplete: 'postal-code', required: true, maxlength: '16' } } ) ),
+				el( 'p', { id: 'invoiceninja-tax-help', class: 'invoiceninja-help', text: t.taxHelp } ),
+			];
 		};
 
 		const change = async ( line, quantity ) => {
@@ -384,14 +415,21 @@
 			} else if ( result.code === 'empty_cart' ) {
 				state.step = 'cart';
 				state.message = null;
+			} else if ( result.code === 'tax_address' ) {
+				state.step = 'details';
 			}
 			return false;
 		};
 
-		const start = async () => {
+		const start = async ( again ) => {
 			state.message = null;
 			render( true );
-			const result = await api( 'POST', '/checkout/start', state.details );
+			const result = await api( 'POST', '/checkout/start', Object.assign( {}, state.details, checks() ) );
+			// Sent within a moment of the first add: wait those seconds out once, then go on.
+			if ( result.code === 'too_fast' && ! again ) {
+				window.setTimeout( () => start( true ), Math.min( 10, result.retry_after || 3 ) * 1000 );
+				return;
+			}
 			if ( ! handle( result ) ) {
 				render();
 				return;
@@ -410,11 +448,13 @@
 			state.step = 'placing';
 			state.message = null;
 			render();
-			const result = await api( 'POST', '/checkout/confirm', Object.assign( {}, state.details, { code: state.code, remember: state.remember } ) );
+			const result = await api( 'POST', '/checkout/confirm', Object.assign( {}, state.details, checks(), { code: state.code, remember: state.remember } ) );
 			if ( ! handle( result ) ) {
 				if ( result.code && result.code.indexOf( 'code_' ) === 0 ) {
 					state.step = 'code';
 					state.code = '';
+				} else if ( state.step === 'placing' ) {
+					state.step = 'details'; // With the message, never a "Placing…" that doesn't end.
 				}
 				render();
 				return;
@@ -453,6 +493,8 @@
 			details( data ) {
 				const form = el( 'form', { class: 'invoiceninja-details', onSubmit: ( e ) => {
 					e.preventDefault();
+					const trap = form.querySelector( '[name="website"]' );
+					state.trap = trap ? trap.value : '';
 					start();
 				} },
 					cfg.loggedIn ? null : el( 'p', { class: 'invoiceninja-muted' }, t.haveAccount + ' ', el( 'a', { href: cfg.loginUrl, text: t.logIn } ) ),
@@ -461,8 +503,11 @@
 						field( 'first_name', t.firstName, { input: { autocomplete: 'given-name', required: true } } ),
 						field( 'last_name', t.lastName, { input: { autocomplete: 'family-name', required: true } } ) ),
 					field( 'phone', t.phone, { optional: true, input: { type: 'tel', autocomplete: 'tel' } } ),
+					taxFields(),
 					// Spam trap: people never see or fill it.
-					el( 'p', { class: 'invoiceninja-sr', 'aria-hidden': 'true' }, el( 'input', { name: 'website', tabindex: '-1', autocomplete: 'off' } ) ),
+					el( 'p', { class: 'invoiceninja-sr', 'aria-hidden': 'true' }, el( 'input', { name: 'website', tabindex: '-1', autocomplete: 'off', value: state.trap, onInput: ( e ) => {
+						state.trap = e.target.value;
+					} } ) ),
 					el( 'p', { class: 'invoiceninja-actions' }, el( 'button', { type: 'submit', class: 'wp-element-button' }, t.continue ) ),
 					el( 'p', { class: 'invoiceninja-muted', text: t.nextCode } ) );
 				return [ heading( t.checkout ), el( 'div', { class: 'invoiceninja-columns' }, form, el( 'aside', { class: 'invoiceninja-aside', 'aria-label': t.orderSummary }, el( 'h3', { text: t.orderSummary } ), summary( data, false ), el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', onClick: () => {
@@ -516,7 +561,10 @@
 				return [
 					heading( t.welcomeBack ),
 					el( 'p', { text: fmt( t.remembered, state.details.email ) } ),
-					el( 'p', { class: 'invoiceninja-actions' }, button( t.placeOrder, confirm ), el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', onClick: () => {
+					el( 'p', { class: 'invoiceninja-actions' }, button( t.placeOrder, confirm ), el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', onClick: async () => {
+						// "Not you?": this device stops skipping the code for that email.
+						await api( 'POST', '/checkout/forget', {} );
+						state.details.email = '';
 						state.step = 'details';
 						render();
 					} }, t.useAnother ) ),
@@ -616,14 +664,21 @@
 	function orderView( order, justPlaced ) {
 		const [ tone, label ] = statusLabel( order.status );
 		const nodes = [];
+		if ( order.problem === 'currency' ) {
+			// The buyer's account with us uses another currency: an admin sorts it out.
+			nodes.push( el( 'h2', { class: 'invoiceninja-heading', tabindex: '-1', text: t.cantTake } ) );
+			nodes.push( el( 'p', { class: 'invoiceninja-muted', text: fmt( t.orderLineLater, order.number ) } ) );
+			nodes.push( el( 'p', null, t.cantTakeText, cfg.contact ? ' ' : null, cfg.contact ? el( 'a', { href: cfg.contact, text: t.contactUs } ) : null ) );
+			return nodes;
+		}
 		const title = justPlaced ? ( order.status === 'awaiting_payment' && order.pay_link ? t.thanksPay : t.thanksReceived ) : ( order.status === 'paid' ? fmt( t.bannerPaid, order.number ) : t.yourOrder );
 		nodes.push( el( 'h2', { class: 'invoiceninja-heading', tabindex: '-1', text: title } ) );
 		nodes.push( el( 'p', { class: 'invoiceninja-muted', text: order.invoice_number ? fmt( t.orderLine, order.number, order.invoice_number ) : fmt( t.orderLineLater, order.number ) } ) );
 		nodes.push( el( 'p', null, el( 'span', { class: 'invoiceninja-pill invoiceninja-pill--' + tone, text: label } ), order.email ? el( 'span', { class: 'invoiceninja-muted', text: ' ' + order.email } ) : null ) );
 		nodes.push( el( 'div', { class: 'invoiceninja-summary' },
 			el( 'ul', { class: 'invoiceninja-lines' }, order.items.map( ( i ) => el( 'li', { class: 'invoiceninja-line' }, el( 'span', { class: 'invoiceninja-line__title', text: i.quantity + ' × ' + i.title } ), el( 'span', { class: 'invoiceninja-line__total', text: money( i.price * i.quantity ) } ) ) ) ),
-			el( 'p', { class: 'invoiceninja-summary__row' }, el( 'span', { text: order.status === 'paid' ? t.total : t.subtotal } ), el( 'strong', { text: money( order.total ) } ) ),
-			order.status === 'paid' ? null : el( 'p', { class: 'invoiceninja-summary__row invoiceninja-muted' }, el( 'span', { text: t.tax } ), el( 'span', { text: t.taxLater } ) ) ) );
+			el( 'p', { class: 'invoiceninja-summary__row' }, el( 'span', { text: order.status === 'paid' ? t.total : t.subtotal } ), el( 'strong', { text: money( order.status === 'paid' || typeof order.subtotal !== 'number' ? order.total : order.subtotal ) } ) ),
+			order.status === 'paid' ? null : el( 'p', { class: 'invoiceninja-summary__row invoiceninja-muted' }, el( 'span', { text: t.tax } ), el( 'span', { text: taxText( !! order.inclusive ) } ) ) ) );
 		if ( order.status === 'awaiting_payment' && order.pay_link ) {
 			nodes.push( el( 'p', { class: 'invoiceninja-actions' }, payButton( order.pay_link ) ) );
 			if ( justPlaced ) {
@@ -648,7 +703,8 @@
 
 	function initStatus( root ) {
 		const params = new URLSearchParams( window.location.search );
-		const number = params.get( 'order' ) || '';
+		// invoiceninja_order: a link made while the site had no Order Status page.
+		const number = params.get( 'order' ) || params.get( 'invoiceninja_order' ) || '';
 		const key = ( window.location.hash.match( /key=([0-9a-f]{32})/ ) || [] )[ 1 ] || '';
 		const paint = ( nodes ) => {
 			root.textContent = '';
@@ -668,7 +724,8 @@
 			paint( [ el( 'h2', { class: 'invoiceninja-heading', text: t.findOrder } ), number ? el( 'p', { text: t.findIntro } ) : null, form ] );
 		};
 		const load = async () => {
-			const order = await api( 'GET', '/orders/' + encodeURIComponent( number ) + '?key=' + encodeURIComponent( key ) );
+			// The key goes in a header, never the address, so it stays out of server logs.
+			const order = await api( 'GET', '/orders/' + encodeURIComponent( number ), null, { 'X-Order-Key': key } );
 			if ( order.httpStatus !== 200 || ! order.number ) {
 				find();
 				return;

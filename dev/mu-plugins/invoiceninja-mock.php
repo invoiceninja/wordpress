@@ -8,7 +8,12 @@
  *   in_mock_track_inventory 0 (default) | 1
  *   in_mock_live_stock      "P1:1" stock returned by GET products/{id} (changed since the sync)
  *   in_mock_slow_stock      1: GET products/{id} times out
+ *   in_mock_calculate_taxes 1: the company calculates taxes from the client's address
+ *   in_mock_inclusive_taxes 1: the company's prices include tax
+ *   in_mock_checkout_min_seconds  seconds from the first add to checkout (the flows set 0)
+ *   in_mock_captcha_fail    1: the invoiceninja_captcha filter refuses everyone
  *
+ * Known clients: a+b@x.com and member@x.com (the company's currency), euro@x.com (EUR).
  * Never load this on a real site: it is only mounted by dev/docker-compose.yml.
  */
 
@@ -49,8 +54,25 @@ function in_mock_clients() {
     return [
         'a+b@x.com'    => 'CLIENT_PLUS',
         'member@x.com' => 'CLIENT_MEMBER',
+        'euro@x.com'   => 'CLIENT_EURO',
     ];
 }
+
+// Client settings: CLIENT_EURO uses euros (currency 3); the others inherit the company's dollars
+function in_mock_client_settings( $id ) {
+    return $id === 'CLIENT_EURO' ? [ 'currency_id' => '3' ] : new stdClass();
+}
+
+// A CAPTCHA plugin that refuses everyone (in_mock_captcha_fail)
+add_filter( 'invoiceninja_captcha', function ( $passed ) {
+    return get_option( 'in_mock_captcha_fail' ) ? false : $passed;
+} );
+
+// The checkout's minimum time from the first add (the flow tests turn it off except where they test it)
+add_filter( 'invoiceninja_checkout_min_seconds', function ( $seconds ) {
+    $set = get_option( 'in_mock_checkout_min_seconds', false );
+    return false === $set ? $seconds : (int) $set;
+} );
 
 // The fake host doesn't exist in DNS; give the plugin's private-network check a public address.
 // The flow tests run every queued job themselves; Action Scheduler's loopback runner would
@@ -117,17 +139,30 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         return in_mock_response( [ 'data' => [
             'id' => 'COMPANY1',
             'track_inventory' => (bool) get_option( 'in_mock_track_inventory' ),
+            'calculate_taxes' => (bool) get_option( 'in_mock_calculate_taxes' ),
             'settings' => [
                 'name' => 'Mock Company', 'website' => '', 'currency_id' => '1', 'country_id' => '840',
                 'show_currency_code' => false, 'primary_color' => '#123456', 'company_logo' => '',
+                'inclusive_taxes' => (bool) get_option( 'in_mock_inclusive_taxes' ), 'email' => 'billing@mock.test',
             ],
         ] ] );
     }
 
     if ( strpos( $route, 'statics' ) === 0 ) {
         return in_mock_response( [
-            'currencies' => [ [ 'id' => '1', 'code' => 'USD', 'symbol' => '$', 'precision' => 2, 'thousand_separator' => ',', 'decimal_separator' => '.', 'swap_currency_symbol' => false ] ],
-            'countries'  => [ [ 'id' => '840', 'swap_currency_symbol' => false, 'thousand_separator' => '', 'decimal_separator' => '' ] ],
+            'currencies' => [
+                [ 'id' => '1', 'code' => 'USD', 'symbol' => '$', 'precision' => 2, 'thousand_separator' => ',', 'decimal_separator' => '.', 'swap_currency_symbol' => false ],
+                [ 'id' => '3', 'code' => 'EUR', 'symbol' => '€', 'precision' => 2, 'thousand_separator' => '.', 'decimal_separator' => ',', 'swap_currency_symbol' => true ],
+            ],
+            'countries'  => [
+                [ 'id' => '840', 'name' => 'United States', 'iso_3166_2' => 'US', 'swap_currency_symbol' => false, 'thousand_separator' => '', 'decimal_separator' => '' ],
+                [ 'id' => '276', 'name' => 'Germany', 'iso_3166_2' => 'DE', 'swap_currency_symbol' => false, 'thousand_separator' => '', 'decimal_separator' => '' ],
+            ],
+            'languages'  => [
+                [ 'id' => '1', 'name' => 'English - United States', 'locale' => 'en' ],
+                [ 'id' => '3', 'name' => 'German', 'locale' => 'de' ],
+                [ 'id' => '23', 'name' => 'English - United Kingdom', 'locale' => 'en_GB' ],
+            ],
         ] );
     }
 
@@ -183,7 +218,7 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
 
         if ( isset( $clients[ $email ] ) ) {
             return in_mock_response( [ 'data' => [ [
-                'id' => $clients[ $email ], 'client_hash' => 'HASH',
+                'id' => $clients[ $email ], 'client_hash' => 'HASH', 'settings' => in_mock_client_settings( $clients[ $email ] ),
                 'contacts' => [ [ 'id' => 'C1', 'email' => strtoupper( $email ), 'contact_key' => 'KEY_' . $clients[ $email ] ] ],
             ] ] ] );
         }
@@ -234,6 +269,7 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             'id' => $n === 1 ? 'INV1' : 'INV' . $n, 'number' => sprintf( '%04d', $n ), 'client_id' => $client_id,
             'po_number' => $data['po_number'] ?? '', 'amount' => $amount, 'balance' => $amount, 'paid_to_date' => 0, 'status_id' => '2',
             'created_at' => time(), 'line_items' => $data['line_items'] ?? [],
+            'public_notes' => $data['public_notes'] ?? '', 'uses_inclusive_taxes' => (bool) ( $data['uses_inclusive_taxes'] ?? false ),
             // Another contact's invitation first, like a client whose primary contact isn't the buyer
             'invitations' => get_option( 'in_mock_other_contact_first' ) ? [ $other, $mine ] : [ $mine, $other ],
         ];

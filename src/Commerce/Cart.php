@@ -58,7 +58,18 @@ final class Cart {
 		}
 		$this->cookie( self::COOKIE, $id . '.' . self::sign( $id, $this->secrets->get( 'cart_secret' ) ), true );
 		$_COOKIE[ self::COOKIE ] = $id . '.' . self::sign( $id, $this->secrets->get( 'cart_secret' ) );
+		set_transient( 'invoiceninja_cart_at_' . $id, time(), self::TTL );
 		return $id;
+	}
+
+	/**
+	 * Seconds since the cart was started (its first add), or null when that isn't known.
+	 *
+	 * @param string $id Cart id.
+	 */
+	public function age( string $id ): ?int {
+		$at = get_transient( 'invoiceninja_cart_at_' . $id );
+		return is_numeric( $at ) && (int) $at > 0 ? max( 0, time() - (int) $at ) : null;
 	}
 
 	/**
@@ -139,6 +150,7 @@ final class Cart {
 	 */
 	public function clear( string $id, int $order_id = 0 ): void {
 		delete_transient( 'invoiceninja_cart_' . $id );
+		delete_transient( 'invoiceninja_cart_at_' . $id );
 		if ( $order_id > 0 ) {
 			set_transient( 'invoiceninja_cart_done_' . $id, $order_id, 15 * MINUTE_IN_SECONDS );
 		}
@@ -160,17 +172,20 @@ final class Cart {
 	}
 
 	/**
-	 * Priced lines from the synced products. Unavailable products are dropped.
+	 * Priced lines from the synced products. Unavailable products are dropped. Taxes are
+	 * worked out the way Invoice Ninja does: each rate rounded on its own, added to the
+	 * price, or backed out of it when the company's prices include tax.
 	 *
 	 * @param array<string, int> $items Items.
-	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>}
+	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>, inclusive: bool}
 	 */
 	public function summary( array $items ): array {
-		$lines    = array();
-		$total    = 0.0;
-		$subtotal = 0.0;
-		$taxes    = 0.0;
-		$changed  = array();
+		$lines     = array();
+		$total     = 0.0;
+		$subtotal  = 0.0;
+		$taxes     = 0.0;
+		$changed   = array();
+		$inclusive = $this->inclusiveTaxes();
 		foreach ( $items as $product => $quantity ) {
 			$info = $this->product( (string) $product );
 			if ( null === $info ) {
@@ -186,11 +201,10 @@ final class Cart {
 				$changed[] = (string) $product;
 			}
 			$line      = round( $info['price'] * $qty, 2 );
-			$rate      = (float) $info['tax']['tax_rate1'] + (float) $info['tax']['tax_rate2'] + (float) $info['tax']['tax_rate3'];
-			$tax       = round( $line * $rate / 100, 2 );
+			$tax       = self::taxFor( $line, array( (float) $info['tax']['tax_rate1'], (float) $info['tax']['tax_rate2'], (float) $info['tax']['tax_rate3'] ), $inclusive );
 			$subtotal += $line;
 			$taxes    += $tax;
-			$total    += $line + $tax;
+			$total    += $inclusive ? $line : $line + $tax;
 			$lines[]   = array(
 				'product'     => (string) $product,
 				'post_id'     => $info['post_id'],
@@ -202,16 +216,57 @@ final class Cart {
 				'max'         => $info['max'],
 				'line_total'  => $line,
 				'tax'         => $info['tax'],
+				'inclusive'   => $inclusive,
 			);
 		}
 		return array(
-			'lines'    => $lines,
-			'subtotal' => round( $subtotal, 2 ),
-			'tax'      => round( $taxes, 2 ),
-			'total'    => round( $total, 2 ),
-			'count'    => (int) array_sum( array_column( $lines, 'quantity' ) ),
-			'changed'  => $changed,
+			'lines'     => $lines,
+			'subtotal'  => round( $subtotal, 2 ),
+			'tax'       => round( $taxes, 2 ),
+			'total'     => round( $total, 2 ),
+			'count'     => (int) array_sum( array_column( $lines, 'quantity' ) ),
+			'changed'   => $changed,
+			'inclusive' => $inclusive,
 		);
+	}
+
+	/**
+	 * Tax on one line, rounded like Invoice Ninja: each rate on its own. With inclusive
+	 * prices the tax is backed out of the line (the combined rate is factored out once),
+	 * so the line total stays what the buyer pays.
+	 *
+	 * @param float       $line      Line total (price times quantity).
+	 * @param list<float> $rates     Tax rates in percent.
+	 * @param bool        $inclusive Prices include tax.
+	 */
+	public static function taxFor( float $line, array $rates, bool $inclusive ): float {
+		$combined = 100.0 + array_sum( $rates );
+		$tax      = 0.0;
+		foreach ( $rates as $rate ) {
+			if ( 0.0 === (float) $rate ) {
+				continue;
+			}
+			if ( ! $inclusive ) {
+				$tax += round( $line * $rate / 100, 2 );
+			} elseif ( $combined > 0 ) {
+				$tax += round( $line * $rate / $combined, 2 );
+			}
+		}
+		return round( $tax, 2 );
+	}
+
+	/**
+	 * Whether the company's prices include tax (Invoice Ninja's "inclusive taxes" setting).
+	 */
+	public function inclusiveTaxes(): bool {
+		$state = get_option( 'invoiceninja_connection', array() );
+		/**
+		 * Whether product prices include tax. The order total and the invoice both follow it.
+		 *
+		 * @since 2.0.0
+		 * @param bool $inclusive Prices include tax.
+		 */
+		return (bool) apply_filters( 'invoiceninja_inclusive_taxes', is_array( $state ) && ! empty( $state['company']['inclusive_taxes'] ) );
 	}
 
 	/**
@@ -272,7 +327,7 @@ final class Cart {
 	 *
 	 * @param string $id   Cart id.
 	 * @param bool   $only Buy Now: keep only the most recently added product.
-	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>}
+	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>, inclusive: bool}
 	 */
 	public function reconcile( string $id, bool $only = false ): array {
 		$items   = $this->items( $id );

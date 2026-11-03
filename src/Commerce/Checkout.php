@@ -19,8 +19,30 @@ use InvoiceNinja\Verification\EmailCode;
  * 2. confirm: check the code, save the order (a double submit returns the same order),
  *    then create the invoice. If Invoice Ninja is down the order is kept and sent later.
  * No Invoice Ninja record is created before the code is confirmed.
+ * Abuse protection: a honeypot, a minimum time from the first add to checkout, rate
+ * limits, the invoiceninja_captcha filter, and a cap on unpaid orders per email.
  */
 final class Checkout {
+
+	/**
+	 * Unpaid orders one email may have open from the last day (filter: invoiceninja_max_open_orders).
+	 */
+	public const MAX_OPEN_ORDERS = 3;
+
+	/**
+	 * Seconds from the first add to checkout, at least (filter: invoiceninja_checkout_min_seconds).
+	 */
+	public const MIN_SECONDS = 3;
+
+	/**
+	 * Find my order emails per email address an hour.
+	 */
+	public const FIND_PER_EMAIL_HOUR = 3;
+
+	/**
+	 * Background job that emails a Find my order link.
+	 */
+	public const FIND_HOOK = 'invoiceninja_find_order';
 
 	/**
 	 * Constructor.
@@ -141,13 +163,143 @@ final class Checkout {
 	}
 
 	/**
-	 * Step 1: validate and send a code.
+	 * Whether checkout asks for the country and postcode: Invoice Ninja works out the tax
+	 * from the client's address (the company's "calculate taxes").
+	 */
+	public function taxFields(): bool {
+		return ! empty( $this->plugin->state->get()['company']['calculate_taxes'] ) && (bool) $this->plugin->statics->countries();
+	}
+
+	/**
+	 * Check the tax address when it's asked for.
 	 *
-	 * @param array<string, string> $details email, first_name, last_name, phone.
-	 * @param string                $ip      Shopper IP.
+	 * @param array<string, string> $details Buyer details.
+	 * @return array<string, mixed>|null The error reply, or null when it's fine (or not needed).
+	 */
+	private function taxAddressError( array $details ): ?array {
+		if ( ! $this->taxFields() ) {
+			return null;
+		}
+		$errors = self::taxAddressErrors( (string) ( $details['country_id'] ?? '' ), (string) ( $details['postal_code'] ?? '' ), array_keys( $this->plugin->statics->countries() ) );
+		if ( ! $errors ) {
+			return null;
+		}
+		return array(
+			'ok'      => false,
+			'code'    => 'tax_address',
+			'message' => __( 'Enter your country and postcode. We need them to work out the tax.', 'invoiceninja' ),
+			'fields'  => $errors,
+		);
+	}
+
+	/**
+	 * Field errors for a tax address.
+	 *
+	 * @param string            $country   Invoice Ninja country id.
+	 * @param string            $postcode  Postcode.
+	 * @param list<int|string>  $countries Known country ids.
+	 * @return array<string, string> Errors by field.
+	 */
+	public static function taxAddressErrors( string $country, string $postcode, array $countries ): array {
+		$errors = array();
+		if ( '' === $country || ! in_array( $country, array_map( 'strval', $countries ), true ) ) {
+			$errors['country_id'] = __( 'Choose your country.', 'invoiceninja' );
+		}
+		if ( ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9 -]{0,15}$/', trim( $postcode ) ) ) {
+			$errors['postal_code'] = __( 'Enter your postcode.', 'invoiceninja' );
+		}
+		return $errors;
+	}
+
+	/**
+	 * The spam trap: a field people never see or fill.
+	 *
+	 * @param array<string, mixed> $form Form checks.
+	 */
+	private static function trapped( array $form ): bool {
+		return '' !== trim( (string) ( is_scalar( $form['website'] ?? '' ) ? ( $form['website'] ?? '' ) : 'x' ) );
+	}
+
+	/**
+	 * Whether the shopper reached checkout too quickly after the first add to be a person.
+	 *
+	 * @param string $cart_id Cart id.
+	 * @return int Seconds still to wait (0 when it's fine).
+	 */
+	private function tooFast( string $cart_id ): int {
+		/**
+		 * Seconds a person needs at least from adding the first product to checking out.
+		 *
+		 * @since 2.0.0
+		 * @param int $seconds Seconds.
+		 */
+		$min = max( 0, (int) apply_filters( 'invoiceninja_checkout_min_seconds', self::MIN_SECONDS ) );
+		$age = $this->cart->age( $cart_id );
+		return null === $age || $age >= $min ? 0 : $min - $age;
+	}
+
+	/**
+	 * Whether this email may place another order: unpaid orders are capped, so a remembered
+	 * device can't be used to create invoices (and hold stock) without end.
+	 *
+	 * @param string $email Email.
+	 * @return array<string, mixed>|null The error reply, or null to continue.
+	 */
+	private function openOrdersError( string $email ): ?array {
+		/**
+		 * Unpaid orders one email may have from the last day before checkout refuses more.
+		 * 0 turns the cap off.
+		 *
+		 * @since 2.0.0
+		 * @param int    $max   Maximum.
+		 * @param string $email Email.
+		 */
+		$max = (int) apply_filters( 'invoiceninja_max_open_orders', self::MAX_OPEN_ORDERS, $email );
+		if ( $max <= 0 || $this->orders->openFor( $email ) < $max ) {
+			return null;
+		}
+		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Warning, 'checkout', 'Checkout refused: too many unpaid orders for one email' );
+		return array(
+			'ok'      => false,
+			'code'    => 'too_many_orders',
+			'message' => __( 'You have several unpaid orders already. Please pay for them first, or contact us.', 'invoiceninja' ),
+		);
+	}
+
+	/**
+	 * The cart changed since the shopper saw it: the total they were shown isn't today's.
+	 *
+	 * @param array<string, mixed> $form    Form checks (total: what the page showed).
+	 * @param array<string, mixed> $summary Cart summary now.
+	 */
+	private static function totalChanged( array $form, array $summary ): bool {
+		return isset( $form['total'] ) && is_numeric( $form['total'] ) && abs( round( (float) $form['total'], 2 ) - round( (float) $summary['total'], 2 ) ) >= 0.005;
+	}
+
+	/**
+	 * The "cart changed" reply.
+	 *
+	 * @param array<string, mixed> $summary Cart summary.
 	 * @return array<string, mixed>
 	 */
-	public function start( array $details, string $ip ): array {
+	private static function cartChanged( array $summary ): array {
+		return array(
+			'ok'      => false,
+			'code'    => 'cart_changed',
+			'message' => __( "Some items changed or sold out, so we've updated your cart. Please check it before continuing.", 'invoiceninja' ),
+			'cart'    => $summary,
+		);
+	}
+
+	/**
+	 * Step 1: validate and send a code.
+	 *
+	 * @param array<string, string> $details email, first_name, last_name, phone, country_id, postal_code.
+	 * @param string                $ip      Shopper IP.
+	 * @param array<string, mixed>  $form    website (spam trap), total (as shown), input (everything sent, for a CAPTCHA).
+	 * @return array<string, mixed>
+	 */
+	public function start( array $details, string $ip, array $form = array() ): array {
 		$reason = $this->unavailable();
 		if ( null !== $reason ) {
 			return array(
@@ -159,6 +311,15 @@ final class Checkout {
 		$gate = $this->gate();
 		if ( null !== $gate ) {
 			return $gate;
+		}
+		// Bots that fill every field get the reply people get, and no code is sent.
+		if ( self::trapped( $form ) ) {
+			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', 'Checkout dropped: spam trap filled' );
+			return array(
+				'ok'          => true,
+				'next'        => 'code',
+				'retry_after' => EmailCode::RESEND_AFTER,
+			);
 		}
 		$details = $this->accountEmail( $details );
 		$email   = EmailCode::normalize( $details['email'] ?? '' );
@@ -177,6 +338,35 @@ final class Checkout {
 				'message' => __( 'Your cart is empty.', 'invoiceninja' ),
 			);
 		}
+		$wait = $this->tooFast( $cart_id );
+		if ( $wait > 0 ) {
+			return array(
+				'ok'          => false,
+				'code'        => 'too_fast',
+				'retry_after' => $wait,
+				'message'     => __( 'That was quick! Please check your details, then continue.', 'invoiceninja' ),
+			);
+		}
+		/**
+		 * Whether the visitor passed a CAPTCHA. There is none by default; a CAPTCHA plugin
+		 * returns false to refuse the request.
+		 *
+		 * @since 2.0.0
+		 * @param bool                 $passed  Passed.
+		 * @param array<string, mixed> $input   Submitted values.
+		 * @param string               $context checkout (before the email code is sent).
+		 */
+		if ( ! apply_filters( 'invoiceninja_captcha', true, (array) ( $form['input'] ?? array() ), 'checkout' ) ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'captcha',
+				'message' => __( 'Please complete the check to show you are not a robot.', 'invoiceninja' ),
+			);
+		}
+		$tax = $this->taxAddressError( $details );
+		if ( null !== $tax ) {
+			return $tax;
+		}
 		// Stock right now, before the code is sent (limited per address: each check calls Invoice Ninja).
 		if ( $this->plugin->options->increment( 'ctr_stock_' . substr( md5( self::ipBucket( $ip ) ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) <= 60 ) {
 			$this->stock->refresh( $this->cart->items( $cart_id ) );
@@ -190,15 +380,15 @@ final class Checkout {
 				'cart'    => $summary,
 			);
 		}
-		if ( $summary['changed'] ) {
-			return array(
-				'ok'      => false,
-				'code'    => 'cart_changed',
-				'message' => __( "Some items changed or sold out, so we've updated your cart. Please check it before continuing.", 'invoiceninja' ),
-				'cart'    => $summary,
-			);
+		if ( $summary['changed'] || self::totalChanged( $form, $summary ) ) {
+			return self::cartChanged( $summary );
 		}
 		if ( $this->verifiedBuyer( $email ) || $this->device->current( $email ) ) {
+			// Already proven to own the email, so saying it has unpaid orders reveals nothing.
+			$open = $this->openOrdersError( $email );
+			if ( null !== $open ) {
+				return $open;
+			}
 			return array(
 				'ok'   => true,
 				'next' => 'confirm',
@@ -232,13 +422,14 @@ final class Checkout {
 	/**
 	 * Step 2: check the code and place the order.
 	 *
-	 * @param array<string, string> $details  email, first_name, last_name, phone.
+	 * @param array<string, string> $details  email, first_name, last_name, phone, country_id, postal_code.
 	 * @param string                $code     Code (empty when the device is remembered).
 	 * @param bool                  $remember Remember this device.
 	 * @param string                $ip       Shopper IP.
+	 * @param array<string, mixed>  $form     website (spam trap), total (as shown).
 	 * @return array<string, mixed>
 	 */
-	public function confirm( array $details, string $code, bool $remember, string $ip = '' ): array {
+	public function confirm( array $details, string $code, bool $remember, string $ip = '', array $form = array() ): array {
 		$reason = $this->unavailable();
 		if ( null !== $reason ) {
 			return array(
@@ -250,6 +441,14 @@ final class Checkout {
 		$gate = $this->gate();
 		if ( null !== $gate ) {
 			return $gate;
+		}
+		$wrong_code = array(
+			'ok'      => false,
+			'code'    => 'code_wrong',
+			'message' => __( "That code isn't right. Check the email and try again.", 'invoiceninja' ),
+		);
+		if ( self::trapped( $form ) ) {
+			return $wrong_code;
 		}
 		$details = $this->accountEmail( $details );
 		$email   = EmailCode::normalize( $details['email'] ?? '' );
@@ -269,20 +468,19 @@ final class Checkout {
 				'message' => __( 'Your cart is empty.', 'invoiceninja' ),
 			);
 		}
-		if ( $summary['changed'] ) {
-			return array(
-				'ok'      => false,
-				'code'    => 'cart_changed',
-				'message' => __( "Some items changed or sold out, so we've updated your cart. Please check it before continuing.", 'invoiceninja' ),
-				'cart'    => $summary,
-			);
+		if ( $summary['changed'] || self::totalChanged( $form, $summary ) ) {
+			return self::cartChanged( $summary );
+		}
+		$tax = $this->taxAddressError( $details );
+		if ( null !== $tax ) {
+			return $tax;
 		}
 
 		if ( ! $this->verifiedBuyer( $email ) && ! $this->device->current( $email ) ) {
 			$result = $this->codes->verify( $email, $code, 'checkout', $ip );
 			if ( 'ok' !== $result ) {
 				$messages = array(
-					'wrong'   => __( "That code isn't right. Check the email and try again.", 'invoiceninja' ),
+					'wrong'   => $wrong_code['message'],
 					'expired' => __( 'That code has expired. Send a new one.', 'invoiceninja' ),
 					'locked'  => __( 'Too many wrong codes. Send a new one.', 'invoiceninja' ),
 				);
@@ -314,6 +512,20 @@ final class Checkout {
 		$token  = substr( hash( 'sha256', $cart_id . '|' . $email . '|' . wp_json_encode( $bought ) ), 0, 32 );
 		$order  = $this->orders->findBy( 'token', $token );
 		if ( null === $order ) {
+			$open = $this->openOrdersError( $email );
+			if ( null !== $open ) {
+				return $open;
+			}
+			$customer = array(
+				'first_name' => sanitize_text_field( $details['first_name'] ?? '' ),
+				'last_name'  => sanitize_text_field( $details['last_name'] ?? '' ),
+				'phone'      => sanitize_text_field( $details['phone'] ?? '' ),
+				'locale'     => (string) get_user_locale(),
+			);
+			if ( $this->taxFields() ) {
+				$customer['country_id']  = sanitize_text_field( $details['country_id'] ?? '' );
+				$customer['postal_code'] = strtoupper( trim( sanitize_text_field( $details['postal_code'] ?? '' ) ) );
+			}
 			try {
 				$order = $this->orders->create(
 					array(
@@ -321,11 +533,7 @@ final class Checkout {
 						'token'    => $token,
 						'email'    => $email,
 						'user_id'  => self::userId(),
-						'customer' => array(
-							'first_name' => sanitize_text_field( $details['first_name'] ?? '' ),
-							'last_name'  => sanitize_text_field( $details['last_name'] ?? '' ),
-							'phone'      => sanitize_text_field( $details['phone'] ?? '' ),
-						),
+						'customer' => $customer,
 						'items'    => $summary['lines'],
 						'total'    => $summary['total'],
 						'currency' => $this->plugin->statics->currencyCode(),
@@ -340,14 +548,23 @@ final class Checkout {
 			}
 			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s received', $order['number'] ), array(), 'order', (string) $order['number'] );
 			$order = $this->service->place( $order, true );
-			if ( in_array( $order['status'], array( 'queued', 'attention' ), true ) ) {
-				$this->emailBuyer( $order ); // "Received"; the payment link follows once it's placed.
+			// "Received"; the payment link follows once it's placed. A client in another
+			// currency gets no promise of a payment link: an admin is in touch instead.
+			if ( in_array( $order['status'], array( 'queued', 'attention' ), true ) && 'currency' !== $order['note'] ) {
+				$this->emailBuyer( $order );
 			}
 		}
 		// A new cart id, so buying the same items again later is a new order.
 		$this->cart->clear( $cart_id, (int) $order['id'] );
 		$this->rememberOrder( $order );
 		return array( 'ok' => true ) + $this->publicView( $order, true );
+	}
+
+	/**
+	 * "Not you?": forget this device's remembered email, so the next checkout asks for a code.
+	 */
+	public function forgetDevice(): void {
+		$this->device->forget();
 	}
 
 	/**
@@ -358,10 +575,13 @@ final class Checkout {
 	 * @return array<string, mixed>
 	 */
 	public function publicView( array $order, bool $with_key ): array {
-		$view = array(
+		$items = (array) $order['items'];
+		$view  = array(
 			'number'         => (string) $order['number'],
 			'status'         => (string) $order['status'],
 			'total'          => (float) $order['total'],
+			'subtotal'       => round( array_sum( array_map( static fn( $i ): float => (float) ( is_array( $i ) ? ( $i['line_total'] ?? ( (float) ( $i['price'] ?? 0 ) * (int) ( $i['quantity'] ?? 0 ) ) ) : 0 ), $items ) ), 2 ),
+			'inclusive'      => OrderService::inclusive( $order ),
 			'invoice_number' => (string) $order['invoice_number'],
 			'items'          => array_map(
 				static fn( array $i ): array => array(
@@ -370,10 +590,12 @@ final class Checkout {
 					'quantity' => (int) $i['quantity'],
 					'price'    => (float) $i['price'],
 				),
-				(array) $order['items']
+				$items
 			),
 			'email'          => self::maskEmail( (string) $order['email'] ),
 			'pay_link'       => 'awaiting_payment' === $order['status'] ? (string) $order['pay_link'] : '',
+			// The buyer's client in Invoice Ninja uses another currency: we can't take it online.
+			'problem'        => 'attention' === $order['status'] && 'currency' === (string) $order['note'] ? 'currency' : '',
 		);
 		if ( $with_key ) {
 			$view['status_url'] = $this->statusUrl( $order );
@@ -454,6 +676,15 @@ final class Checkout {
 	 * @return array<string, mixed>
 	 */
 	public function changeLastOrder(): array {
+		// A paused (staging) copy must not cancel invoices in Invoice Ninja.
+		$reason = $this->unavailable();
+		if ( null !== $reason ) {
+			return array(
+				'ok'      => false,
+				'code'    => 'unavailable',
+				'message' => $reason,
+			);
+		}
 		$order = $this->lastOrder();
 		if ( null === $order || 'awaiting_payment' !== $order['status'] ) {
 			return array(
@@ -480,22 +711,48 @@ final class Checkout {
 	}
 
 	/**
-	 * Find my order: email the status link when the number and email match. The reply is
-	 * the same either way, and requests are limited per address and per email.
+	 * Find my order: queue an email of the status link to the order's address. The request
+	 * does the same work whether or not the number and email match (the match is checked
+	 * in the background job), so neither the reply nor its timing tells them apart.
+	 * Requests are limited per address.
 	 *
 	 * @param string $number Order number.
 	 * @param string $email  Email.
 	 * @param string $ip     Requester IP.
 	 */
 	public function findOrder( string $number, string $email, string $ip ): void {
-		$hour  = (int) floor( time() / HOUR_IN_SECONDS );
-		$email = EmailCode::normalize( $email );
-		if ( $this->plugin->options->increment( 'ctr_find_' . substr( md5( self::ipBucket( $ip ) ), 0, 16 ) . '_' . $hour ) > 10
-			|| $this->plugin->options->increment( 'ctr_findmail_' . substr( md5( $email ), 0, 16 ) . '_' . $hour ) > 3 ) {
+		$hour   = (int) floor( time() / HOUR_IN_SECONDS );
+		$number = strtoupper( trim( $number ) );
+		if ( $this->plugin->options->increment( 'ctr_find_' . substr( md5( self::ipBucket( $ip ) ), 0, 16 ) . '_' . $hour ) > 10 ) {
 			return;
 		}
-		$order = $this->orders->findBy( 'number', strtoupper( trim( $number ) ) );
-		if ( null === $order || ! hash_equals( (string) $order['email'], $email ) ) {
+		if ( ! preg_match( '/^[A-Z0-9-]{1,32}$/', $number ) ) {
+			return;
+		}
+		// Only a keyed hash of the email goes into the job (job arguments are kept in plain text).
+		$this->plugin->queue->push(
+			self::FIND_HOOK,
+			array(
+				'number' => $number,
+				'email'  => $this->findHash( EmailCode::normalize( $email ) ),
+			),
+			0,
+			true
+		);
+	}
+
+	/**
+	 * Background job: email the status link when the number and email match. At most a
+	 * few per email an hour; only matches count, so nobody can use up someone else's.
+	 *
+	 * @param array<string, mixed> $payload {number, email (keyed hash)}.
+	 */
+	public function sendFindLink( array $payload ): void {
+		$order = $this->orders->findBy( 'number', (string) ( $payload['number'] ?? '' ) );
+		if ( null === $order || ! hash_equals( $this->findHash( (string) $order['email'] ), (string) ( $payload['email'] ?? '' ) ) ) {
+			return;
+		}
+		if ( $this->plugin->options->increment( 'ctr_findmail_' . substr( md5( (string) $order['email'] ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > self::FIND_PER_EMAIL_HOUR ) {
 			return;
 		}
 		$this->plugin->mailer->send(
@@ -504,6 +761,15 @@ final class Checkout {
 			sprintf( __( 'Your link for order #%s', 'invoiceninja' ), $order['number'] ),
 			'<p>' . esc_html__( 'Here is the link to your order. It shows its status, and lets you pay while it is unpaid.', 'invoiceninja' ) . '</p><p><a href="' . esc_url( $this->statusUrl( $order ) ) . '">' . esc_html__( 'View your order', 'invoiceninja' ) . '</a></p><p style="color:#50575e;font-size:13px">' . esc_html__( "Didn't ask for this? You can ignore this email.", 'invoiceninja' ) . '</p>'
 		);
+	}
+
+	/**
+	 * Keyed hash of an email for Find my order jobs.
+	 *
+	 * @param string $email Email.
+	 */
+	private function findHash( string $email ): string {
+		return substr( hash_hmac( 'sha256', 'find|' . strtolower( trim( $email ) ), $this->plugin->secrets->get( 'secret' ) ), 0, 40 );
 	}
 
 	/**
@@ -522,11 +788,12 @@ final class Checkout {
 	 */
 	public function emailBuyer( array $order ): void {
 		$status = esc_url( $this->statusUrl( $order ) );
+		$money  = $this->plugin->statics;
 		$lines  = '';
 		foreach ( (array) $order['items'] as $item ) {
-			$lines .= '<tr><td style="padding:4px 0">' . esc_html( wp_specialchars_decode( (string) $item['title'], ENT_QUOTES ) ) . ' × ' . (int) $item['quantity'] . '</td><td style="padding:4px 0;text-align:right">' . esc_html( number_format( (float) $item['line_total'], 2 ) ) . '</td></tr>';
+			$lines .= '<tr><td style="padding:4px 0">' . esc_html( wp_specialchars_decode( (string) $item['title'], ENT_QUOTES ) ) . ' × ' . (int) $item['quantity'] . '</td><td style="padding:4px 0;text-align:right">' . esc_html( $money->money( (float) $item['line_total'] ) ) . '</td></tr>';
 		}
-		$table = '<table style="width:100%;border-collapse:collapse;border:1px solid #dcdcde;margin:12px 0" cellpadding="8">' . $lines . '<tr><td style="font-weight:600;border-top:1px solid #dcdcde">' . esc_html__( 'Total', 'invoiceninja' ) . '</td><td style="font-weight:600;text-align:right;border-top:1px solid #dcdcde">' . esc_html( number_format( (float) $order['total'], 2 ) ) . '</td></tr></table>';
+		$table = '<table style="width:100%;border-collapse:collapse;border:1px solid #dcdcde;margin:12px 0" cellpadding="8">' . $lines . '<tr><td style="font-weight:600;border-top:1px solid #dcdcde">' . esc_html__( 'Total', 'invoiceninja' ) . '</td><td style="font-weight:600;text-align:right;border-top:1px solid #dcdcde">' . esc_html( $money->money( (float) $order['total'] ) ) . '</td></tr></table>';
 		if ( 'awaiting_payment' === $order['status'] && '' !== (string) $order['pay_link'] ) {
 			/* translators: %s: order number */
 			$subject = sprintf( __( 'Order #%s · complete your payment', 'invoiceninja' ), $order['number'] );

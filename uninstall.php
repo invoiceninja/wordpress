@@ -42,6 +42,7 @@ function invoiceninja_uninstall_site() {
 		}
 	}
 	wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
+	delete_option( 'invoiceninja_parked_jobs' ); // Jobs set aside at deactivation.
 
 	$settings = get_option( 'invoiceninja_settings', array() );
 	if ( empty( $settings['delete_data_on_uninstall'] ) ) {

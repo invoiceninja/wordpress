@@ -132,14 +132,18 @@ final class EmailCode {
 		// Atomic caps: parallel guesses each take a number, so racing requests can't share one attempt.
 		$hour = (int) floor( time() / HOUR_IN_SECONDS );
 		// IP first: an address over its limit must not use up someone else's email allowance.
-		if ( ( '' !== $ip && $this->options->increment( 'ctr_guessip_' . substr( $this->hash( \InvoiceNinja\Commerce\Checkout::ipBucket( $ip ) ), 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_IP_HOUR )
-			|| $this->options->increment( 'ctr_guess_' . substr( $key, 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_EMAIL_HOUR ) {
+		if ( '' !== $ip && $this->options->increment( 'ctr_guessip_' . substr( $this->hash( \InvoiceNinja\Commerce\Checkout::ipBucket( $ip ) ), 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_IP_HOUR ) {
 			return 'locked';
 		}
 		$name   = 'invoiceninja_code_' . $key;
 		$record = get_transient( $name );
 		if ( ! is_array( $record ) ) {
+			// Nothing to guess: don't count it against the email, so nobody can lock
+			// someone else out before they've even asked for a code.
 			return 'expired';
+		}
+		if ( $this->options->increment( 'ctr_guess_' . substr( $key, 0, 20 ) . '_' . $hour ) > self::GUESSES_PER_EMAIL_HOUR ) {
+			return 'locked';
 		}
 		if ( (int) $record['attempts'] >= self::MAX_ATTEMPTS ) {
 			return 'locked';

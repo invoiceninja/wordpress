@@ -72,17 +72,23 @@ register_activation_hook(
 		if ( \InvoiceNinja\Plugin::booted() ) {
 			\InvoiceNinja\Plugin::instance()->installer->maybeUpgrade();
 		}
+		// Jobs set aside at deactivation go back once Action Scheduler is running (a moment later, from cron).
+		if ( get_option( \InvoiceNinja\Core\Queue::PARKED ) && ! wp_next_scheduled( 'invoiceninja_restore_jobs' ) ) {
+			wp_schedule_single_event( time(), 'invoiceninja_restore_jobs' );
+		}
 	}
 );
 
 register_deactivation_hook(
 	__FILE__,
 	function () {
-		\InvoiceNinja\Core\Queue::clear();
+		// Queued orders and other one-off jobs are kept aside and put back on reactivation.
+		\InvoiceNinja\Core\Queue::park();
 		wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
 		flush_rewrite_rules();
 	}
 );
+add_action( 'invoiceninja_restore_jobs', array( \InvoiceNinja\Core\Queue::class, 'restore' ) );
 
 add_action(
 	'before_woocommerce_init',

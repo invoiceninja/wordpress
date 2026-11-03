@@ -89,6 +89,17 @@ class EmailCodeTest extends TestCase
         $this->assertSame( 'locked', $codes->verify( 'jane@example.com', $code, 'checkout', '10.0.1.1' ) );
     }
 
+    public function testGuessesWithoutACodeDontLockTheEmailOut()
+    {
+        $codes = $this->service();
+        // Someone guessing at an email that has no code waiting, from many addresses
+        for ( $i = 0; $i < EmailCode::GUESSES_PER_EMAIL_HOUR + 5; $i++ ) {
+            $this->assertSame( 'expired', $codes->verify( 'jane@example.com', '123456', 'checkout', "10.0.2.$i" ) );
+        }
+        $codes->send( 'jane@example.com', '1.2.3.4' );
+        $this->assertSame( 'ok', $codes->verify( 'jane@example.com', $this->sentCode(), 'checkout', '1.2.3.4' ), 'the owner can still use their code' );
+    }
+
     public function testRememberedDeviceIsTiedToTheEmail()
     {
         $device = new DeviceRemember( new Secrets( new Options() ) );

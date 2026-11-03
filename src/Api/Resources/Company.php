@@ -47,6 +47,7 @@ final class Company {
 			'portal_enabled'  => ! array_key_exists( 'enable_client_portal', $settings ) || ! empty( $settings['enable_client_portal'] ),
 			'track_inventory' => ! empty( $company['track_inventory'] ),
 			'calculate_taxes' => ! empty( $company['calculate_taxes'] ),
+			'inclusive_taxes' => ! empty( $settings['inclusive_taxes'] ),
 			'portal_domain'   => esc_url_raw( (string) ( $company['portal_domain'] ?? '' ) ),
 			'subdomain'       => sanitize_key( (string) ( $company['subdomain'] ?? '' ) ),
 		);

@@ -53,6 +53,72 @@ final class Statics {
 				'country'  => $pick( $statics['countries'] ?? array(), (string) ( $company['country_id'] ?? '' ) ),
 			)
 		);
+		$this->plugin->options->set( 'statics_lists', self::lists( $statics ) );
+	}
+
+	/**
+	 * The countries (for the checkout's tax fields) and languages (for new clients), reduced
+	 * to what the plugin uses.
+	 *
+	 * @param array<mixed> $statics Invoice Ninja's statics.
+	 * @return array{countries: array<string, string>, languages: array<string, string>}
+	 */
+	public static function lists( array $statics ): array {
+		$countries = array();
+		foreach ( is_array( $statics['countries'] ?? null ) ? $statics['countries'] : array() as $row ) {
+			if ( is_array( $row ) && isset( $row['id'], $row['name'] ) && '' !== (string) $row['id'] ) {
+				$countries[ (string) $row['id'] ] = sanitize_text_field( (string) $row['name'] );
+			}
+		}
+		asort( $countries, SORT_NATURAL | SORT_FLAG_CASE );
+		$languages = array();
+		foreach ( is_array( $statics['languages'] ?? null ) ? $statics['languages'] : array() as $row ) {
+			if ( is_array( $row ) && isset( $row['id'], $row['locale'] ) && '' !== (string) $row['locale'] ) {
+				$languages[ strtolower( str_replace( '-', '_', (string) $row['locale'] ) ) ] = (string) $row['id'];
+			}
+		}
+		return array(
+			'countries' => $countries,
+			'languages' => $languages,
+		);
+	}
+
+	/**
+	 * Invoice Ninja's countries by id.
+	 *
+	 * @return array<string, string>
+	 */
+	public function countries(): array {
+		$lists = (array) $this->plugin->options->get( 'statics_lists', array() );
+		return array_map( 'strval', (array) ( $lists['countries'] ?? array() ) );
+	}
+
+	/**
+	 * Invoice Ninja's language id for a WordPress locale (de_DE, then de), or ''.
+	 *
+	 * @param string $locale WordPress locale.
+	 */
+	public function languageId( string $locale ): string {
+		$lists = (array) $this->plugin->options->get( 'statics_lists', array() );
+		return self::matchLanguage( array_map( 'strval', (array) ( $lists['languages'] ?? array() ) ), $locale );
+	}
+
+	/**
+	 * Match a WordPress locale against Invoice Ninja's locales: exact first, then the language.
+	 *
+	 * @param array<string, string> $languages Language ids by lower-case locale.
+	 * @param string                $locale    WordPress locale, e.g. pt_BR.
+	 */
+	public static function matchLanguage( array $languages, string $locale ): string {
+		$locale = strtolower( str_replace( '-', '_', $locale ) );
+		if ( '' === $locale ) {
+			return '';
+		}
+		if ( isset( $languages[ $locale ] ) ) {
+			return $languages[ $locale ];
+		}
+		$base = explode( '_', $locale )[0];
+		return $languages[ $base ] ?? '';
 	}
 
 	/**
