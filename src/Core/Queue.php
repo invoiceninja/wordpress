@@ -208,7 +208,8 @@ final class Queue {
 	}
 
 	/**
-	 * Put parked jobs back (after reactivation, once Action Scheduler is ready).
+	 * Put parked jobs back (after reactivation, from a one-off cron event so Action
+	 * Scheduler is ready; the daily sweep also re-queues any queued order without a job).
 	 */
 	public static function restore(): void {
 		$parked = get_option( self::PARKED, array() );
