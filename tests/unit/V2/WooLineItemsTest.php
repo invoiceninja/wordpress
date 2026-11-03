@@ -178,6 +178,73 @@ class WooLineItemsTest extends TestCase
         $this->assertNotSame( $same, LineItems::hash( LineItems::build( $order ) ) );
     }
 
+    public function testDiscountUsesTheCurrencyPrecision()
+    {
+        $item  = [ 'name' => 'A', 'quantity' => 1, 'subtotal' => 10.125, 'total' => 10.0 ];
+        $three = LineItems::build( [ 'precision' => 3, 'items' => [ $item ] ] );
+        $this->assertSame( 0.125, $three[0]['discount'], 'a 3-decimal currency keeps its third decimal' );
+        $two = LineItems::build( [ 'precision' => 2, 'items' => [ $item ] ] );
+        $this->assertSame( 0.13, $two[0]['discount'] );
+    }
+
+    public function testPrivateItemMetaNeverReachesTheInvoice()
+    {
+        $notes = LineItems::visibleMeta( [
+            [ 'key' => 'pa_size', 'label' => 'Size', 'value' => ' M ' ],
+            [ 'key' => '_reduced_stock', 'label' => '_reduced_stock', 'value' => '2' ],
+            [ 'key' => '_wc_cog_item_cost', 'label' => '_wc_cog_item_cost', 'value' => '4.20' ],
+            [ 'key' => 'cost', 'label' => 'cost', 'value' => '3' ],
+            [ 'key' => 'Gift note', 'label' => 'Gift note', 'value' => 'Happy birthday' ],
+        ] );
+        $this->assertSame( "Size: M\nGift note: Happy birthday", $notes );
+        $this->assertSame( 'Size: M', LineItems::visibleMeta( [
+            [ 'key' => 'pa_size', 'label' => 'Size', 'value' => 'M' ],
+            [ 'key' => 'secret_plugin_key', 'label' => 'Secret', 'value' => 'x' ],
+        ], array_merge( LineItems::HIDDEN_META, [ 'secret_plugin_key' ] ) ), 'keys added through the WooCommerce filter stay hidden' );
+    }
+
+    public function testFingerprintTellsDescriptionChangesApart()
+    {
+        $order = $this->order( [ 'items' => [ [ 'name' => 'A', 'sku' => 'A1', 'quantity' => 1, 'subtotal' => 5, 'total' => 5, 'taxes' => [ 1 => 0.5 ], 'notes' => 'Size: M' ] ] ] );
+        $lines = LineItems::build( $order );
+        $hash  = LineItems::hash( $lines );
+        $this->assertMatchesRegularExpression( '/^v2:[0-9a-f]{40}:[0-9a-f]{40}$/', $hash );
+        $this->assertSame( 'same', LineItems::compare( $hash, $lines ) );
+
+        $order['items'][0]['notes'] = 'Size: L';
+        $this->assertSame( 'notes', LineItems::compare( $hash, LineItems::build( $order ) ) );
+
+        $order['items'][0]['quantity'] = 2;
+        $order['items'][0]['subtotal'] = 10;
+        $order['items'][0]['total']    = 10;
+        $this->assertSame( 'changed', LineItems::compare( $hash, LineItems::build( $order ) ) );
+    }
+
+    public function testOlderFingerprintsStillMatchOrAskForTheInvoice()
+    {
+        $lines = LineItems::build( $this->order( [ 'items' => [ [ 'name' => 'A', 'quantity' => 1, 'subtotal' => 5, 'total' => 5 ] ] ] ) );
+        $this->assertSame( 'same', LineItems::compare( sha1( json_encode( $lines ) ), $lines ), 'a 1st-generation hash of the same lines' );
+        $this->assertSame( 'unknown', LineItems::compare( sha1( 'lines with _reduced_stock in the notes' ), $lines ) );
+        $this->assertSame( 'unknown', LineItems::compare( '', $lines ) );
+    }
+
+    public function testInvoiceChargingTheSameIgnoresNotesRoundingAndNumberTypes()
+    {
+        $lines    = LineItems::build( $this->order( [
+            'items'    => [ [ 'name' => 'T-shirt', 'sku' => 'TS', 'quantity' => 2, 'subtotal' => 40, 'total' => 36, 'taxes' => [ 1 => 3.6 ], 'notes' => 'Size: M' ] ],
+            'shipping' => [ [ 'name' => 'Courier', 'total' => 5, 'taxes' => [ 1 => 0.5 ] ] ],
+        ] ) );
+        $invoiced = [
+            [ 'product_key' => 'TS', 'notes' => "T-shirt\nSize: M\n_reduced_stock: 2", 'cost' => '20.000000', 'quantity' => 2.0, 'discount' => '4', 'tax_name1' => 'VAT', 'tax_rate1' => '10', 'tax_name2' => '', 'tax_rate2' => 0, 'line_total' => 36 ],
+            [ 'product_key' => 'Shipping', 'notes' => 'Courier', 'cost' => 5, 'quantity' => 1, 'discount' => 0, 'tax_name1' => 'VAT', 'tax_rate1' => 10.0 ],
+            [ 'product_key' => 'Rounding', 'cost' => 0.01, 'quantity' => 1 ],
+        ];
+        $this->assertTrue( LineItems::sameAsInvoice( $lines, $invoiced, 'Rounding' ) );
+        $invoiced[0]['quantity'] = 3;
+        $this->assertFalse( LineItems::sameAsInvoice( $lines, $invoiced, 'Rounding' ) );
+        $this->assertFalse( LineItems::sameAsInvoice( $lines, [], 'Rounding' ) );
+    }
+
     public function testOrderOfLinesIsProductsShippingFees()
     {
         $lines = LineItems::build( $this->order( [

@@ -21,8 +21,9 @@ use InvoiceNinja\Plugin;
  * pay-on-delivery methods: cash on delivery reaches "processing" while still unpaid, so
  * it counts as paid only once the order is completed.
  *
- * Payments carry idempotency_key = wp_<site code>_<order id> and email_receipt=false; a
- * 422 for that key means it's already recorded, so it is looked up instead. Refunds are
+ * Payments carry idempotency_key = wp_<site code>_<order id> (plus _r<n> once the invoice
+ * was deleted and made again) and email_receipt=false; a 422 for that key means it's
+ * already recorded, so it is looked up instead. Refunds are
  * recorded against the payment and invoice with gateway_refund=false (WooCommerce's
  * gateway already refunded the money).
  */
@@ -30,6 +31,9 @@ final class Payments {
 
 	public const HOOK_PAYMENT = 'invoiceninja_woo_payment';
 	public const HOOK_REFUND  = 'invoiceninja_woo_refund';
+
+	/** How often a payment waits for its invoice before it asks for Retry. */
+	private const MAX_WAITS = 12;
 
 	/**
 	 * Constructor.
@@ -119,7 +123,7 @@ final class Payments {
 	 */
 	public function statusChanged( $order_id, $from, $to, $order = null ): void {
 		$order = $order instanceof \WC_Order ? $order : wc_get_order( (int) $order_id );
-		if ( ! $order instanceof \WC_Order ) {
+		if ( ! OrderToInvoice::isOrder( $order ) ) {
 			return;
 		}
 		$paid = function_exists( 'wc_get_is_paid_statuses' ) ? array_values( array_map( 'strval', wc_get_is_paid_statuses() ) ) : array( 'processing', 'completed' );
@@ -149,7 +153,17 @@ final class Payments {
 	 */
 	public function handlePayment( array $payload ): void {
 		$order_id = (int) ( $payload['order_id'] ?? 0 );
-		$this->record( $order_id, ! empty( $payload['backfill'] ) );
+		$this->record( $order_id, ! empty( $payload['backfill'] ), (int) ( $payload['waits'] ?? 0 ) );
+	}
+
+	/**
+	 * Seconds to wait for the invoice before asking again, or null to stop waiting: from
+	 * two minutes, doubling up to an hour, about eight hours in all.
+	 *
+	 * @param int $waits Times waited so far.
+	 */
+	public static function waitFor( int $waits ): ?int {
+		return $waits >= self::MAX_WAITS ? null : min( HOUR_IN_SECONDS, 120 * ( 2 ** max( 0, $waits ) ) );
 	}
 
 	/**
@@ -167,11 +181,12 @@ final class Payments {
 	 *
 	 * @param int  $order_id Order id.
 	 * @param bool $quiet    No admin emails (backfill).
+	 * @param int  $waits    Times this payment already waited for its invoice.
 	 * @throws ApiException When Invoice Ninja should be asked again later.
 	 */
-	public function record( int $order_id, bool $quiet = false ): void {
+	public function record( int $order_id, bool $quiet = false, int $waits = 0 ): void {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof \WC_Order || '' !== OrderMeta::text( $order, OrderMeta::PAYMENT_ID ) ) {
+		if ( ! OrderToInvoice::isOrder( $order ) || '' !== OrderMeta::text( $order, OrderMeta::PAYMENT_ID ) ) {
 			return;
 		}
 		if ( ! self::isPaid( $order ) ) {
@@ -194,11 +209,23 @@ final class Payments {
 			$order   = wc_get_order( $order_id );
 		}
 		if ( null === $invoice || ! $order instanceof \WC_Order || 'sent' !== OrderMeta::text( $order, OrderMeta::STATUS ) ) {
-			// Not invoiced yet (paused, or another job is on it): try again shortly. A failed
+			// Not invoiced yet (paused, or another job is on it): try again later. A failed
 			// invoice waits for Retry, which records the payment too.
 			$status = $order instanceof \WC_Order ? OrderMeta::text( $order, OrderMeta::STATUS ) : '';
-			if ( in_array( $status, array( '', 'queued', 'paused', 'draft' ), true ) ) {
-				$this->queue( $order_id, $quiet ? array( 'backfill' => 1 ) : array(), 120 );
+			if ( ! in_array( $status, array( '', 'queued', 'paused', 'draft' ), true ) ) {
+				return;
+			}
+			$extra = $quiet ? array( 'backfill' => 1 ) : array();
+			if ( ! $this->plugin->environment->writesAllowed() ) {
+				$this->queue( $order_id, $extra + array( 'waits' => $waits ), 900 ); // Paused on purpose: wait as long as it takes.
+				return;
+			}
+			$delay = self::waitFor( $waits );
+			if ( null !== $delay ) {
+				$this->queue( $order_id, $extra + array( 'waits' => $waits + 1 ), $delay );
+			} elseif ( $order instanceof \WC_Order ) {
+				OrderMeta::set( $order, array( OrderMeta::ERROR => 'payment_waiting' ) );
+				$this->plugin->logger->log( LogLevel::Warning, 'woocommerce', sprintf( 'WooCommerce order %s: its invoice was not ready, so the payment was not recorded', $order->get_order_number() ), array(), 'woo_order', (string) $order_id );
 			}
 			return;
 		}
@@ -225,8 +252,9 @@ final class Payments {
 		$invoice_id = (string) $invoice['id'];
 		$invoice    = $client->get( 'invoices/' . rawurlencode( $invoice_id ), array(), 10.0 )->data();
 		$client_id  = (string) ( $invoice['client_id'] ?? OrderMeta::text( $order, OrderMeta::CLIENT_ID ) );
-		$key        = self::key( $this->plugin->secrets->siteCode(), $order_id );
-		$balance    = round( (float) ( $invoice['balance'] ?? 0 ), 2 );
+		$key        = self::key( $this->plugin->secrets->siteCode(), $order_id, (int) OrderMeta::text( $order, OrderMeta::PAYMENT_ROUND ) );
+		$precision  = $this->invoices->precision( $order );
+		$balance    = round( (float) ( $invoice['balance'] ?? 0 ), $precision );
 		if ( $balance <= 0 ) {
 			// Already paid in Invoice Ninja (by hand, or by us with a reply that got lost).
 			$existing = $this->findPayment( $client, $client_id, $key, $invoice_id );
@@ -242,7 +270,7 @@ final class Payments {
 			}
 			return;
 		}
-		$amount  = round( min( (float) $order->get_total(), $balance ), 2 );
+		$amount  = self::amount( (float) $order->get_total(), $balance, $precision );
 		$paid_at = $order->get_date_paid() ?? $order->get_date_completed();
 		$txn     = trim( (string) $order->get_transaction_id() );
 		$body    = array(
@@ -295,9 +323,36 @@ final class Payments {
 	 *
 	 * @param string $site_code Site code.
 	 * @param int    $order_id  Order id.
+	 * @param int    $round     Times the order's invoice was replaced after a payment (0 at first).
 	 */
-	public static function key( string $site_code, int $order_id ): string {
-		return 'wp_' . $site_code . '_' . $order_id;
+	public static function key( string $site_code, int $order_id, int $round = 0 ): string {
+		return 'wp_' . $site_code . '_' . $order_id . ( $round > 0 ? '_r' . $round : '' );
+	}
+
+	/**
+	 * What to pay (or refund): the smaller of the two, in the currency's decimal places,
+	 * never above the limit (Invoice Ninja refuses more than the balance).
+	 *
+	 * @param float $wanted    Amount wanted.
+	 * @param float $limit     Most allowed.
+	 * @param int   $precision Decimal places.
+	 */
+	public static function amount( float $wanted, float $limit, int $precision = 2 ): float {
+		$amount = round( min( $wanted, $limit ), $precision );
+		return $amount > $limit ? $limit : $amount;
+	}
+
+	/**
+	 * Whether a refund reached Invoice Ninja: the payment's refunded total moved by at
+	 * least its amount since before it was sent.
+	 *
+	 * @param float $refunded  The payment's refunded total now.
+	 * @param float $baseline  Its refunded total before the refund was sent.
+	 * @param float $amount    The refund.
+	 * @param int   $precision Decimal places.
+	 */
+	public static function refundLanded( float $refunded, float $baseline, float $amount, int $precision = 2 ): bool {
+		return round( $refunded - $baseline, $precision ) >= round( $amount, $precision );
 	}
 
 	/**
@@ -350,7 +405,7 @@ final class Payments {
 	 */
 	public function refund( int $order_id, int $refund_id ): void {
 		$order = wc_get_order( $order_id );
-		if ( ! $order instanceof \WC_Order || $refund_id <= 0 ) {
+		if ( ! OrderToInvoice::isOrder( $order ) || $refund_id <= 0 ) {
 			return;
 		}
 		if ( isset( OrderMeta::list( $order, OrderMeta::REFUNDS )[ $refund_id ] ) ) {
@@ -401,7 +456,9 @@ final class Payments {
 	}
 
 	/**
-	 * Mirror the refund while holding the order's lock.
+	 * Mirror the refund while holding the order's lock. Before sending, the refund is kept
+	 * as pending with the payment's refunded total, so a reply that gets lost (even if
+	 * Invoice Ninja only saves it later) is recognised instead of refunded twice.
 	 *
 	 * @param int    $order_id   Order id.
 	 * @param int    $refund_id  Refund id.
@@ -414,21 +471,74 @@ final class Payments {
 		if ( ! $order instanceof \WC_Order || ! $refund instanceof \WC_Order_Refund || isset( OrderMeta::list( $order, OrderMeta::REFUNDS )[ $refund_id ] ) ) {
 			return;
 		}
-		$done     = OrderMeta::list( $order, OrderMeta::REFUNDS );
-		$mirrored = 0.0;
-		foreach ( $done as $row ) {
-			$mirrored += is_array( $row ) ? (float) ( $row['amount'] ?? 0 ) : 0.0;
-		}
-		$paid   = (float) OrderMeta::text( $order, OrderMeta::PAYMENT_AMOUNT );
-		$amount = round( min( (float) $refund->get_amount(), max( 0.0, $paid - $mirrored ) ), 2 );
-		if ( $amount <= 0 ) {
-			$this->remember( $order, $refund_id, 0.0, 'nothing' );
-			return;
-		}
 		$client     = $this->plugin->api();
+		$precision  = $this->invoices->precision( $order );
 		$invoice_id = OrderMeta::text( $order, OrderMeta::INVOICE_ID );
-		$created    = $refund->get_date_created();
-		$body       = array(
+		$pending    = OrderMeta::list( $order, OrderMeta::REFUND_PENDING );
+		$refunded   = null;
+		if ( isset( $pending['refund_id'], $pending['amount'], $pending['baseline'] ) ) {
+			$refunded = $this->refundedTotal( $client, $payment_id );
+			$landed   = self::refundLanded( $refunded, (float) $pending['baseline'], (float) $pending['amount'], $precision );
+			if ( (int) $pending['refund_id'] === $refund_id && $landed ) {
+				$this->mirrored( $client, $order, $refund_id, (float) $pending['amount'], $invoice_id ); // An earlier try got through after all.
+				return;
+			}
+			if ( (int) $pending['refund_id'] !== $refund_id ) {
+				if ( $landed ) {
+					$this->mirrored( $client, $order, (int) $pending['refund_id'], (float) $pending['amount'], $invoice_id );
+					$refunded = null;
+				} elseif ( (int) ( $pending['at'] ?? 0 ) > time() - DAY_IN_SECONDS ) {
+					// Another refund may still land: mirror this one after it, so they aren't mixed up.
+					$this->plugin->queue->push(
+						self::HOOK_REFUND,
+						array(
+							'order_id'  => $order_id,
+							'refund_id' => $refund_id,
+						),
+						300
+					);
+					return;
+				} else {
+					OrderMeta::set( $order, array( OrderMeta::REFUND_PENDING => null ) ); // A day on, it never landed.
+				}
+				$fresh = wc_get_order( $order_id );
+				if ( ! $fresh instanceof \WC_Order ) {
+					return;
+				}
+				$order = $fresh;
+			}
+		}
+		$pending = OrderMeta::list( $order, OrderMeta::REFUND_PENDING );
+		$retry   = isset( $pending['refund_id'], $pending['amount'], $pending['baseline'] ) && (int) $pending['refund_id'] === $refund_id;
+		if ( $retry ) {
+			$amount   = (float) $pending['amount'];
+			$baseline = (float) $pending['baseline'];
+		} else {
+			$mirrored = 0.0;
+			foreach ( OrderMeta::list( $order, OrderMeta::REFUNDS ) as $row ) {
+				$mirrored += is_array( $row ) ? (float) ( $row['amount'] ?? 0 ) : 0.0;
+			}
+			$paid   = (float) OrderMeta::text( $order, OrderMeta::PAYMENT_AMOUNT );
+			$amount = self::amount( (float) $refund->get_amount(), max( 0.0, $paid - $mirrored ), $precision );
+			if ( $amount <= 0 ) {
+				$this->remember( $order, $refund_id, 0.0, 'nothing' );
+				return;
+			}
+			$baseline = $refunded ?? $this->refundedTotal( $client, $payment_id );
+			OrderMeta::set(
+				$order,
+				array(
+					OrderMeta::REFUND_PENDING => array(
+						'refund_id' => $refund_id,
+						'amount'    => $amount,
+						'baseline'  => $baseline,
+						'at'        => time(),
+					),
+				)
+			);
+		}
+		$created = $refund->get_date_created();
+		$body    = array(
 			'id'             => $payment_id,
 			'amount'         => $amount,
 			'date'           => $created ? $created->date_i18n( 'Y-m-d' ) : wp_date( 'Y-m-d' ),
@@ -445,20 +555,49 @@ final class Payments {
 			);
 		}
 		try {
-			$before = (float) ( $client->get( 'payments/' . rawurlencode( $payment_id ), array(), 10.0 )->data()['refunded'] ?? 0 );
 			$client->post( 'payments/refund', $body, array(), 15.0 );
 		} catch ( ApiException $e ) {
-			if ( ! $e->kind->outcomeUnknown() || ! isset( $before ) ) {
-				OrderMeta::set( $order, array( OrderMeta::ERROR => 'refund:' . $e->kind->value ) );
+			if ( ! $e->kind->outcomeUnknown() ) {
+				$fields = array( OrderMeta::ERROR => 'refund:' . $e->kind->value );
+				if ( ! $retry ) {
+					$fields[ OrderMeta::REFUND_PENDING ] = null; // Refused, and no earlier try is out there.
+				}
+				$fresh = wc_get_order( $order_id );
+				OrderMeta::set( $fresh instanceof \WC_Order ? $fresh : $order, $fields );
 				$this->plugin->logger->log( LogLevel::Error, 'woocommerce', sprintf( "WooCommerce order %s: the refund couldn't be recorded: %s", $order->get_order_number(), $e->kind->title() ), array( 'technical' => $e->technical ), 'woo_order', (string) $order_id );
 				throw $e;
 			}
 			// We didn't hear back: it counts as done only if the payment's refunded total moved.
-			$after = (float) ( $client->get( 'payments/' . rawurlencode( $payment_id ), array(), 10.0 )->data()['refunded'] ?? 0 );
-			if ( round( $after - $before, 2 ) < $amount ) {
+			// Otherwise it stays pending, and the next try looks again before sending.
+			if ( ! self::refundLanded( $this->refundedTotal( $client, $payment_id ), $baseline, $amount, $precision ) ) {
 				throw $e;
 			}
 		}
+		$this->mirrored( $client, $order, $refund_id, $amount, $invoice_id );
+	}
+
+	/**
+	 * The payment's refunded total in Invoice Ninja.
+	 *
+	 * @param HttpClient $client     API client.
+	 * @param string     $payment_id Payment id.
+	 * @throws ApiException When Invoice Ninja can't be asked.
+	 */
+	private function refundedTotal( HttpClient $client, string $payment_id ): float {
+		return (float) ( $client->get( 'payments/' . rawurlencode( $payment_id ), array(), 10.0 )->data()['refunded'] ?? 0 );
+	}
+
+	/**
+	 * A refund is in Invoice Ninja: remember it, note it, and settle the invoice's balance.
+	 *
+	 * @param HttpClient $client     API client.
+	 * @param \WC_Order  $order      Order.
+	 * @param int        $refund_id  Refund id.
+	 * @param float      $amount     Amount mirrored.
+	 * @param string     $invoice_id Invoice id.
+	 * @throws ApiException When Invoice Ninja can't be asked.
+	 */
+	private function mirrored( HttpClient $client, \WC_Order $order, int $refund_id, float $amount, string $invoice_id ): void {
 		$this->remember( $order, $refund_id, $amount, 'mirrored' );
 		$order->add_order_note(
 			sprintf(
@@ -467,7 +606,7 @@ final class Payments {
 				wp_strip_all_tags( (string) wc_price( $amount, array( 'currency' => $order->get_currency() ) ) )
 			)
 		);
-		$this->plugin->logger->log( LogLevel::Info, 'woocommerce', sprintf( 'WooCommerce order %s: refund mirrored', $order->get_order_number() ), array(), 'woo_order', (string) $order_id );
+		$this->plugin->logger->log( LogLevel::Info, 'woocommerce', sprintf( 'WooCommerce order %s: refund mirrored', $order->get_order_number() ), array(), 'woo_order', (string) $order->get_id() );
 		$this->closeBalance( $client, $order, $invoice_id );
 	}
 
@@ -488,7 +627,7 @@ final class Payments {
 		$fresh   = wc_get_order( $order->get_id() );
 		$order   = $fresh instanceof \WC_Order ? $fresh : $order;
 		$invoice = $client->get( 'invoices/' . rawurlencode( $invoice_id ), array(), 10.0 )->data();
-		$balance = round( (float) ( $invoice['balance'] ?? 0 ), 2 );
+		$balance = round( (float) ( $invoice['balance'] ?? 0 ), $this->invoices->precision( $order ) );
 		if ( $balance <= 0 || in_array( (string) ( $invoice['status_id'] ?? '' ), array( '5', '6' ), true ) ) {
 			OrderMeta::set( $order, array( OrderMeta::REFUND_BALANCE => null ) );
 			return;
@@ -541,12 +680,13 @@ final class Payments {
 			'result' => $result,
 			'at'     => time(),
 		);
-		OrderMeta::set(
-			$order,
-			array(
-				OrderMeta::REFUNDS => $done,
-				OrderMeta::ERROR   => null,
-			)
+		$fields             = array(
+			OrderMeta::REFUNDS => $done,
+			OrderMeta::ERROR   => null,
 		);
+		if ( (int) ( OrderMeta::list( $order, OrderMeta::REFUND_PENDING )['refund_id'] ?? 0 ) === $refund_id ) {
+			$fields[ OrderMeta::REFUND_PENDING ] = null;
+		}
+		OrderMeta::set( $order, $fields );
 	}
 }

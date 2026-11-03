@@ -22,7 +22,8 @@ use InvoiceNinja\Plugin;
  *   chosen roles only).
  *
  * An existing client is only changed when woo.customer_update is on (the 1.x "update
- * when found"), and then only its address and the matching contact's name and phone.
+ * when found"), and then only its address and the matching contact's name and phone,
+ * and only by a customer whose email is verified and who is that client (mayUpdate()).
  *
  * 1.x's ClientController still runs (legacy display keeps 1.x code). While this module
  * handles a hook, 1.x's own sync is switched off for that hook, so nobody is synced twice.
@@ -130,7 +131,7 @@ final class WooCustomerSync {
 		}
 		if ( ! empty( $payload['order_id'] ) ) {
 			$order = wc_get_order( (int) $payload['order_id'] );
-			if ( $order instanceof \WC_Order ) {
+			if ( OrderToInvoice::isOrder( $order ) ) {
 				$this->invoices->clientFor( $this->plugin->api(), $order );
 			}
 			return;
@@ -161,7 +162,16 @@ final class WooCustomerSync {
 		}
 		$client = $this->plugin->api();
 		$found  = $this->plugin->clients->findOrCreate( $client, $email, $details );
-		if ( ! $found['created'] && $this->plugin->options->setting( 'woo.customer_update' ) ) {
+		if (
+			! $found['created'] && $this->plugin->options->setting( 'woo.customer_update' )
+			&& self::mayUpdate(
+				(string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ),
+				$found['client_id'],
+				strtolower( trim( (string) $user->user_email ) ),
+				$email,
+				(bool) apply_filters( 'invoiceninja_is_verified', false, $user_id )
+			)
+		) {
 			$client->put( 'clients/' . rawurlencode( $found['client_id'] ), self::updateBody( $found['client'], $email, $details ), array(), 10.0 );
 			$this->plugin->logger->log( LogLevel::Info, 'customers', 'Updated an Invoice Ninja client from a WooCommerce customer', array(), 'user', (string) $user_id );
 		}
@@ -170,6 +180,24 @@ final class WooCustomerSync {
 			update_user_meta( $user_id, \InvoiceNinja\Portal\Links::CONTACT, $found['contact_id'] );
 		}
 		return $found['client_id'];
+	}
+
+	/**
+	 * Whether a customer may change the Invoice Ninja client found for their billing email.
+	 * The billing email is theirs to type, so it proves nothing: only a customer whose own
+	 * email is verified, and who is that client (the same email, or already linked to it).
+	 *
+	 * @param string $linked        Client the user is linked to, or ''.
+	 * @param string $found         Client found for the billing email.
+	 * @param string $account_email The user's account email (lowercase).
+	 * @param string $email         The billing email (lowercase).
+	 * @param bool   $verified      Whether the account email is verified.
+	 */
+	public static function mayUpdate( string $linked, string $found, string $account_email, string $email, bool $verified ): bool {
+		if ( ! $verified || '' === $found ) {
+			return false;
+		}
+		return ( '' !== $account_email && $account_email === $email ) || $linked === $found;
 	}
 
 	/**

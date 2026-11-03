@@ -26,7 +26,7 @@ final class CatalogBridge {
 
 	public const META_PRODUCT = '_invoiceninja_product_id';
 
-	/** Products handled per push. */
+	/** Products read per page. */
 	private const BATCH = 200;
 
 	/**
@@ -122,61 +122,27 @@ final class CatalogBridge {
 			'skipped' => 0,
 			'failed'  => 0,
 		);
-		$posts  = get_posts(
-			array(
-				'post_type'        => ProductSync::POST_TYPE,
-				'post_status'      => 'publish',
-				'posts_per_page'   => self::BATCH,
-				'orderby'          => 'ID',
-				'order'            => 'ASC',
-				'suppress_filters' => true,
-			)
-		);
 		$update = (bool) $this->plugin->options->setting( 'woo.catalog_update' );
-		foreach ( $posts as $post ) {
-			if ( ! $post instanceof \WP_Post ) {
-				continue;
-			}
-			$key = trim( (string) get_post_meta( $post->ID, 'product_key', true ) );
-			if ( '' === $key ) {
-				++$result['skipped'];
-				continue;
-			}
-			$item     = array(
-				'id'    => (string) get_post_meta( $post->ID, 'product_id', true ),
-				'key'   => $key,
-				'price' => (string) get_post_meta( $post->ID, 'price', true ),
-				'notes' => (string) $post->post_content,
-				'image' => (int) get_post_thumbnail_id( $post->ID ),
+		$page   = 1;
+		do {
+			$posts = get_posts(
+				array(
+					'post_type'        => ProductSync::POST_TYPE,
+					'post_status'      => 'publish',
+					'posts_per_page'   => self::BATCH,
+					'paged'            => $page,
+					'orderby'          => 'ID',
+					'order'            => 'ASC',
+					'suppress_filters' => true,
+					'no_found_rows'    => true,
+				)
 			);
-			$existing = (int) wc_get_product_id_by_sku( $key );
-			if ( $existing <= 0 ) {
-				$result['create'][] = $key;
-				if ( ! $dry_run && ! $this->create( $item ) ) {
-					++$result['failed'];
-				}
-				continue;
+			foreach ( $posts as $post ) {
+				$this->pushOne( $post, $update, $dry_run, $result );
 			}
-			$product = wc_get_product( $existing );
-			if ( ! $product instanceof \WC_Product ) {
-				++$result['skipped'];
-				continue;
-			}
-			// Only products we created are kept in step; a product the shop made stays theirs.
-			if ( ! $update || (string) $product->get_meta( self::META_PRODUCT ) !== $item['id'] ) {
-				++$result['linked'];
-				continue;
-			}
-			if ( wc_format_decimal( $product->get_regular_price() ) === wc_format_decimal( $item['price'] ) ) {
-				++$result['linked'];
-				continue;
-			}
-			$result['update'][] = $key;
-			if ( ! $dry_run ) {
-				$product->set_regular_price( wc_format_decimal( $item['price'] ) );
-				$product->save();
-			}
-		}
+			$full = count( $posts ) === self::BATCH;
+			++$page;
+		} while ( $full );
 		if ( ! $dry_run ) {
 			$this->plugin->options->set(
 				'woo_catalog_push',
@@ -189,6 +155,59 @@ final class CatalogBridge {
 			$this->plugin->logger->log( LogLevel::Info, 'woocommerce', sprintf( 'Catalog pushed to WooCommerce: %d created, %d updated', count( $result['create'] ) - $result['failed'], count( $result['update'] ) ) );
 		}
 		return $result;
+	}
+
+	/**
+	 * Push one product, counting what happened.
+	 *
+	 * @param mixed                                                                                                    $post    Our product post.
+	 * @param bool                                                                                                     $update  Keep prices of products we created in step.
+	 * @param bool                                                                                                     $dry_run Only report.
+	 * @param array{dry_run: bool, create: list<string>, update: list<string>, linked: int, skipped: int, failed: int} $result  Counts.
+	 */
+	private function pushOne( $post, bool $update, bool $dry_run, array &$result ): void {
+		if ( ! $post instanceof \WP_Post ) {
+			return;
+		}
+		$key = trim( (string) get_post_meta( $post->ID, 'product_key', true ) );
+		if ( '' === $key ) {
+			++$result['skipped'];
+			return;
+		}
+		$item     = array(
+			'id'    => (string) get_post_meta( $post->ID, 'product_id', true ),
+			'key'   => $key,
+			'price' => (string) get_post_meta( $post->ID, 'price', true ),
+			'notes' => (string) $post->post_content,
+			'image' => (int) get_post_thumbnail_id( $post->ID ),
+		);
+		$existing = (int) wc_get_product_id_by_sku( $key );
+		if ( $existing <= 0 ) {
+			$result['create'][] = $key;
+			if ( ! $dry_run && ! $this->create( $item ) ) {
+				++$result['failed'];
+			}
+			return;
+		}
+		$product = wc_get_product( $existing );
+		if ( ! $product instanceof \WC_Product ) {
+			++$result['skipped'];
+			return;
+		}
+		// Only products we created are kept in step; a product the shop made stays theirs.
+		if ( ! $update || (string) $product->get_meta( self::META_PRODUCT ) !== $item['id'] ) {
+			++$result['linked'];
+			return;
+		}
+		if ( wc_format_decimal( $product->get_regular_price() ) === wc_format_decimal( $item['price'] ) ) {
+			++$result['linked'];
+			return;
+		}
+		$result['update'][] = $key;
+		if ( ! $dry_run ) {
+			$product->set_regular_price( wc_format_decimal( $item['price'] ) );
+			$product->save();
+		}
 	}
 
 	/**

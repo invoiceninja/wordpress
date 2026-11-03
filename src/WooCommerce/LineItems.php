@@ -22,6 +22,12 @@ namespace InvoiceNinja\WooCommerce;
 final class LineItems {
 
 	/**
+	 * Item meta WooCommerce keeps to itself (its woocommerce_hidden_order_itemmeta list).
+	 * Keys starting with an underscore are private too.
+	 */
+	public const HIDDEN_META = array( '_qty', '_tax_class', '_product_id', '_variation_id', '_line_subtotal', '_line_subtotal_tax', '_line_total', '_line_tax', 'method_id', 'cost', '_reduced_stock', '_restock_refunded_amount' );
+
+	/**
 	 * Build the line items.
 	 *
 	 * @param array<string, mixed> $order Plain order: items, shipping, fees (each with name,
@@ -166,22 +172,109 @@ final class LineItems {
 	}
 
 	/**
-	 * A fingerprint of the lines, to tell whether an order edit changed anything.
+	 * A fingerprint of the lines, to tell whether an order edit changed anything:
+	 * "v2:<what is charged>:<everything>", so a change to descriptions alone can be told apart.
 	 *
 	 * @param list<array<string, mixed>> $lines Lines.
 	 */
 	public static function hash( array $lines ): string {
-		return sha1( (string) wp_json_encode( $lines ) );
+		return 'v2:' . sha1( (string) wp_json_encode( self::charged( $lines ) ) ) . ':' . sha1( (string) wp_json_encode( $lines ) );
+	}
+
+	/**
+	 * How the lines differ from a stored fingerprint: same, notes (only the descriptions),
+	 * changed, or unknown (no fingerprint, or one from before descriptions were told apart;
+	 * compare with the invoice instead).
+	 *
+	 * @param string                     $stored Stored fingerprint.
+	 * @param list<array<string, mixed>> $lines  Lines now.
+	 */
+	public static function compare( string $stored, array $lines ): string {
+		$now = self::hash( $lines );
+		if ( $now === $stored ) {
+			return 'same';
+		}
+		if ( str_starts_with( $stored, 'v2:' ) ) {
+			$charged = explode( ':', $now )[1];
+			$before  = explode( ':', $stored )[1];
+			return $before === $charged ? 'notes' : 'changed';
+		}
+		if ( '' !== $stored && sha1( (string) wp_json_encode( $lines ) ) === $stored ) {
+			return 'same'; // An older fingerprint of the same lines.
+		}
+		return 'unknown';
+	}
+
+	/**
+	 * Whether the invoice already charges what these lines charge (descriptions aside, and
+	 * leaving out rounding lines).
+	 *
+	 * @param list<array<string, mixed>> $lines    Lines.
+	 * @param array<mixed>               $invoiced The invoice's line_items.
+	 * @param string                     $rounding product_key of rounding lines.
+	 */
+	public static function sameAsInvoice( array $lines, array $invoiced, string $rounding = 'Rounding' ): bool {
+		$theirs = array();
+		foreach ( $invoiced as $line ) {
+			if ( is_array( $line ) && trim( (string) ( $line['product_key'] ?? '' ) ) !== $rounding ) {
+				$theirs[] = $line;
+			}
+		}
+		return self::charged( $lines ) === self::charged( $theirs );
+	}
+
+	/**
+	 * What each line charges, normalised (no descriptions).
+	 *
+	 * @param array<array<mixed>> $lines Lines.
+	 * @return list<array<string, mixed>>
+	 */
+	private static function charged( array $lines ): array {
+		$out = array();
+		foreach ( $lines as $line ) {
+			$row = array( 'product_key' => trim( (string) ( $line['product_key'] ?? '' ) ) );
+			foreach ( array( 'cost', 'quantity', 'discount' ) as $field ) {
+				$row[ $field ] = self::number( (float) ( $line[ $field ] ?? 0 ) );
+			}
+			foreach ( array( 1, 2, 3 ) as $n ) {
+				$row[ 'tax_name' . $n ] = trim( (string) ( $line[ 'tax_name' . $n ] ?? '' ) );
+				$row[ 'tax_rate' . $n ] = self::number( (float) ( $line[ 'tax_rate' . $n ] ?? 0 ) );
+			}
+			$out[] = $row;
+		}
+		return $out;
+	}
+
+	/**
+	 * Item meta worth showing the customer, as "Label: value" lines. Never private keys (an
+	 * underscore, or WooCommerce's hidden list): they can hold costs or stock notes, and
+	 * some are added after payment.
+	 *
+	 * @param list<array{key: string, label: string, value: string}> $meta   Formatted meta.
+	 * @param list<string>                                           $hidden Hidden keys.
+	 */
+	public static function visibleMeta( array $meta, array $hidden = self::HIDDEN_META ): string {
+		$notes = array();
+		foreach ( $meta as $row ) {
+			if ( '' === $row['key'] || str_starts_with( $row['key'], '_' ) || in_array( $row['key'], $hidden, true ) ) {
+				continue;
+			}
+			$notes[] = trim( $row['label'] ) . ': ' . trim( $row['value'] );
+		}
+		return implode( "\n", $notes );
 	}
 
 	/**
 	 * The plain array for build(), from a WooCommerce order.
 	 *
-	 * @param \WC_Order $order Order.
+	 * @param \WC_Order $order     Order.
+	 * @param int|null  $precision Decimal places Invoice Ninja uses for the order's currency (default: the store's).
 	 * @return array<string, mixed>
 	 */
-	public static function fromOrder( \WC_Order $order ): array {
-		$rates = array();
+	public static function fromOrder( \WC_Order $order, ?int $precision = null ): array {
+		// WooCommerce's own filter for the item meta it hides on the order screen.
+		$hidden = array_values( array_map( 'strval', (array) apply_filters( 'woocommerce_hidden_order_itemmeta', self::HIDDEN_META ) ) ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound -- WooCommerce's filter.
+		$rates  = array();
 		foreach ( $order->get_items( 'tax' ) as $tax ) {
 			if ( ! $tax instanceof \WC_Order_Item_Tax ) {
 				continue;
@@ -199,9 +292,13 @@ final class LineItems {
 			}
 			$product = $item->get_product();
 			$taxes   = $item->get_taxes();
-			$notes   = array();
-			foreach ( $item->get_all_formatted_meta_data( '' ) as $meta ) {
-				$notes[] = wp_strip_all_tags( (string) $meta->display_key ) . ': ' . wp_strip_all_tags( (string) $meta->display_value );
+			$meta    = array();
+			foreach ( $item->get_all_formatted_meta_data() as $row ) {
+				$meta[] = array(
+					'key'   => (string) $row->key,
+					'label' => wp_strip_all_tags( (string) $row->display_key ),
+					'value' => wp_strip_all_tags( (string) $row->display_value ),
+				);
 			}
 			$items[] = array(
 				'name'     => (string) $item->get_name(),
@@ -210,7 +307,7 @@ final class LineItems {
 				'subtotal' => (float) $item->get_subtotal(),
 				'total'    => (float) $item->get_total(),
 				'taxes'    => is_array( $taxes['total'] ?? null ) ? $taxes['total'] : array(),
-				'notes'    => implode( "\n", $notes ),
+				'notes'    => self::visibleMeta( $meta, $hidden ),
 			);
 		}
 		$shipping = array();
@@ -239,7 +336,7 @@ final class LineItems {
 		}
 		return array(
 			'currency'  => (string) $order->get_currency(),
-			'precision' => function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2,
+			'precision' => $precision ?? ( function_exists( 'wc_get_price_decimals' ) ? (int) wc_get_price_decimals() : 2 ),
 			'total'     => (float) $order->get_total(),
 			'items'     => $items,
 			'shipping'  => $shipping,
