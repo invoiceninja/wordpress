@@ -9,6 +9,7 @@ declare(strict_types=1);
 
 namespace InvoiceNinja\Webhooks;
 
+use InvoiceNinja\Commerce\Checkout;
 use InvoiceNinja\Plugin;
 use InvoiceNinja\Rest\Routes;
 
@@ -22,7 +23,7 @@ final class Receiver {
 
 	public const JOB = 'invoiceninja_webhook_dispatch';
 
-	/** Wrong-secret calls allowed per IP and hour before 429. */
+	/** Wrong-secret calls per address and hour that get 401; later ones get 429. A right secret is never refused for them. */
 	public const MAX_FAILURES = 30;
 
 	/** Accepted calls per IP and hour (a bulk edit in Invoice Ninja sends one per record). */
@@ -57,16 +58,17 @@ final class Receiver {
 	 */
 	private function receive( \WP_REST_Request $request ): \WP_REST_Response {
 		$options = $this->plugin->options;
-		$ip      = substr( hash( 'sha256', Routes::clientIp() ), 0, 12 );
+		$ip      = self::bucket( Routes::clientIp() );
 		$hour    = (int) floor( time() / HOUR_IN_SECONDS );
 		$retry   = HOUR_IN_SECONDS - ( time() % HOUR_IN_SECONDS );
 
-		if ( (int) $options->get( 'ctr_webhook_bad_' . $ip . '_' . $hour, 0 ) >= self::MAX_FAILURES ) {
-			return self::reply( 429, 'rate_limited', $retry );
-		}
+		// The secret comes first: a genuine call is never refused because others sharing its
+		// address (Invoice Ninja's hosted servers, a proxy) sent wrong secrets.
 		$sent = (string) ( $request->get_header( 'x_invoiceninja_secret' ) ?? '' );
 		if ( '' === $sent || ! hash_equals( $this->plugin->secrets->get( 'webhook_secret' ), $sent ) ) {
-			$options->increment( 'ctr_webhook_bad_' . $ip . '_' . $hour );
+			if ( $options->increment( 'ctr_webhook_bad_' . $ip . '_' . $hour ) > self::MAX_FAILURES ) {
+				return self::reply( 429, 'rate_limited', $retry );
+			}
 			return self::reply( 401, 'bad_secret' );
 		}
 		if ( $options->increment( 'ctr_webhook_' . $ip . '_' . $hour ) > self::MAX_CALLS ) {
@@ -91,6 +93,16 @@ final class Receiver {
 			true
 		);
 		return self::reply( 202, 'queued' );
+	}
+
+	/**
+	 * A short counter key for an address. IPv6 counts by /64, so a client rotating through its
+	 * addresses adds one option row an hour, not one per address.
+	 *
+	 * @param string $ip IP.
+	 */
+	public static function bucket( string $ip ): string {
+		return substr( md5( Checkout::ipBucket( $ip ) ), 0, 16 );
 	}
 
 	/**

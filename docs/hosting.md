@@ -19,8 +19,8 @@ It covers GitHub issue #16.
    URL, method, secret header and return page in Invoice Ninja, and remembers what was there before (it
    puts it back when you turn this off, disconnect, deactivate or uninstall the plugin).
 4. **WordPress tells your provisioning system.** Enter a **Provisioning URL** for the plan. Every lifecycle
-   event is POSTed there as signed JSON, retried for about eight hours if your system is down, and logged
-   under *Status → Activity*.
+   event is POSTed there as signed JSON, one customer's events in the order they happened, retried for
+   about eight hours if your system is down, and logged under *Status → Activity*.
 5. **Customers manage their plan** on the Account page's Subscriptions tab (plan, status, next bill, and
    links to change plan, update the payment method, or cancel).
 
@@ -69,7 +69,20 @@ add_filter( 'invoiceninja_subscription_eligible', function ( $eligible, string $
 }, 10, 3 );
 ```
 
-If the filter throws or the plugin can't answer within a second, the purchase goes ahead.
+The check runs while the buyer waits on Invoice Ninja's page, and Invoice Ninja waits for the answer with
+no time limit, so keep the filter fast. If the filter throws, the purchase goes ahead. If the subscription
+had its own callback URL before you connected it, that URL is asked too; if it doesn't answer within one
+second, the purchase goes ahead.
+
+The plugin always answers Invoice Ninja with HTTP 200 and `{"message": "Success", "status_code": 200}`, or,
+to refuse, `{"message": "<your sentence>", "status_code": 403}`. Invoice Ninja shows the message to the
+buyer. A call with a wrong secret is ignored but still answered "Success": Invoice Ninja treats any 4xx or
+5xx as a refusal, so a stale secret would otherwise block buyers.
+
+Every purchase, trial, plan change, payment and cancellation callback is checked against Invoice Ninja
+before an event fires: a purchase or payment needs its invoice to be paid, a trial needs a subscription
+with trials and an active recurring invoice, and a cancellation needs the recurring invoice to be stopped.
+The callback secret alone (which every subscription shares) never provisions anything.
 
 ## Payload (version 1)
 
@@ -80,6 +93,7 @@ renames a field becomes `version: 2`.
 {
   "version": 1,
   "id": "evt_6b1f0c0e4d2a4f4e9a2c7d3b8e5f1a20",
+  "sequence": 1042,
   "event": "purchased",
   "context": "recurring_purchase",
   "occurred_at": "2026-11-02T10:15:00Z",
@@ -123,6 +137,7 @@ renames a field becomes `version: 2`.
 | Field | Notes |
 |---|---|
 | `id` | Stable per event: the same event delivered twice (a retry) has the same `id`. Store it and ignore repeats. |
+| `sequence` | Goes up with every event on the site. A later event for a client always has a higher number, so if you handle events in the background, handle each client's in `sequence` order (or skip one lower than the last you applied). |
 | `event` | One of the seven events above. |
 | `context` | What triggered it: an Invoice Ninja callback context (`single_purchase`, `recurring_purchase`, `trial`, `change_plan`, `plan_paid`, `cancellation`, `plan_expired`), or `overdue_poll`, `invoice_late`, `payment`. |
 | `subscription.frequency_id` | Invoice Ninja's frequency: 1 daily, 2 weekly, 3 every 2 weeks, 4 every 4 weeks, 5 monthly, 6 every 2 months, 7 quarterly, 8 every 4 months, 9 every 6 months, 10 yearly, 11 every 2 years, 12 every 3 years. |
@@ -131,8 +146,10 @@ renames a field becomes `version: 2`.
 | `invoice` | The invoice the event is about, or `null`. `status_id`: 1 draft, 2 sent, 3 partial, 4 paid, 5 cancelled, 6 reversed. |
 | `wordpress_user_id` | The WordPress user linked to the client, or 0. |
 
-Everything in the payload was fetched from Invoice Ninja by id just before sending; nothing comes from the
-callback body. The payload never contains portal or login links.
+Everything in the payload was fetched from Invoice Ninja by id when the event happened (`occurred_at`);
+nothing comes from the callback body. It's a snapshot: a delivery retried hours later still carries the
+values from that moment, and `sent_at` says when it was sent. The payload never contains portal or login
+links.
 
 ### Headers
 
@@ -150,6 +167,11 @@ The relay secret is shown under *Settings → Subscriptions → Provisioning sig
 Your endpoint should answer **2xx** once it has accepted the event (queue the real work if it's slow). Any
 other answer, or no answer within 10 seconds, is retried after 1, 2, 5, 15 and 30 minutes, then 1, 2 and 4
 hours. Redirects are not followed.
+
+**Order:** each client's events are sent one at a time, oldest first. While one is waiting for a retry,
+that client's later events wait behind it, so you never get `suspended` after the `resumed` that followed
+it. After the last retry the event is dropped (and logged as an error under *Status → Activity*) and the
+next one goes out. Different clients don't wait for each other.
 
 The provisioning URL must be on the public internet, like any address WordPress calls on someone's
 behalf. For a panel on your own network, allow it explicitly:
@@ -228,6 +250,14 @@ if ( file_exists( $seen ) ) {
 $account = $event['client']['account_key'] ?: $event['client']['id'];
 $plan    = $event['recurring_invoice']['line_items'][0]['product_key'] ?? $event['subscription']['name'];
 
+// Events arrive in order; this also guards against anything you replay by hand.
+$last = __DIR__ . '/seen/last-' . md5( $account );
+if ( (int) @file_get_contents( $last ) > (int) $event['sequence'] ) {
+    touch( $seen );
+    http_response_code( 200 );
+    exit;
+}
+
 switch ( $event['event'] ) {
     case 'purchased':
     case 'trial':
@@ -248,6 +278,7 @@ switch ( $event['event'] ) {
         break;
 }
 
+file_put_contents( $last, (string) $event['sequence'] );
 touch( $seen );
 http_response_code( 200 );
 echo '{"ok":true}';
@@ -271,7 +302,8 @@ app.post( '/hooks/invoiceninja', express.raw( { type: 'application/json' } ), ( 
 	}
 	if ( ! seen.has( event.id ) ) {
 		seen.add( event.id );
-		queueProvisioning( event ); // Do the slow work after answering.
+		// Do the slow work after answering, one client at a time in `sequence` order.
+		queueProvisioning( event.client.id, event.sequence, event );
 	}
 	res.json( { ok: true } );
 } );

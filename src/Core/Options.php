@@ -159,14 +159,30 @@ final class Options {
 	 */
 	public function pruneCounters( int $keep_hours = 2 ): void {
 		global $wpdb;
-		$cutoff = (int) floor( time() / HOUR_IN_SECONDS ) - $keep_hours;
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		$names = $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s LIMIT 5000", $wpdb->esc_like( self::PREFIX . 'ctr_' ) . '%' ) );
-		foreach ( (array) $names as $name ) {
-			if ( preg_match( '/_(\d+)$/', (string) $name, $m ) && (int) $m[1] < $cutoff ) {
-				delete_option( (string) $name );
+		$cutoff   = (int) floor( time() / HOUR_IN_SECONDS ) - $keep_hours;
+		$after    = '';
+		$deadline = microtime( true ) + 20;
+		// Walk every counter in name order, a batch at a time, until done (or out of time:
+		// tomorrow carries on). Counters are never autoloaded, so one DELETE per batch is enough.
+		do {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$names = (array) $wpdb->get_col( $wpdb->prepare( "SELECT option_name FROM {$wpdb->options} WHERE option_name LIKE %s AND option_name > %s ORDER BY option_name ASC LIMIT 1000", $wpdb->esc_like( self::PREFIX . 'ctr_' ) . '%', $after ) );
+			$old   = array();
+			foreach ( $names as $name ) {
+				if ( preg_match( '/_(\d+)$/', (string) $name, $m ) && (int) $m[1] < $cutoff ) {
+					$old[] = (string) $name;
+				}
 			}
-		}
+			if ( $old ) {
+				// phpcs:ignore WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- one %s per name.
+				$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name IN (" . implode( ',', array_fill( 0, count( $old ), '%s' ) ) . ')', $old ) );
+				foreach ( $old as $name ) {
+					wp_cache_delete( $name, 'options' );
+				}
+			}
+			$after = $names ? (string) end( $names ) : '';
+			$full  = 1000 === count( $names );
+		} while ( $full && microtime( true ) < $deadline );
 	}
 
 	/**

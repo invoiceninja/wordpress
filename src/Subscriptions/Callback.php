@@ -12,6 +12,7 @@ namespace InvoiceNinja\Subscriptions;
 use InvoiceNinja\Plugin;
 use InvoiceNinja\Rest\Routes;
 use InvoiceNinja\Webhooks\Events;
+use InvoiceNinja\Webhooks\Receiver;
 
 /**
  * Invoice Ninja's v1/v2 purchase pages only go ahead when the reply's message is "Success",
@@ -20,12 +21,17 @@ use InvoiceNinja\Webhooks\Events;
  *   subscription's original callback URL (if it had one) within one second. Anything that
  *   goes wrong answers "Success" (fail open), so a broken check never blocks a sale;
  * - every other context answers "Success" at once and its work is queued.
- * A wrong secret gets 401, still with "Success", so a rotated secret can't block buyers;
- * nothing is acted on. The body only names ids: the Lifecycle fetches everything again.
+ * Every reply is HTTP 200 with message and status_code (see answer()). Invoice Ninja turns any
+ * 4xx/5xx into status_code 500 and puts our message in front of the buyer, so a wrong secret
+ * is answered "Success" too, with code "ignored", and nothing is acted on: a rotated secret
+ * can't block buyers. The body only names ids: the Lifecycle fetches everything again.
  */
 final class Callback {
 
 	public const JOB = 'invoiceninja_subscription_callback';
+
+	/** Callbacks with the right secret accepted per address and hour (beyond that: "Success", not acted on). */
+	public const MAX_CALLS = 5000;
 
 	public const FORWARD = 'invoiceninja_subscription_forward';
 
@@ -51,7 +57,7 @@ final class Callback {
 			return $this->receive( $request );
 		} catch ( \Throwable $e ) {
 			$this->plugin->logger->error( 'subscriptions', 'Handling a subscription callback failed: ' . $e->getMessage() );
-			return self::reply( 200 ); // Never block a purchase.
+			return self::reply(); // Never block a purchase.
 		}
 	}
 
@@ -62,30 +68,32 @@ final class Callback {
 	 */
 	private function receive( \WP_REST_Request $request ): \WP_REST_Response {
 		$options = $this->plugin->options;
-		$ip      = substr( hash( 'sha256', Routes::clientIp() ), 0, 12 );
+		$ip      = Receiver::bucket( Routes::clientIp() );
 		$hour    = (int) floor( time() / HOUR_IN_SECONDS );
-		if ( (int) $options->get( 'ctr_subcb_bad_' . $ip . '_' . $hour, 0 ) >= 30 ) {
-			$response = self::reply( 429 );
-			$response->header( 'Retry-After', (string) ( HOUR_IN_SECONDS - time() % HOUR_IN_SECONDS ) );
-			return $response;
-		}
+		// The secret comes first, so a genuine call is never refused because others sharing its
+		// address sent wrong secrets. A wrong one is ignored but still answered as a success:
+		// any 4xx makes Invoice Ninja report status 500, which blocks free purchases on its v1 page.
 		$sent = (string) ( $request->get_header( 'x_invoiceninja_secret' ) ?? '' );
 		if ( '' === $sent || ! hash_equals( $this->plugin->secrets->get( 'callback_secret' ), $sent ) ) {
-			$options->increment( 'ctr_subcb_bad_' . $ip . '_' . $hour );
-			return self::reply( 401 );
+			if ( 1 === $options->increment( 'ctr_subcb_bad_' . $ip . '_' . $hour ) ) {
+				$this->plugin->logger->warning( 'subscriptions', 'Ignored a subscription callback with a wrong secret. If it came from Invoice Ninja, turn "Send purchases to this site" off and on again for that subscription.' );
+			}
+			return self::reply( 'ignored' );
 		}
-		if ( $options->increment( 'ctr_subcb_' . $ip . '_' . $hour ) > 5000 ) {
-			return self::reply( 200 ); // Still "Success": never block a purchase.
+		if ( $options->increment( 'ctr_subcb_' . $ip . '_' . $hour ) > self::MAX_CALLS ) {
+			return self::reply( 'busy' ); // Still "Success": never block a purchase.
 		}
 		$json = $request->get_json_params();
 		$body = is_array( $json ) && is_array( $json['body'] ?? null ) ? $json['body'] : array();
 		$ctx  = self::context( $body );
 		if ( null === $ctx ) {
-			return self::reply( 200 );
+			return self::reply();
 		}
 
 		if ( 'is_eligible' === $ctx['context'] ) {
-			return new \WP_REST_Response( array( 'message' => $this->eligible( $ctx, $body ) ), 200 );
+			$response = new \WP_REST_Response( self::answer( $this->eligible( $ctx, $body ) ), 200 );
+			$response->header( 'Cache-Control', 'no-store' );
+			return $response;
 		}
 
 		$this->remember( $ctx );
@@ -102,7 +110,7 @@ final class Callback {
 				false
 			);
 		}
-		return self::reply( 200 );
+		return self::reply();
 	}
 
 	/**
@@ -294,12 +302,28 @@ final class Callback {
 	}
 
 	/**
-	 * The fixed "Success" reply.
+	 * The JSON Invoice Ninja merges into the callback body. Its v1 and v2 pages read `message`
+	 * ("Success" goes ahead; anything else is shown to the buyer), and the v1 page's free
+	 * purchase step reads `status_code` (anything but 200 stops it), so both always go.
 	 *
-	 * @param int $status Status.
+	 * @param string $message "Success", or why the buyer can't buy.
+	 * @return array{message: string, status_code: int}
 	 */
-	private static function reply( int $status ): \WP_REST_Response {
-		$response = new \WP_REST_Response( array( 'message' => 'Success' ), $status );
+	public static function answer( string $message ): array {
+		return array(
+			'message'     => $message,
+			'status_code' => 'Success' === $message ? 200 : 403,
+		);
+	}
+
+	/**
+	 * The "Success" reply, always HTTP 200: Invoice Ninja turns any 4xx or 5xx into status 500.
+	 *
+	 * @param string $code Why nothing was done (ignored, busy), for Invoice Ninja's system log.
+	 */
+	private static function reply( string $code = '' ): \WP_REST_Response {
+		$data     = self::answer( 'Success' ) + ( '' !== $code ? array( 'code' => $code ) : array() );
+		$response = new \WP_REST_Response( $data, 200 );
 		$response->header( 'Cache-Control', 'no-store' );
 		return $response;
 	}
