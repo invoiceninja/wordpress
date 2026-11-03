@@ -215,7 +215,13 @@ class SettingsApi
             );
         }
 
-        if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'refresh_company') 
+        // The legacy page's buttons are for the people who can open it (admin_init also runs
+        // for every logged-in user, e.g. on profile.php and admin-ajax.php).
+        if ( isset( $_POST['invoiceninja_action'] ) && ! current_user_can( 'manage_options' ) ) {
+            return;
+        }
+
+        if (isset($_POST['invoiceninja_action']) && $_POST['invoiceninja_action'] == 'refresh_company')
         {
             if ( ! isset($_POST['invoiceninja_nonce']) || !wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_refresh_company') ) {
                 wp_die('Security check failed');

@@ -10,13 +10,72 @@ use \InvoiceNinja\Api\ClientApi;
 
 class InvoiceApi extends BaseApi
 {
-    public static function create($cart)
+    /**
+     * Buy Now / cart checkout for the logged-in user.
+     *
+     * @return array{status: string, link: string} status is login, verify, failed or ok;
+     *                                              link is the buyer's own invitation link.
+     */
+    public static function purchase( $cart )
+    {
+        $user = wp_get_current_user();
+
+        if ( ! is_user_logged_in() || empty( $user->user_email ) ) {
+            return [ 'status' => 'login', 'link' => '' ];
+        }
+
+        // Only a verified email may be matched to an existing client and sent to its invoices.
+        if ( ! self::userVerified( $user->ID ) ) {
+            return [ 'status' => 'verify', 'link' => '' ];
+        }
+
+        $client  = null;
+        $invoice = self::create( $cart, $client );
+        $link    = $invoice ? self::invitationLink( $invoice, $client, $user->user_email ) : '';
+
+        return [ 'status' => '' !== $link ? 'ok' : 'failed', 'link' => $link ];
+    }
+
+    /**
+     * The invitation link of the client's contact with this email (never another contact's).
+     */
+    public static function invitationLink( $invoice, $client, $email )
+    {
+        $email      = strtolower( trim( (string) $email ) );
+        $contact_id = '';
+
+        foreach ( (array) ( $client->contacts ?? [] ) as $contact ) {
+            if ( '' !== $email && empty( $contact->is_deleted ) && strtolower( trim( (string) ( $contact->email ?? '' ) ) ) === $email ) {
+                $contact_id = (string) ( $contact->id ?? '' );
+                break;
+            }
+        }
+
+        if ( '' === $contact_id ) {
+            return '';
+        }
+
+        foreach ( (array) ( $invoice->invitations ?? [] ) as $invitation ) {
+            if ( (string) ( $invitation->client_contact_id ?? '' ) === $contact_id && ! empty( $invitation->link ) ) {
+                return (string) $invitation->link;
+            }
+        }
+
+        return '';
+    }
+
+    public static function create( $cart, &$client = null )
     {
         $user = wp_get_current_user();
 
         // Never look up a client without a known email: an empty email filter
         // makes the API return every client, attaching the invoice to a stranger.
         if ( ! is_user_logged_in() || empty( $user->user_email ) ) {
+            return null;
+        }
+
+        // An unverified account could use someone else's email and bill their client.
+        if ( ! self::userVerified( $user->ID ?? 0 ) ) {
             return null;
         }
 

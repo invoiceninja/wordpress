@@ -124,8 +124,20 @@ def cart_quantities_are_validated():
 
 # ---------- logged-in buyers ----------
 
-def buy_now(user):
+def verify(user):
+    wp_eval("$u = get_user_by('login', '%s'); InvoiceNinja\\Plugin::instance()->module('portal')->verification->mark($u->ID, 'admin');" % user)
+
+
+def unverify(user):
+    wp_eval("$u = get_user_by('login', '%s'); InvoiceNinja\\Plugin::instance()->module('portal')->verification->clear($u->ID);" % user)
+
+
+def buy_now(user, verified=True):
     set_mode('single')
+    if verified:
+        verify(user)
+    else:
+        unverify(user)
     browser = Browser().login(user, 'pass')
     _, _, html = browser.get('/shop/')
     reset_mock_log()
@@ -146,6 +158,25 @@ def buy_now_existing_client_with_plus_email():
 
 
 @test
+def buy_now_unverified_buyer_confirms_the_email_first():
+    # 2.0 rule 2: only verified people are sent to an invitation link
+    status, location, calls = buy_now('member', verified=False)
+    check(location not in INVITE_LINKS and 'in.test' not in (location or ''), 'an unverified buyer is never sent to an invoice', '%s %s' % (status, location))
+    check(not [c for c in calls if c['url'].startswith(IN_BASE + 'clients') or c['url'].startswith(IN_BASE + 'invoices')],
+          "no client lookup or invoice for an unverified email", describe(calls))
+
+
+@test
+def buy_now_uses_the_buyers_own_invitation():
+    option('in_mock_other_contact_first', '1')
+    try:
+        status, location, _ = buy_now('member')
+    finally:
+        wp('option', 'delete', 'in_mock_other_contact_first', check_ok=False)
+    check(location in INVITE_LINKS, "the buyer's own contact's invitation, not invitations[0]", '%s %s' % (status, location))
+
+
+@test
 def buy_now_new_client_is_created_correctly():
     status, location, calls = buy_now('newbie')
     check(location in INVITE_LINKS, 'should redirect to the invoice', '%s %s' % (status, location))
@@ -159,6 +190,7 @@ def buy_now_new_client_is_created_correctly():
 @test
 def multi_item_checkout_creates_one_invoice():
     set_mode('multiple')
+    verify('member')
     browser = Browser().login('member', 'pass')
     _, _, html = browser.get('/shop/')
     nonce = form_nonce(html, 'invoiceninja_purchase')
