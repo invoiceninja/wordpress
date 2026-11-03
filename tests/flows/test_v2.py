@@ -687,6 +687,8 @@ def abandoned_cleanup_is_off_by_default_and_only_closes_unpaid_invoices():
     store_ready()
     b = admin()
     b.api('POST', '/settings', {'store': {'abandoned_enabled': False, 'abandoned_action': 'cancel'}})
+    # This flow's orders from earlier runs would hit the open-orders cap.
+    wp_eval("global $wpdb; $wpdb->query('DELETE FROM ' . InvoiceNinja\\Commerce\\Orders::table() . \" WHERE email LIKE 'abandon.%'\");")
     # Orders from other flows count as recent here
     wp_eval("global $wpdb; $wpdb->query($wpdb->prepare('UPDATE ' . InvoiceNinja\\Commerce\\Orders::table() . ' SET created_at = %s, placed_at = %s, note = \\'\\'', gmdate('Y-m-d H:i:s'), gmdate('Y-m-d H:i:s')));" + "delete_option('invoiceninja_abandoned_cursor');")
     try:
@@ -1038,7 +1040,7 @@ def queued_orders_survive_deactivation_and_paused_sites_change_nothing():
     wp_eval("InvoiceNinja\\Core\\Queue::restore();")
     check(pending() == 1 and not wp_eval("echo get_option('invoiceninja_parked_jobs') ? 'left' : '';"), 'reactivating puts it back')
     # A queued order whose job was lost is found by the daily sweep
-    wp_eval("as_unschedule_all_actions('invoiceninja_place_order', array(), 'invoiceninja'); global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('updated_at' => gmdate('Y-m-d H:i:s', time() - 3600)), array('id' => %s));" % oid)
+    wp_eval("as_unschedule_all_actions('invoiceninja_place_order'); global $wpdb; $wpdb->update(InvoiceNinja\\Commerce\\Orders::table(), array('updated_at' => gmdate('Y-m-d H:i:s', time() - 3600)), array('id' => %s));" % oid)
     check(oid in wp_eval("echo implode(',', InvoiceNinja\\Plugin::instance()->orders->staleClaims());").split(','), 'the daily sweep finds the queued order without a job')
     wp_eval("InvoiceNinja\\Plugin::instance()->daily();")
     check(pending() == 1, 'and queues it again', pending())

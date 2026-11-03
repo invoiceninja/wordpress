@@ -200,12 +200,22 @@ final class Orders {
 		$table = self::table();
 		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
 		$ids = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'placing' AND updated_at < %s LIMIT 100", gmdate( 'Y-m-d H:i:s', time() - 300 ) ) ) );
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
-		$queued = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'queued' AND updated_at < %s ORDER BY id ASC LIMIT 100", gmdate( 'Y-m-d H:i:s', time() - 15 * MINUTE_IN_SECONDS ) ) ) );
-		foreach ( $queued as $id ) {
-			if ( ! \InvoiceNinja\Core\Queue::waiting( 'invoiceninja_place_order', array( 'order_id' => $id ) ) ) {
-				$ids[] = $id;
+		// Queued orders whose retry job was lost. Most queued orders still have their job, so
+		// page through them all (up to 50 pages) rather than only the oldest 100.
+		$before = gmdate( 'Y-m-d H:i:s', time() - 15 * MINUTE_IN_SECONDS );
+		$after  = 0;
+		for ( $page = 0; $page < 50 && count( $ids ) < 200; $page++ ) {
+			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
+			$queued = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'queued' AND updated_at < %s AND id > %d ORDER BY id ASC LIMIT 100", $before, $after ) ) );
+			foreach ( $queued as $id ) {
+				if ( ! \InvoiceNinja\Core\Queue::waiting( 'invoiceninja_place_order', array( 'order_id' => $id ) ) ) {
+					$ids[] = $id;
+				}
 			}
+			if ( count( $queued ) < 100 ) {
+				break;
+			}
+			$after = (int) end( $queued );
 		}
 		return $ids;
 	}

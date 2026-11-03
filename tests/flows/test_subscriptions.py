@@ -384,7 +384,8 @@ def every_callback_context_is_answered_and_handled():
     # The relay: signed, versioned, one delivery per event, in order. The jobs carry only the
     # client's lane (Action Scheduler refuses arguments over 8,000 characters); events wait in the outbox.
     args = wp_eval("echo wp_json_encode(array_map(function ($a) { return $a->get_args(); }, array_values(as_get_scheduled_actions(array('hook' => 'invoiceninja_subscription_relay', 'status' => 'pending'), 'objects'))));")
-    check(len(args) < 400 and 'payload' not in args and 'lane' in args, 'relay jobs carry only the lane', args)
+    jobs = [a[0]['payload'] for a in json.loads(args or '[]')]
+    check(jobs and all(list(j) == ['lane'] for j in jobs), 'relay jobs carry only the lane', args)
     check([e['event'] for e in outbox()] == ['purchased', 'trial', 'plan_changed', 'suspended', 'paid', 'resumed', 'cancelled'], 'the outbox holds them in order', outbox())
     run_jobs('invoiceninja_subscription_relay')
     deliveries = [e for e in mock_log() if e.get('event') == 'relay']
