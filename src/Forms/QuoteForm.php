@@ -17,10 +17,11 @@ use InvoiceNinja\Rest\Routes;
 /**
  * The form is plain server-rendered HTML (cache friendly) with its config signed into it;
  * assets/forms/forms.js sends it to POST /quote-requests and shows errors and the
- * confirmation in place. Spam protection: a honeypot, a minimum time to fill it in, rate
- * limits per address, per email and per site, Akismet when it's active, and the
- * invoiceninja_captcha filter. Every accepted request is saved as a lead before anything
- * is sent to Invoice Ninja.
+ * confirmation in place. Spam protection: a honeypot, a minimum time to fill it in (from the
+ * time signed into the token, which forms.js refreshes when someone starts typing, so cached
+ * pages work), a maximum token age, rate limits per address and per email, a site-wide limit
+ * past which requests are held, Akismet when it's active, and the invoiceninja_captcha filter.
+ * Every accepted request is saved as a lead before anything is sent to Invoice Ninja.
  */
 final class QuoteForm {
 
@@ -31,6 +32,12 @@ final class QuoteForm {
 	public const PER_EMAIL_HOUR = 3;
 
 	public const PER_SITE_HOUR = 200;
+
+	/** Past PER_SITE_HOUR requests are held for review; past this many times it, refused. */
+	public const HOLD_FACTOR = 5;
+
+	/** Seconds a form token is good for (forms.js asks for a fresh one when someone starts typing). */
+	public const MAX_AGE = 43200;
 
 	/**
 	 * Forms rendered on this page, for unique ids.
@@ -182,6 +189,40 @@ final class QuoteForm {
 	}
 
 	/**
+	 * Whether a token's time allows a submission now (pure, for tests): "ok", "too_fast" or
+	 * "expired". The time is signed into the token, so the minimum is enforced here, not by
+	 * the browser.
+	 *
+	 * @param int $time Time in the token.
+	 * @param int $min  Minimum seconds.
+	 * @param int $now  Now.
+	 */
+	public static function age( int $time, int $min, int $now ): string {
+		$age = $now - $time;
+		if ( $age < $min ) {
+			return 'too_fast';
+		}
+		return $age > self::MAX_AGE ? 'expired' : 'ok';
+	}
+
+	/**
+	 * POST /quote-requests/start {form}: a fresh token for a form someone started filling in.
+	 * The rendered token may come from a cached page hours old; this one starts the clock
+	 * now. Signing only: nothing is stored.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function start( \WP_REST_Request $request ): \WP_REST_Response {
+		$form = FormConfig::verify( (string) ( is_scalar( $request->get_param( 'form' ) ) ? $request->get_param( 'form' ) : '' ), $this->plugin->secrets->get( 'secret' ) );
+		if ( null === $form ) {
+			return Routes::fail( 'form_changed', __( 'This form has changed since the page loaded. Reload the page and try again.', 'invoiceninja' ), 400 );
+		}
+		$response = new \WP_REST_Response( array( 'form' => $this->token( $form['config'], time() ) ) );
+		$response->header( 'Cache-Control', 'no-store' );
+		return $response;
+	}
+
+	/**
 	 * POST /quote-requests.
 	 *
 	 * @param \WP_REST_Request $request Request.
@@ -207,10 +248,16 @@ final class QuoteForm {
 		 * @since 2.0.0
 		 * @param int $seconds Seconds.
 		 */
-		$min     = max( 0, (int) apply_filters( 'invoiceninja_quote_form_min_seconds', 3 ) );
-		$elapsed = (int) ( is_numeric( $input['elapsed'] ?? null ) ? $input['elapsed'] : 0 );
-		if ( time() - $form['time'] < $min || $elapsed < $min ) {
+		$min = max( 0, (int) apply_filters( 'invoiceninja_quote_form_min_seconds', 3 ) );
+		$age = self::age( $form['time'], $min, time() );
+		if ( 'too_fast' === $age ) {
 			return Routes::fail( 'too_fast', __( 'That was quick! Please check your details, then send again.', 'invoiceninja' ), 422 );
+		}
+		if ( 'expired' === $age ) {
+			// Open for hours, or served from an old page cache: a fresh token, and the person sends again.
+			$response = Routes::fail( 'form_expired', __( 'This form was open for a long time. Please check your details, then send again.', 'invoiceninja' ), 422 );
+			$response->set_data( (array) $response->get_data() + array( 'form' => $this->token( $form['config'], time() ) ) );
+			return $response;
 		}
 		/**
 		 * Whether the visitor passed a CAPTCHA. There is none by default; a CAPTCHA plugin
@@ -230,15 +277,19 @@ final class QuoteForm {
 			$response->set_data( (array) $response->get_data() + array( 'errors' => $result['errors'] ) );
 			return $response;
 		}
-		$values = $result['values'];
-		$hour   = (int) floor( time() / HOUR_IN_SECONDS );
-		if ( $this->plugin->options->increment( 'ctr_quote_' . substr( md5( Checkout::ipBucket( $ip ) ), 0, 16 ) . '_' . $hour ) > self::PER_IP_HOUR
-			|| $this->plugin->options->increment( 'ctr_quotemail_' . substr( md5( $values['email'] ), 0, 16 ) . '_' . $hour ) > self::PER_EMAIL_HOUR
-			|| $this->plugin->options->increment( 'ctr_quotesite_' . $hour ) > self::PER_SITE_HOUR ) {
+		$values  = $result['values'];
+		$hour    = (int) floor( time() / HOUR_IN_SECONDS );
+		$limited = $this->plugin->options->increment( 'ctr_quote_' . substr( md5( Checkout::ipBucket( $ip ) ), 0, 16 ) . '_' . $hour ) > self::PER_IP_HOUR
+			|| $this->plugin->options->increment( 'ctr_quotemail_' . substr( md5( $values['email'] ), 0, 16 ) . '_' . $hour ) > self::PER_EMAIL_HOUR;
+		$site    = $limited ? 0 : $this->plugin->options->increment( 'ctr_quotesite_' . $hour );
+		if ( $limited || $site > self::PER_SITE_HOUR * self::HOLD_FACTOR ) {
 			$response = Routes::fail( 'rate_limited', __( "We've had several requests from you in the last hour. Please try again later.", 'invoiceninja' ), 429 );
 			$response->header( 'Retry-After', (string) HOUR_IN_SECONDS );
 			return $response;
 		}
+		// Past the site-wide limit (a flood from many addresses), requests are still saved, so a
+		// real person isn't turned away, but held: nothing goes to Invoice Ninja and no email is sent.
+		$busy = $site > self::PER_SITE_HOUR;
 		if ( '' !== $values['product'] ) {
 			$info                    = FormConfig::NOT_SURE === $values['product'] ? null : $this->plugin->cart->product( $values['product'] );
 			$values['product_title'] = FormConfig::NOT_SURE === $values['product'] ? __( 'Not sure yet', 'invoiceninja' ) : ( null !== $info ? $info['title'] : $values['product'] );
@@ -255,18 +306,32 @@ final class QuoteForm {
 			);
 		}
 		$source = $this->source( $request );
-		$spam   = $this->isSpam( $values, $ip, $request, $source );
+		$spam   = $busy || $this->isSpam( $values, $ip, $request, $source );
 		$id     = $this->leads->create( $values, $consents, $spam ? 'spam' : 'queued', $source );
 		if ( 0 === $id ) {
 			return Routes::fail( 'not_saved', __( "We couldn't save your request. Please try again, or email us.", 'invoiceninja' ), 500 );
 		}
+		if ( $busy ) {
+			$this->leads->update(
+				$id,
+				array(
+					'reason'   => 'busy', // Shown by FormsModule in the admin's language.
+					'notified' => true,
+				)
+			);
+			if ( self::PER_SITE_HOUR + 1 === $site ) {
+				$this->plugin->logger->warning( 'forms', sprintf( 'More than %d quote requests in an hour: holding the rest of this hour for review', self::PER_SITE_HOUR ) );
+			}
+		}
 		$lead = (array) $this->leads->find( $id );
-		$this->plugin->logger->log( $spam ? LogLevel::Warning : LogLevel::Info, 'forms', $spam ? sprintf( 'Quote request %d held: Akismet says spam', $id ) : sprintf( 'Quote request %d received', $id ), array(), 'lead', (string) $id );
+		$this->plugin->logger->log( $spam ? LogLevel::Warning : LogLevel::Info, 'forms', $spam ? sprintf( 'Quote request %d held: %s', $id, $busy ? 'too many this hour' : 'Akismet says spam' ) : sprintf( 'Quote request %d received', $id ), array(), 'lead', (string) $id );
 		if ( ! $spam ) {
 			$this->creator->queue( $id );
 		}
-		$this->emails->received( $lead );
-		$this->emails->autoReply( $lead );
+		if ( ! $busy ) {
+			$this->emails->received( $lead );
+			$this->emails->autoReply( $lead );
+		}
 		/**
 		 * Fires when a quote request was saved.
 		 *
