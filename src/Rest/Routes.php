@@ -37,6 +37,7 @@ final class Routes {
 		'/subscription-callback',
 		'/subscriptions/return',
 		'/quote-requests',
+		'/quote-requests/start',
 		'/pay-invoice',
 		'/account',
 		'/account/(?P<tab>invoices|quotes|payments|credits|subscriptions)',

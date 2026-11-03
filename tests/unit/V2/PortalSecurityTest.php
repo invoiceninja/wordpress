@@ -18,50 +18,7 @@ namespace {
             }
         }
     }
-    if ( ! class_exists( 'WP_REST_Response' ) ) {
-        class WP_REST_Response
-        {
-            private $data;
-            private $status;
-
-            public function __construct( $data = null, $status = 200 )
-            {
-                $this->data   = $data;
-                $this->status = $status;
-            }
-
-            public function get_data()
-            {
-                return $this->data;
-            }
-
-            public function get_status()
-            {
-                return $this->status;
-            }
-        }
-    }
-    if ( ! class_exists( 'WP_REST_Request' ) ) {
-        class WP_REST_Request
-        {
-            private $params;
-
-            public function __construct( array $params = array() )
-            {
-                $this->params = $params;
-            }
-
-            public function get_param( $key )
-            {
-                return $this->params[ $key ] ?? null;
-            }
-
-            public function get_params()
-            {
-                return $this->params;
-            }
-        }
-    }
+    require_once __DIR__ . '/Support/RestStandIns.php';
 }
 
 namespace InvoiceNinja\Tests\V2 {

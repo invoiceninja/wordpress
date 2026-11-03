@@ -134,8 +134,9 @@ final class Redirects {
 		if ( $this->limited( 'manage', $user_id ) ) {
 			$this->fail( __( 'Too many requests. Please try again in a few minutes.', 'invoiceninja' ), 429 );
 		}
-		$client = (string) ( $this->link( $user_id )['client_id'] ?? '' );
-		$link   = $this->contactLink( $user_id );
+		$confirmed = $this->confirmedLink( $user_id );
+		$client    = Events::cleanId( $confirmed['client_id'] ?? '' );
+		$link      = self::loginLink( $confirmed );
 		if ( '' === $client || null === $link ) {
 			$this->fail( __( 'Your billing details are temporarily unavailable. Please try again later.', 'invoiceninja' ), 503 );
 		}
@@ -159,29 +160,42 @@ final class Redirects {
 	}
 
 	/**
-	 * The linked contact's login link, fetched from Invoice Ninja (never stored).
+	 * The linked contact's login link, fetched from Invoice Ninja (never stored), and only
+	 * while that contact still uses the account's email.
 	 *
 	 * @param int $user_id User.
 	 */
 	public function contactLink( int $user_id ): ?string {
-		$linked  = $this->link( $user_id );
-		$client  = Events::cleanId( $linked['client_id'] ?? '' );
-		$contact = Events::cleanId( $linked['contact_id'] ?? '' );
-		if ( '' === $client || '' === $contact ) {
+		return self::loginLink( $this->confirmedLink( $user_id ) );
+	}
+
+	/**
+	 * The user's link, re-checked with Invoice Ninja (see Links::confirmed()).
+	 *
+	 * @param int $user_id User.
+	 * @return array<string, mixed>|null
+	 */
+	private function confirmedLink( int $user_id ): ?array {
+		$portal = $user_id > 0 ? $this->plugin->module( 'portal' ) : null;
+		if ( ! $portal instanceof \InvoiceNinja\Portal\PortalModule ) {
 			return null;
 		}
 		try {
-			$data = $this->plugin->api()->get( 'clients/' . rawurlencode( $client ), array(), 4.0 )->data();
+			return $portal->links->confirmed( $user_id );
 		} catch ( ApiException $e ) {
 			$this->plugin->logger->warning( 'subscriptions', "Couldn't fetch a customer's login link: " . $e->kind->title() );
 			return null;
 		}
-		foreach ( (array) ( $data['contacts'] ?? array() ) as $row ) {
-			if ( is_array( $row ) && Events::cleanId( $row['id'] ?? '' ) === $contact && ! empty( $row['link'] ) && self::webUrl( (string) $row['link'] ) ) {
-				return (string) $row['link'];
-			}
-		}
-		return null;
+	}
+
+	/**
+	 * The contact's login link from a confirmed link.
+	 *
+	 * @param array<string, mixed>|null $confirmed Confirmed link.
+	 */
+	private static function loginLink( ?array $confirmed ): ?string {
+		$url = (string) ( $confirmed['contact']['link'] ?? '' );
+		return '' !== $url && self::webUrl( $url ) ? $url : null;
 	}
 
 	/**

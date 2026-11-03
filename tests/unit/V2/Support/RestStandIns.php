@@ -44,8 +44,17 @@ if ( ! class_exists( 'WP_REST_Request' ) ) {
         private $params  = array();
         private $json    = null;
 
+        // Either WordPress' ( $method, $route ) or, for short tests, an array of params.
         public function __construct( $method = 'GET', $route = '' )
         {
+            if ( is_array( $method ) ) {
+                $this->params = $method;
+            }
+        }
+
+        public function get_params()
+        {
+            return $this->params;
         }
 
         private static function key( $name )
