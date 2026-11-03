@@ -767,14 +767,8 @@ final class OrderToInvoice {
 				OrderMeta::CONTACT_ID => $found['contact_id'],
 			)
 		);
-		$user_id = (int) $order->get_customer_id();
-		if ( $user_id > 0 && '' === (string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ) ) {
-			$user = get_userdata( $user_id );
-			if ( $user && strtolower( (string) $user->user_email ) === $email ) {
-				update_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, sanitize_text_field( $found['client_id'] ) );
-				update_user_meta( $user_id, \InvoiceNinja\Portal\Links::CONTACT, sanitize_text_field( $found['contact_id'] ) );
-			}
-		}
+		// Links the buyer's account when the billing email is the account's own email.
+		( new \InvoiceNinja\Portal\Links( $this->plugin ) )->link( (int) $order->get_customer_id(), $email, $found['client_id'], $found['contact_id'] );
 		return array(
 			'client_id'  => $found['client_id'],
 			'contact_id' => $found['contact_id'],
