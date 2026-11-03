@@ -165,7 +165,7 @@ final class WooCustomerSync {
 		if (
 			! $found['created'] && $this->plugin->options->setting( 'woo.customer_update' )
 			&& self::mayUpdate(
-				(string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ),
+				(string) ( ( new \InvoiceNinja\Portal\Links( $this->plugin ) )->get( $user_id )['client_id'] ?? '' ),
 				$found['client_id'],
 				strtolower( trim( (string) $user->user_email ) ),
 				$email,
