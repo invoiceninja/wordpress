@@ -573,8 +573,8 @@ def admin_orders_list_resend_retry_and_cancel():
         option('in_mock_mode', 'up')
     b = admin()
     status, r = b.api('GET', '/admin/orders?status=queued')
-    check(status == 200 and [o['number'] for o in r['items']] == [queued['number']], 'filter by status', r)
-    check(r['counts'].get('awaiting_payment', 0) >= 1 and r['counts'].get('queued') == 1, 'counts per status', r['counts'])
+    check(status == 200 and queued['number'] in [o['number'] for o in r['items']] and all(o['status'] == 'queued' for o in r['items']), 'filter by status', r)
+    check(r['counts'].get('awaiting_payment', 0) >= 1 and r['counts'].get('queued', 0) >= 1, 'counts per status', r['counts'])
     _, r = b.api('GET', '/admin/orders?search=orders.one')
     row = r['items'][0]
     check(row['number'] == paid_later['number'] and row['name'] == 'Gina Guest', 'search by email', row)
@@ -890,6 +890,8 @@ def final_review_regressions():
 @test
 def checkout_abuse_protection():
     store_ready()
+    # Orders from earlier runs of this flow would count against its caps.
+    wp_eval("global $wpdb; $wpdb->query('DELETE FROM ' . InvoiceNinja\\Commerce\\Orders::table() . \" WHERE email IN ('price.watch@example.com', 'trap.bot@example.com', 'too.fast@example.com', 'robot@example.com')\");")
     # The spam trap: the reply people get, but no code is sent
     s = shopper()
     status, r = s.api('POST', '/checkout/start', {'email': 'trap.bot@example.com', 'website': 'http://spam.example'})
@@ -1066,6 +1068,8 @@ def queued_orders_survive_deactivation_and_paused_sites_change_nothing():
             wp_eval("InvoiceNinja\\Plugin::instance()->options->saveSettings(array('pages' => array('status' => %d)));" % pages['status']['id'])
     finally:
         b.api('POST', '/store/display', {'action': 'legacy'})
+        # Leave no queued order behind for other flows (or the next run).
+        wp_eval("as_unschedule_all_actions('invoiceninja_place_order'); global $wpdb; $wpdb->query('DELETE FROM ' . InvoiceNinja\\Commerce\\Orders::table() . \" WHERE email IN ('parked.buyer@example.com', 'paused.change@example.com')\");")
 
 
 # ---------- M2: store front end ----------

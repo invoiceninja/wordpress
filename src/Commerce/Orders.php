@@ -204,12 +204,14 @@ final class Orders {
 		// page through them all (up to 50 pages) rather than only the oldest 100.
 		$before = gmdate( 'Y-m-d H:i:s', time() - 15 * MINUTE_IN_SECONDS );
 		$after  = 0;
-		for ( $page = 0; $page < 50 && count( $ids ) < 200; $page++ ) {
+		$found  = count( $ids );
+		for ( $page = 0; $page < 50 && $found < 200; $page++ ) {
 			// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
 			$queued = array_map( 'intval', (array) $wpdb->get_col( $wpdb->prepare( "SELECT id FROM {$table} WHERE status = 'queued' AND updated_at < %s AND id > %d ORDER BY id ASC LIMIT 100", $before, $after ) ) );
 			foreach ( $queued as $id ) {
 				if ( ! \InvoiceNinja\Core\Queue::waiting( 'invoiceninja_place_order', array( 'order_id' => $id ) ) ) {
 					$ids[] = $id;
+					++$found;
 				}
 			}
 			if ( count( $queued ) < 100 ) {
