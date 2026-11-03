@@ -168,8 +168,11 @@ def receiver_replies_only_202_401_or_429():
     clear_counters()
     for _ in range(30):
         send(51, {'id': 'P1'}, 'wrong')
-    status, headers, _ = send(51, {'id': 'P1'}, key)
+    status, headers, _ = send(51, {'id': 'P1'}, 'wrong')
     check(status == 429 and int(headers.get('Retry-After', '0')) > 0, 'too many wrong secrets: 429 with Retry-After', (status, dict(headers)))
+    # Invoice Ninja shares its address with others (hosted servers, a proxy): its own calls still get in
+    status, _, _ = send(51, {'id': 'P1'}, key)
+    check(status == 202, 'the right secret is never locked out by wrong ones from the same address', status)
     clear_counters()
     run_jobs('invoiceninja_webhook_dispatch')
 

@@ -5,6 +5,7 @@
  *
  * Scenario options:
  *   in_mock_subscription_config   id => webhook_configuration (what Invoice Ninja has stored; PUT updates it)
+ *   in_mock_subscription_fields   id => fields merged into that subscription (e.g. trial_enabled)
  *   in_mock_subscription_put_fail 1: PUT subscriptions/{id} fails with a 500
  *   in_mock_recurring             id => recurring invoice
  *   in_mock_relay_fail            1: https://relay.test answers 500
@@ -38,6 +39,11 @@ function in_mock_subscriptions() {
         'SUBT' => [ 'name' => 'Starter', 'price' => 5, 'frequency_id' => '5', 'trial_enabled' => true, 'trial_duration' => 14 * 86400, 'allow_cancellation' => false, 'allow_plan_changes' => false ],
         'SUBW' => [ 'name' => 'Reseller', 'price' => 50, 'frequency_id' => '5', 'trial_enabled' => false, 'trial_duration' => 0, 'allow_cancellation' => false, 'allow_plan_changes' => false ],
     ];
+    foreach ( (array) get_option( 'in_mock_subscription_fields', [] ) as $id => $fields ) {
+        if ( isset( $defaults[ $id ] ) && is_array( $fields ) ) {
+            $defaults[ $id ] = array_merge( $defaults[ $id ], $fields );
+        }
+    }
     $configs = (array) get_option( 'in_mock_subscription_config', [] );
     $initial = [
         'SUBM' => [ 'post_purchase_url' => 'https://legacy.test/hook', 'post_purchase_rest_method' => 'post', 'post_purchase_headers' => [ 'X-Legacy' => 'yes' ], 'return_url' => 'https://legacy.test/thanks' ],

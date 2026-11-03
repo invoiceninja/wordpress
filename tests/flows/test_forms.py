@@ -110,6 +110,20 @@ def quote_form_renders_and_refuses_instant_submits():
     form = re.search(r'name="form" value="([^"]+)"', html).group(1)
     status, r = submit(Browser(), form, privacy=True)
     check(status == 422 and r['code'] == 'too_fast', 'a form sent the moment it loaded is refused', r)
+    status, r = submit(Browser(), form, privacy=True, elapsed=9999)
+    check(status == 422 and r['code'] == 'too_fast', "the time is signed into the form: a made-up 'elapsed' changes nothing", r)
+    # Pages may be cached for days: an old token is refused with a fresh one, and forms.js swaps
+    # in a fresh one as soon as someone starts typing
+    old = token(age=13 * 3600, privacyPage=page)
+    status, r = submit(Browser(), old, privacy=True, email='old.page@example.com')
+    check(status == 422 and r['code'] == 'form_expired' and r.get('form'), 'a token older than 12 hours gets a fresh one back', r)
+    check(not leads('old.page@example.com'), 'and nothing is saved yet')
+    status, s = Browser().api('POST', '/quote-requests/start', {'form': old})
+    check(status == 200 and s.get('form') and s['form'] != old, 'starting to fill the form in gets a fresh token', s)
+    status, r = submit(Browser(), s['form'], privacy=True, email='old.page@example.com')
+    check(status == 422 and r['code'] == 'too_fast', "whose clock starts then, so the minimum time still holds", r)
+    status, s = Browser().api('POST', '/quote-requests/start', {'form': old + 'x'})
+    check(status == 400 and s['code'] == 'form_changed', 'only a genuine form gets a fresh token', s)
     status, r = submit(Browser(), form + 'x', privacy=True)
     check(status == 400 and r['code'] == 'form_changed', 'a forged or damaged form is refused', r)
     status, r = submit(Browser(), token(privacyPage=page), email='not-an-email', message='', privacy=False)
@@ -238,6 +252,27 @@ def honeypot_and_rate_limits_stop_spam():
     wp_eval("global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_ctr\\\\_%'\");")
     held = wp_eval("add_filter('invoiceninja_captcha', '__return_false'); $r = new WP_REST_Request('POST', '/invoiceninja/v1/quote-requests'); $r->set_header('origin', home_url()); $r->set_body_params(array('form' => '%s', 'elapsed' => 9, 'email' => 'captcha@example.com', 'first_name' => 'C', 'message' => 'Hi')); echo rest_do_request($r)->get_status();" % form)
     check(held == '422', 'the invoiceninja_captcha filter can refuse a request', held)
+
+    # A flood from many addresses can't lock real people out: past the site-wide limit requests
+    # are still saved, but held (nothing sent to Invoice Ninja, nobody emailed)
+    site = "'invoiceninja_ctr_quotesite_' . (int) floor(time() / HOUR_IN_SECONDS)"
+    wp_eval("global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_ctr\\\\_%'\");")
+    wp_eval("update_option(%s, 200, false);" % site)
+    reset_mock_log()
+    status, r = submit(Browser(), form, email='flood.real@example.com')
+    check(status == 200 and r['ok'], 'past the site-wide limit a request still gets the normal reply', r)
+    saved = lead('flood.real@example.com')
+    check(saved['status'] == 'spam', 'held for review', saved)
+    check(not mails(), 'and nobody is emailed', mails())
+    check(not [c for c in api_calls() if '/quotes' in c['url']], 'and nothing is sent to Invoice Ninja')
+    wp_eval("update_option(%s, 1000, false);" % site)
+    status, r = submit(Browser(), form, email='flood.more@example.com')
+    check(status == 429, 'far past it, requests are refused', r)
+    wp_eval("global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->options} WHERE option_name LIKE 'invoiceninja\\\\_ctr\\\\_%'\");")
+
+    # Held requests don't pile up forever, even with retention off
+    wp_eval("$m = %s; foreach ($m->leads->idsByEmail('flood.real@example.com') as $id) { wp_update_post(array('ID' => $id, 'post_date' => '2020-01-01 00:00:00', 'post_date_gmt' => '2020-01-01 00:00:00')); } $m->daily();" % M)
+    check(not leads('flood.real@example.com'), 'held requests older than 30 days are deleted daily')
 
 
 @test

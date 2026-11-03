@@ -58,9 +58,10 @@ final class Configurator {
 	}
 
 	/**
-	 * Per-subscription settings: connected, relay_url, original, at, restore_error, name.
+	 * Per-subscription settings: connected, relay_url, original, at, restore_error, name, and
+	 * callback (the URL this site set on it, so it's still recognised after an address change).
 	 *
-	 * @return array<string, array{connected: bool, relay_url: string, original: array<string, mixed>, at: int, restore_error: string, name: string}>
+	 * @return array<string, array{connected: bool, relay_url: string, original: array<string, mixed>, at: int, restore_error: string, name: string, callback: string}>
 	 */
 	public function all(): array {
 		$saved = $this->plugin->options->get( self::OPTION, array() );
@@ -76,6 +77,7 @@ final class Configurator {
 				'at'            => (int) ( $row['at'] ?? 0 ),
 				'restore_error' => (string) ( $row['restore_error'] ?? '' ),
 				'name'          => (string) ( $row['name'] ?? '' ),
+				'callback'      => (string) ( $row['callback'] ?? '' ),
 			);
 		}
 		return $out;
@@ -85,7 +87,7 @@ final class Configurator {
 	 * One subscription's settings.
 	 *
 	 * @param string $id Subscription id.
-	 * @return array{connected: bool, relay_url: string, original: array<string, mixed>, at: int, restore_error: string, name: string}
+	 * @return array{connected: bool, relay_url: string, original: array<string, mixed>, at: int, restore_error: string, name: string, callback: string}
 	 */
 	public function get( string $id ): array {
 		return $this->all()[ $id ] ?? array(
@@ -95,6 +97,7 @@ final class Configurator {
 			'at'            => 0,
 			'restore_error' => '',
 			'name'          => '',
+			'callback'      => '',
 		);
 	}
 
@@ -131,8 +134,9 @@ final class Configurator {
 	 * @param string               $secret   Callback secret.
 	 * @return array{ok: bool, error: string, host: string, config: array<string, mixed>, original: array<string, mixed>|null}
 	 */
-	public static function plan( array $current, string $callback, string $back, #[\SensitiveParameter] string $secret ): array {
+	public static function plan( array $current, string $callback, string $back, #[\SensitiveParameter] string $secret, string $stored = '' ): array {
 		$url    = trim( (string) ( $current['post_purchase_url'] ?? '' ) );
+		$ours   = self::ours( $url, $callback, $stored );
 		$result = array(
 			'ok'       => false,
 			'error'    => '',
@@ -140,13 +144,13 @@ final class Configurator {
 			'config'   => array(),
 			'original' => null,
 		);
-		if ( '' !== $url && $url !== $callback && self::isWordPress( $url ) ) {
+		if ( '' !== $url && ! $ours && self::isWordPress( $url ) ) {
 			$result['error'] = 'other_wordpress';
 			$result['host']  = (string) wp_parse_url( $url, PHP_URL_HOST );
 			return $result;
 		}
 		$result['ok']       = true;
-		$result['original'] = $url === $callback ? null : $current; // Already ours: keep the stored original.
+		$result['original'] = $ours ? null : $current; // Already ours (maybe at an older address): keep the stored original.
 		$result['config']   = array_merge(
 			$current,
 			array(
@@ -164,8 +168,42 @@ final class Configurator {
 	 *
 	 * @param array<string, mixed> $config webhook_configuration.
 	 */
-	public static function pointsHere( array $config ): bool {
-		return (string) ( $config['post_purchase_url'] ?? '' ) === self::callbackUrl();
+	public static function pointsHere( array $config, string $stored = '' ): bool {
+		return self::ours( (string) ( $config['post_purchase_url'] ?? '' ), self::callbackUrl(), $stored );
+	}
+
+	/**
+	 * Whether a callback URL is this site's (pure, for tests): our callback now, the same
+	 * address over http/https or with/without "www.", or the URL this site set on the
+	 * subscription before (say, before a permalink change) while it's under this site's
+	 * address. A copy of the site elsewhere never counts, so staging can't take over live.
+	 *
+	 * @param string $url      The subscription's post_purchase_url.
+	 * @param string $callback Our callback URL now.
+	 * @param string $stored   The URL this site last set on it, if any.
+	 */
+	public static function ours( string $url, string $callback, string $stored = '' ): bool {
+		$url = trim( $url );
+		if ( '' === $url ) {
+			return false;
+		}
+		if ( $url === $callback || self::same( $url, $callback ) ) {
+			return true;
+		}
+		$site = rtrim( \InvoiceNinja\Core\Environment::identity( (string) home_url() ), '/' );
+		$here = \InvoiceNinja\Core\Environment::identity( $url );
+		return '' !== $stored && self::same( $url, $stored ) && '' !== $site && ( $here === $site || str_starts_with( $here, $site . '/' ) );
+	}
+
+	/**
+	 * Whether two URLs differ only in http/https and "www.".
+	 *
+	 * @param string $a URL.
+	 * @param string $b URL.
+	 */
+	private static function same( string $a, string $b ): bool {
+		$query = static fn( string $u ): string => (string) wp_parse_url( $u, PHP_URL_QUERY );
+		return \InvoiceNinja\Core\Environment::identity( $a ) === \InvoiceNinja\Core\Environment::identity( $b ) && $query( $a ) === $query( $b );
 	}
 
 	/**
@@ -182,7 +220,7 @@ final class Configurator {
 		try {
 			$client  = $p->api();
 			$current = $client->get( 'subscriptions/' . rawurlencode( $id ), array(), 8.0 )->data();
-			$plan    = self::plan( is_array( $current['webhook_configuration'] ?? null ) ? $current['webhook_configuration'] : array(), self::callbackUrl(), self::returnUrl(), $p->secrets->get( 'callback_secret' ) );
+			$plan    = self::plan( is_array( $current['webhook_configuration'] ?? null ) ? $current['webhook_configuration'] : array(), self::callbackUrl(), self::returnUrl(), $p->secrets->get( 'callback_secret' ), $this->get( $id )['callback'] );
 			if ( ! $plan['ok'] ) {
 				return self::result(
 					false,
@@ -204,6 +242,7 @@ final class Configurator {
 				'at'            => time(),
 				'restore_error' => '',
 				'name'          => sanitize_text_field( (string) ( $current['name'] ?? '' ) ),
+				'callback'      => self::callbackUrl(),
 			)
 		);
 		$p->logger->info( 'subscriptions', sprintf( 'Subscription "%s" now reports purchases to this site', sanitize_text_field( (string) ( $current['name'] ?? $id ) ) ) );
@@ -228,7 +267,7 @@ final class Configurator {
 			return true;
 		}
 		try {
-			$restored = self::restoreWith( $this->plugin->api(), $id, $row['original'], $budget );
+			$restored = self::restoreWith( $this->plugin->api(), $id, $row['original'], $budget, $row['callback'] );
 		} catch ( ApiException $e ) {
 			if ( ErrorKind::NotFound === $e->kind ) {
 				$this->put(
@@ -256,9 +295,15 @@ final class Configurator {
 				'connected'     => false,
 				'restore_error' => '',
 				'original'      => array(),
+				'callback'      => '',
 			)
 		);
-		$this->plugin->logger->info( 'subscriptions', $restored ? sprintf( 'Restored the original settings of subscription "%s" in Invoice Ninja', $row['name'] ? $row['name'] : $id ) : sprintf( 'Subscription "%s" had been changed in Invoice Ninja; left as it is', $row['name'] ? $row['name'] : $id ) );
+		if ( $restored ) {
+			$this->plugin->logger->info( 'subscriptions', sprintf( 'Restored the original settings of subscription "%s" in Invoice Ninja', $row['name'] ? $row['name'] : $id ) );
+		} else {
+			// Pointed elsewhere by an admin in Invoice Ninja (not at an old address of this site): that change wins.
+			$this->plugin->logger->warning( 'subscriptions', sprintf( 'Subscription "%s" had been pointed elsewhere in Invoice Ninja; left as it is', $row['name'] ? $row['name'] : $id ) );
+		}
 		return true;
 	}
 
@@ -344,13 +389,14 @@ final class Configurator {
 	 * @param string               $id       Subscription id.
 	 * @param array<string, mixed> $original Original webhook_configuration.
 	 * @param float                $budget   Seconds.
+	 * @param string               $stored   The callback URL this site set (it still counts after an http → https change).
 	 * @return bool True when restored, false when it no longer pointed here.
 	 * @throws ApiException On failure.
 	 */
-	private static function restoreWith( HttpClient $client, string $id, array $original, float $budget ): bool {
+	private static function restoreWith( HttpClient $client, string $id, array $original, float $budget, string $stored = '' ): bool {
 		$current = $client->get( 'subscriptions/' . rawurlencode( $id ), array(), $budget / 2 )->data();
 		$config  = is_array( $current['webhook_configuration'] ?? null ) ? $current['webhook_configuration'] : array();
-		if ( ! self::pointsHere( $config ) ) {
+		if ( ! self::pointsHere( $config, $stored ) ) {
 			return false;
 		}
 		$original += array(
@@ -392,11 +438,12 @@ final class Configurator {
 				continue;
 			}
 			$config = (array) $items[ $id ]['webhook_configuration'];
-			if ( ! self::pointsHere( $config ) ) {
+			if ( ! self::pointsHere( $config, $row['callback'] ) ) {
 				continue; // Shown in Diagnostics; the admin decides.
 			}
 			$sent = (string) ( ( is_array( $config['post_purchase_headers'] ?? null ) ? $config['post_purchase_headers'] : array() )[ self::HEADER ] ?? '' );
-			if ( ! hash_equals( $secret, $sent ) || 'post' !== ( $config['post_purchase_rest_method'] ?? '' ) || self::returnUrl() !== ( $config['return_url'] ?? '' ) ) {
+			// An old address of this site (http → https, a permalink change) is moved to the new one too.
+			if ( self::callbackUrl() !== ( $config['post_purchase_url'] ?? '' ) || ! hash_equals( $secret, $sent ) || 'post' !== ( $config['post_purchase_rest_method'] ?? '' ) || self::returnUrl() !== ( $config['return_url'] ?? '' ) ) {
 				$this->plugin->queue->push( 'invoiceninja_subscription_reconnect', array( 'id' => (string) $id ), 0, true );
 			}
 		}
@@ -415,7 +462,7 @@ final class Configurator {
 		$items     = $this->sync->all();
 		$drifted   = array();
 		foreach ( $connected as $id => $row ) {
-			if ( isset( $items[ $id ] ) && ! self::pointsHere( (array) $items[ $id ]['webhook_configuration'] ) ) {
+			if ( isset( $items[ $id ] ) && ! self::pointsHere( (array) $items[ $id ]['webhook_configuration'], $row['callback'] ) ) {
 				$drifted[] = $row['name'] ? $row['name'] : $id;
 			}
 		}
@@ -483,7 +530,7 @@ final class Configurator {
 					continue;
 				}
 				try {
-					self::restoreWith( $client, Events::cleanId( $id ), is_array( $row['original'] ?? null ) ? $row['original'] : array(), 4.0 );
+					self::restoreWith( $client, Events::cleanId( $id ), is_array( $row['original'] ?? null ) ? $row['original'] : array(), 4.0, (string) ( $row['callback'] ?? '' ) );
 				} catch ( ApiException $ignored ) {
 					unset( $ignored ); // Best effort while uninstalling.
 				}

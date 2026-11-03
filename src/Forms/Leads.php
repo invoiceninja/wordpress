@@ -229,17 +229,23 @@ final class Leads {
 	 * @return list<int>
 	 */
 	public function idsOlderThan( int $before, int $limit = 200 ): array {
-		return $this->ids(
-			array(
-				'date_query' => array(
-					array(
-						'column' => 'post_date_gmt',
-						'before' => gmdate( 'Y-m-d H:i:s', $before ),
-					),
+		return $this->ids( self::olderThan( $before ) + array( 'order' => 'ASC' ), $limit );
+	}
+
+	/**
+	 * Query arguments for leads created before a time.
+	 *
+	 * @param int $before Unix time.
+	 * @return array{date_query: list<array{column: string, before: string}>}
+	 */
+	public static function olderThan( int $before ): array {
+		return array(
+			'date_query' => array(
+				array(
+					'column' => 'post_date_gmt',
+					'before' => gmdate( 'Y-m-d H:i:s', $before ),
 				),
-				'order'      => 'ASC',
 			),
-			$limit
 		);
 	}
 

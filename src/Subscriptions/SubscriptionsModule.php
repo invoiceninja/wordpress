@@ -169,6 +169,7 @@ final class SubscriptionsModule implements Module {
 			'invoiceninja_daily_tasks',
 			function (): void {
 				$this->plugin->queue->push( self::OVERDUE, array(), 0, true );
+				$this->relay->kick();
 			}
 		);
 		add_action( 'invoiceninja_webhook_payment_created', array( $this->lifecycle, 'onPayment' ) );
@@ -228,8 +229,9 @@ final class SubscriptionsModule implements Module {
 		if ( $left ) {
 			$this->plugin->logger->warning( 'subscriptions', sprintf( 'Switched company: the previous company\'s subscriptions %s still send purchases to this site. Clear their "Webhook URL" in that company.', implode( ', ', $left ) ) );
 		}
-		// The old company's callbacks now get 401 (still "Success", so its buyers aren't blocked).
+		// The old company's callbacks are now ignored (still answered "Success", so its buyers aren't blocked).
 		$this->plugin->options->delete( 'callback_secret' );
+		$this->relay->clear();
 		foreach ( array( SubscriptionSync::OPTION, Configurator::OPTION, State::OPTION, Callback::RECENT ) as $option ) {
 			$this->plugin->options->delete( $option );
 		}
@@ -284,8 +286,8 @@ final class SubscriptionsModule implements Module {
 				'allow_cancellation' => (bool) $sub['allow_cancellation'],
 				'allow_plan_changes' => (bool) $sub['allow_plan_changes'],
 				'connected'          => $row['connected'],
-				'points_here'        => Configurator::pointsHere( (array) $sub['webhook_configuration'] ),
-				'callback'           => '' === $url ? 'none' : ( Configurator::pointsHere( (array) $sub['webhook_configuration'] ) ? 'here' : ( Configurator::isWordPress( $url ) ? 'other_wordpress' : 'other' ) ),
+				'points_here'        => Configurator::pointsHere( (array) $sub['webhook_configuration'], $row['callback'] ),
+				'callback'           => '' === $url ? 'none' : ( Configurator::pointsHere( (array) $sub['webhook_configuration'], $row['callback'] ) ? 'here' : ( Configurator::isWordPress( $url ) ? 'other_wordpress' : 'other' ) ),
 				'callback_host'      => '' !== $url ? (string) wp_parse_url( $url, PHP_URL_HOST ) : '',
 				'relay_url'          => $row['relay_url'],
 				'restore_error'      => $row['restore_error'],

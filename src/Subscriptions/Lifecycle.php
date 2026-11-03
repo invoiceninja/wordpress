@@ -76,20 +76,20 @@ final class Lifecycle {
 			$this->ignored( $context, 'invoice' );
 			return;
 		}
-		// The records must belong to this client and subscription; otherwise the call is forged or stale.
-		foreach ( array( $invoice, $recurring ) as $doc ) {
-			if ( null === $doc ) {
-				continue;
-			}
-			$doc_sub = Events::cleanId( $doc['subscription_id'] ?? '' );
-			if ( Events::cleanId( $doc['client_id'] ?? '' ) !== $client['id'] || ( '' !== $doc_sub && $doc_sub !== $sub_id ) ) {
-				$this->ignored( $context, 'mismatch' );
-				return;
-			}
+		if ( ! self::belong( (string) $client['id'], $sub_id, $recurring, $invoice ) ) {
+			$this->ignored( $context, 'mismatch' );
+			return;
 		}
 		$sub = $this->subscription( $api, $sub_id );
 		if ( null === $sub ) {
 			$this->ignored( $context, 'subscription' );
+			return;
+		}
+		$refused = self::refusal( $context, $sub, $recurring, $invoice );
+		if ( '' !== $refused ) {
+			// The secret is shared by every subscription and visible in Invoice Ninja, so a call
+			// with it is still only believed when Invoice Ninja's records say the same.
+			$this->plugin->logger->warning( 'subscriptions', sprintf( 'Ignored a %s callback: %s', $context, $refused ) );
 			return;
 		}
 		$key = State::key( (string) ( $recurring['id'] ?? '' ), $sub_id, (string) $client['id'] );
@@ -107,7 +107,12 @@ final class Lifecycle {
 				$this->apply( $key, $this->row( 'active', $sub_id, $client, $recurring, $invoice ), 'plan_changed', $context, $sub, $client, $recurring, $invoice );
 				break;
 			case 'plan_paid':
-				$this->apply( $key, $this->row( null !== $row && 'suspended' === $row['status'] ? 'suspended' : 'active', $sub_id, $client, $recurring, $invoice ), 'paid', $context, $sub, $client, $recurring, $invoice );
+				$suspended = null !== $row && 'suspended' === $row['status'];
+				$paid_row  = $this->row( $suspended ? 'suspended' : 'active', $sub_id, $client, $recurring, $invoice );
+				if ( $suspended ) {
+					$paid_row['invoice'] = $row['invoice']; // Still the invoice it was suspended for; resume() checks that one.
+				}
+				$this->apply( $key, $paid_row, 'paid', $context, $sub, $client, $recurring, $invoice );
 				$this->resume( $key, $context, $sub, $client, $recurring, $invoice ?? array() );
 				break;
 			case 'cancellation':
@@ -119,6 +124,82 @@ final class Lifecycle {
 				}
 				break;
 		}
+	}
+
+	/**
+	 * Whether the invoice and recurring invoice belong to this client and subscription, and to
+	 * each other (pure, for tests).
+	 *
+	 * @param string                    $client_id Client id.
+	 * @param string                    $sub_id    Subscription id.
+	 * @param array<string, mixed>|null $recurring Recurring invoice.
+	 * @param array<string, mixed>|null $invoice   Invoice.
+	 */
+	public static function belong( string $client_id, string $sub_id, ?array $recurring, ?array $invoice ): bool {
+		foreach ( array( $invoice, $recurring ) as $doc ) {
+			if ( null !== $doc && ( Events::cleanId( $doc['client_id'] ?? '' ) !== $client_id || Events::cleanId( $doc['subscription_id'] ?? '' ) !== $sub_id ) ) {
+				return false;
+			}
+		}
+		$linked = Events::cleanId( $invoice['recurring_id'] ?? '' );
+		return null === $recurring || null === $invoice || '' === $linked || Events::cleanId( $recurring['id'] ?? '' ) === $linked;
+	}
+
+	/**
+	 * Why Invoice Ninja's records don't back up a callback, or '' when they do (pure, for tests).
+	 * What Invoice Ninja sends, and the state its records are in by then:
+	 * - single_purchase: the invoice, paid;
+	 * - recurring_purchase: the invoice, paid (free plans too), and the recurring invoice, started;
+	 * - trial: the recurring invoice, started, on a subscription with trials;
+	 * - change_plan: the new recurring invoice, started (and its invoice, paid, when there was one);
+	 * - plan_paid: the invoice, paid;
+	 * - cancellation: the recurring invoice, stopped (paused) and archived.
+	 *
+	 * @param string                    $context   Callback context.
+	 * @param array<string, mixed>      $sub       Subscription.
+	 * @param array<string, mixed>|null $recurring Recurring invoice.
+	 * @param array<string, mixed>|null $invoice   Invoice.
+	 */
+	public static function refusal( string $context, array $sub, ?array $recurring, ?array $invoice ): string {
+		$paid    = null !== $invoice && self::paid( $invoice );
+		$running = null !== $recurring && empty( $recurring['is_deleted'] ) && in_array( (int) ( $recurring['status_id'] ?? 0 ), array( 2, -1 ), true );
+		switch ( $context ) {
+			case 'single_purchase':
+			case 'plan_paid':
+				return $paid ? '' : 'its invoice is not paid';
+			case 'recurring_purchase':
+				if ( ! $paid ) {
+					return 'its invoice is not paid';
+				}
+				return $running ? '' : 'its recurring invoice is not active';
+			case 'trial':
+				if ( empty( $sub['trial_enabled'] ) ) {
+					return 'the subscription has no trial';
+				}
+				return $running ? '' : 'its recurring invoice is not active';
+			case 'change_plan':
+				if ( null !== $invoice && ! $paid ) {
+					return 'its invoice is not paid';
+				}
+				return $running ? '' : 'its recurring invoice is not active';
+			case 'cancellation':
+				$stopped = null !== $recurring && ( ! empty( $recurring['is_deleted'] ) || ! empty( $recurring['archived_at'] ) || in_array( (int) ( $recurring['status_id'] ?? 0 ), array( 3, 4 ), true ) );
+				return $stopped ? '' : 'its recurring invoice is still active';
+		}
+		return '';
+	}
+
+	/**
+	 * Whether an invoice is paid (status paid, or nothing left to pay on a sent invoice).
+	 *
+	 * @param array<string, mixed> $invoice Invoice.
+	 */
+	public static function paid( array $invoice ): bool {
+		if ( ! empty( $invoice['is_deleted'] ) ) {
+			return false;
+		}
+		$status = (int) ( $invoice['status_id'] ?? 0 );
+		return 4 === $status || ( in_array( $status, array( 2, 3 ), true ) && (float) ( $invoice['balance'] ?? 1 ) <= 0.0 );
 	}
 
 	/**
@@ -171,11 +252,19 @@ final class Lifecycle {
 	 * @param array<string, mixed>      $client    Client.
 	 * @param array<string, mixed>|null $recurring Recurring invoice.
 	 * @param array<string, mixed>      $invoice   The paid invoice.
+	 * @throws ApiException On a temporary failure.
 	 */
 	private function resume( string $key, string $context, array $sub, array $client, ?array $recurring, array $invoice ): void {
 		$row = $this->state->get( $key );
-		if ( null === $row || 'suspended' !== $row['status'] ) {
+		if ( null === $row || 'suspended' !== $row['status'] || ! self::paid( $invoice ) ) {
 			return;
+		}
+		// Paying another invoice doesn't settle the one that suspended it.
+		if ( '' !== $row['invoice'] && Events::cleanId( $invoice['id'] ?? '' ) !== $row['invoice'] ) {
+			$overdue = $this->fetch( $this->plugin->api(), 'invoices', $row['invoice'] );
+			if ( null !== $overdue && $this->unpaid( $overdue ) ) {
+				return;
+			}
 		}
 		$this->apply( $key, array( 'status' => 'active' ), 'resumed', $context, $sub, $client, $recurring, $invoice );
 	}
@@ -212,6 +301,13 @@ final class Lifecycle {
 	 */
 	public function fire( string $event, string $context, array $sub, array $client, ?array $recurring, ?array $invoice ): void {
 		$payload = Payload::build( $event, $context, $sub, $client, $recurring, $invoice, $this->userFor( (string) $client['id'] ), time() );
+		if ( $this->state->seen( $payload['id'] ) ) {
+			return;
+		}
+		$payload['sequence'] = $this->relay->nextSequence();
+		// Into the relay's outbox first, then recorded as fired: if queueing throws, the
+		// callback job can run again and nothing is lost.
+		$this->relay->queue( (string) $sub['id'], $payload );
 		if ( ! $this->state->firstTime( $payload['id'] ) ) {
 			return;
 		}
@@ -240,8 +336,12 @@ final class Lifecycle {
 		 * @param array $payload Stable payload (version 1, see docs/hosting.md).
 		 * @param array $raw     client, recurring_invoice and invoice as Invoice Ninja returned them.
 		 */
-		do_action( "invoiceninja_subscription_{$event}", $payload, $raw );
-		$this->relay->queue( (string) $sub['id'], $payload );
+		try {
+			do_action( "invoiceninja_subscription_{$event}", $payload, $raw );
+		} catch ( \Throwable $e ) {
+			// A listener's error mustn't stop the rest (a plan_paid also resumes).
+			$this->plugin->logger->error( 'subscriptions', sprintf( 'A listener of invoiceninja_subscription_%s failed: %s', $event, $e->getMessage() ) );
+		}
 	}
 
 	/**
@@ -444,16 +544,26 @@ final class Lifecycle {
 	 * @param string $client_id Client id.
 	 */
 	private function userFor( string $client_id ): int {
+		$portal = $this->plugin->module( 'portal' );
+		if ( '' === $client_id || ! $portal instanceof \InvoiceNinja\Portal\PortalModule ) {
+			return 0;
+		}
+		// The meta query finds candidates; the Links service decides whether a link still holds.
 		$users = get_users(
 			array(
 				'meta_key'    => \InvoiceNinja\Portal\Links::CLIENT, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one indexed lookup per event.
 				'meta_value'  => $client_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
-				'number'      => 1,
+				'number'      => 5,
 				'fields'      => 'ID',
 				'count_total' => false,
 			)
 		);
-		return $users ? (int) $users[0] : 0;
+		foreach ( (array) $users as $user_id ) {
+			if ( ( $portal->links->get( (int) $user_id )['client_id'] ?? '' ) === $client_id ) {
+				return (int) $user_id;
+			}
+		}
+		return 0;
 	}
 
 	/**

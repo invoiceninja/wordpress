@@ -23,6 +23,9 @@ final class FormsModule implements Module {
 
 	public const AUTOREPLY_OPTION = 'forms_autoreply_text';
 
+	/** Held (spam) quote requests are deleted after this many days, whatever the retention setting. */
+	public const SPAM_DAYS = 30;
+
 	public readonly Leads $leads;
 
 	public readonly TagManager $tags;
@@ -121,6 +124,7 @@ final class FormsModule implements Module {
 	public function routes( Routes $routes ): void {
 		if ( $this->enabled() ) {
 			$routes->add( '/quote-requests', 'POST', array( $this->form, 'submit' ), 'same_site' );
+			$routes->add( '/quote-requests/start', 'POST', array( $this->form, 'start' ), 'same_site' );
 		}
 		$routes->add( '/admin/quote-requests', 'GET', array( $this, 'adminList' ), 'view' );
 		$routes->add( '/admin/quote-requests/(?P<id>\\d+)/retry', 'POST', array( $this, 'adminRetry' ), 'manage' );
@@ -320,6 +324,8 @@ final class FormsModule implements Module {
 			$reason   = null !== $kind ? sprintf( $retrying, $kind->title() ) : '';
 		} elseif ( 'paused' === $reason ) {
 			$reason = __( 'Waiting: Invoice Ninja is not connected, or this site is paused as a copy.', 'invoiceninja' );
+		} elseif ( 'busy' === $reason ) {
+			$reason = __( 'Held: far more requests than usual arrived that hour. Send it if it is real.', 'invoiceninja' );
 		}
 		$consents = array();
 		foreach ( (array) $lead['consents'] as $which => $consent ) {
@@ -377,6 +383,14 @@ final class FormsModule implements Module {
 	public function daily(): void {
 		$this->emails->digest();
 		$this->creator->daily();
+		// Held requests (spam, or a flood) aren't kept forever, even when everything else is.
+		$held = 0;
+		foreach ( $this->leads->idsWithStatus( 'spam', 500, Leads::olderThan( time() - self::SPAM_DAYS * DAY_IN_SECONDS ) ) as $id ) {
+			$held += $this->leads->delete( $id ) ? 1 : 0;
+		}
+		if ( $held > 0 ) {
+			$this->plugin->logger->info( 'forms', sprintf( 'Deleted %d held quote requests older than %d days', $held, self::SPAM_DAYS ) );
+		}
 		$days = (int) $this->plugin->options->setting( 'forms.retention_days' );
 		if ( $days > 0 ) {
 			$deleted = 0;

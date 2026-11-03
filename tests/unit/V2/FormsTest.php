@@ -167,4 +167,18 @@ class FormsTest extends TestCase
         $this->assertSame( [], $manager->ids( $client, [ 'Web' ], '5.13.24' ) );
         $this->assertSame( [], $this->requests );
     }
+
+    public function testTheMinimumAndMaximumTimeComeFromTheSignedTokenNotTheBrowser()
+    {
+        $now = 1800000000;
+        $this->assertSame( 'too_fast', \InvoiceNinja\Forms\QuoteForm::age( $now - 1, 3, $now ) );
+        $this->assertSame( 'ok', \InvoiceNinja\Forms\QuoteForm::age( $now - 3, 3, $now ) );
+        $this->assertSame( 'ok', \InvoiceNinja\Forms\QuoteForm::age( $now - \InvoiceNinja\Forms\QuoteForm::MAX_AGE, 3, $now ) );
+        $this->assertSame( 'expired', \InvoiceNinja\Forms\QuoteForm::age( $now - \InvoiceNinja\Forms\QuoteForm::MAX_AGE - 1, 3, $now ), 'a token from a page cached days ago' );
+        $this->assertSame( 'too_fast', \InvoiceNinja\Forms\QuoteForm::age( $now + 60, 3, $now ), 'a time in the future' );
+
+        $token = FormConfig::sign( [ 'fields' => [] ], $now, str_repeat( 'k', 64 ) );
+        $this->assertSame( $now, FormConfig::verify( $token, str_repeat( 'k', 64 ) )['time'], 'the render time is signed' );
+        $this->assertNull( FormConfig::verify( $token, str_repeat( 'j', 64 ) ) );
+    }
 }

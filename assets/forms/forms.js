@@ -48,8 +48,33 @@
 		if ( ! form || ! summary || ! done || ! submit ) {
 			return;
 		}
-		const started = Date.now();
 		const label = submit.textContent;
+		const token = form.querySelector( 'input[name="form"]' );
+		let fresh = null;
+
+		// The page (and its token) may come from a cache: once someone starts filling the form
+		// in, swap in a token that starts the server's clock now. Not on the submit button
+		// itself, or the clock would start just as the form is sent.
+		function begin( e ) {
+			if ( fresh || ! token || e.target === submit ) {
+				return;
+			}
+			fresh = fetch( store.rest + '/quote-requests/start', {
+				method: 'POST',
+				credentials: 'same-origin',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify( { form: token.value } ),
+			} )
+				.then( ( r ) => ( r.ok ? r.json() : {} ) )
+				.then( ( r ) => {
+					if ( r && r.form ) {
+						token.value = r.form;
+					}
+				} )
+				.catch( () => {} );
+		}
+		form.addEventListener( 'focusin', begin );
+		form.addEventListener( 'input', begin );
 
 		const fieldOf = ( name ) => form.querySelector( '[data-field="' + name + '"]' );
 		const inputOf = ( name ) => form.querySelector( '[name="' + name + '"]' );
@@ -150,9 +175,11 @@
 		form.addEventListener( 'submit', async ( e ) => {
 			e.preventDefault();
 			resetErrors();
-			const data = values( form );
-			data.elapsed = Math.floor( ( Date.now() - started ) / 1000 );
 			busy( true );
+			if ( fresh ) {
+				await fresh;
+			}
+			const data = values( form );
 			let response;
 			let result = {};
 			try {
@@ -173,6 +200,9 @@
 				return;
 			}
 			busy( false );
+			if ( result.form && token ) {
+				token.value = result.form; // The old token had expired: the next try uses this one.
+			}
 			if ( response.ok && result.ok ) {
 				success( result );
 				return;

@@ -78,15 +78,17 @@ final class Redirects {
 		if ( null === $sub || '' === (string) $sub['purchase_page'] ) {
 			$this->fail( __( "This plan isn't available right now.", 'invoiceninja' ), 404 );
 		}
-		if ( $this->limited( 'subscribe' ) ) {
+		$user_id  = get_current_user_id();
+		$verified = self::verified( $user_id );
+		// Only verified customers cost an API call (their login link), so only they are counted:
+		// a guest's visit writes no counter.
+		if ( $verified && $this->limited( 'subscribe', $user_id ) ) {
 			$this->fail( __( 'Too many requests. Please try again in a few minutes.', 'invoiceninja' ), 429 );
 		}
-		$user_id = get_current_user_id();
-		$client  = $user_id > 0 ? (string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ) : '';
-		$this->pending( (string) $sub['id'], self::verified( $user_id ) ? $client : '', 'purchase' );
+		$this->pending( (string) $sub['id'], $verified ? (string) ( $this->link( $user_id )['client_id'] ?? '' ) : '', 'purchase' );
 
 		$page = (string) $sub['purchase_page'];
-		if ( self::verified( $user_id ) ) {
+		if ( $verified ) {
 			$link = $this->contactLink( $user_id );
 			if ( null !== $link ) {
 				$this->away( add_query_arg( 'next', rawurlencode( $page ), $link ) );
@@ -126,10 +128,13 @@ final class Redirects {
 		$do = isset( $_GET['do'] ) ? sanitize_key( wp_unslash( $_GET['do'] ) ) : '';
 		$ri = Events::cleanId( isset( $_GET['r'] ) ? sanitize_text_field( wp_unslash( $_GET['r'] ) ) : '' );
 		// phpcs:enable
-		if ( ! in_array( $do, array( 'change', 'cancel', 'payment_method' ), true ) || ! self::verified( $user_id ) || $this->limited( 'manage' ) ) {
+		if ( ! in_array( $do, array( 'change', 'cancel', 'payment_method' ), true ) || ! self::verified( $user_id ) ) {
 			$this->fail( __( 'Please confirm your email on your Account page first.', 'invoiceninja' ), 403 );
 		}
-		$client = (string) get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true );
+		if ( $this->limited( 'manage', $user_id ) ) {
+			$this->fail( __( 'Too many requests. Please try again in a few minutes.', 'invoiceninja' ), 429 );
+		}
+		$client = (string) ( $this->link( $user_id )['client_id'] ?? '' );
 		$link   = $this->contactLink( $user_id );
 		if ( '' === $client || null === $link ) {
 			$this->fail( __( 'Your billing details are temporarily unavailable. Please try again later.', 'invoiceninja' ), 503 );
@@ -159,8 +164,9 @@ final class Redirects {
 	 * @param int $user_id User.
 	 */
 	public function contactLink( int $user_id ): ?string {
-		$client  = Events::cleanId( get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CLIENT, true ) );
-		$contact = Events::cleanId( get_user_meta( $user_id, \InvoiceNinja\Portal\Links::CONTACT, true ) );
+		$linked  = $this->link( $user_id );
+		$client  = Events::cleanId( $linked['client_id'] ?? '' );
+		$contact = Events::cleanId( $linked['contact_id'] ?? '' );
 		if ( '' === $client || '' === $contact ) {
 			return null;
 		}
@@ -259,9 +265,8 @@ final class Redirects {
 	 */
 	public function returnStatus(): \WP_REST_Response {
 		nocache_headers();
-		if ( $this->limited( 'return' ) ) {
-			return new \WP_REST_Response( array( 'state' => 'slow' ), 429 );
-		}
+		// Not counted: it only reads one transient (no API call), and counting every poll would
+		// write an option row per visitor address.
 		return new \WP_REST_Response( array( 'state' => $this->returnState() ) );
 	}
 
@@ -414,12 +419,25 @@ final class Redirects {
 	}
 
 	/**
-	 * Per-IP rate limit (60 an hour per endpoint).
+	 * Per-user rate limit for the redirects that call the API (60 an hour per endpoint). Only
+	 * signed-in, verified users get here, so there's one counter row per user, not per address.
 	 *
-	 * @param string $what Endpoint.
+	 * @param string $what    Endpoint.
+	 * @param int    $user_id User.
 	 */
-	private function limited( string $what ): bool {
-		$ip = substr( hash( 'sha256', Plugin::clientIp() ), 0, 12 );
-		return $this->plugin->options->increment( 'ctr_sub' . $what . '_' . $ip . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > ( 'return' === $what ? 300 : 60 );
+	private function limited( string $what, int $user_id ): bool {
+		return $this->plugin->options->increment( 'ctr_sub' . $what . '_u' . $user_id . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > 60;
+	}
+
+	/**
+	 * The user's link to an Invoice Ninja client and contact, from the Portal module (null
+	 * when there's none, or the Portal module is off).
+	 *
+	 * @param int $user_id User.
+	 * @return array{client_id: string, contact_id: string}|null
+	 */
+	public function link( int $user_id ): ?array {
+		$portal = $user_id > 0 ? $this->plugin->module( 'portal' ) : null;
+		return $portal instanceof \InvoiceNinja\Portal\PortalModule ? $portal->links->get( $user_id ) : null;
 	}
 }
