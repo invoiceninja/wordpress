@@ -551,8 +551,7 @@ final class Lifecycle {
 		// The meta query finds candidates; the Links service decides whether a link still holds.
 		$users = get_users(
 			array(
-				'meta_key'    => \InvoiceNinja\Portal\Links::CLIENT, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- one indexed lookup per event.
-				'meta_value'  => $client_id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+				'meta_query'  => \InvoiceNinja\Portal\UserData::metaQuery( \InvoiceNinja\Portal\Links::CLIENT, $client_id ), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- one indexed lookup per event.
 				'number'      => 5,
 				'fields'      => 'ID',
 				'count_total' => false,

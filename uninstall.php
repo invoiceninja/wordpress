@@ -15,6 +15,8 @@ defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 /**
  * Clean one site.
+ *
+ * @return bool Whether the site's data was deleted.
  */
 function invoiceninja_uninstall_site() {
 	global $wpdb;
@@ -46,7 +48,7 @@ function invoiceninja_uninstall_site() {
 
 	$settings = get_option( 'invoiceninja_settings', array() );
 	if ( empty( $settings['delete_data_on_uninstall'] ) ) {
-		return;
+		return false;
 	}
 
 	// phpcs:disable WordPress.DB.DirectDatabaseQuery
@@ -67,9 +69,12 @@ function invoiceninja_uninstall_site() {
 		wp_delete_post( (int) $invoiceninja_post, true );
 	}
 	// Our meta on WooCommerce orders and products, and on users (links and verification).
+	// User meta is shared by the whole network: on multisite only this site's keys (with its
+	// table prefix) go here; keys saved before 2.0.2 without a prefix go once every site
+	// that has the plugin removed its data (below).
 	// phpcs:disable WordPress.DB.DirectDatabaseQuery
 	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->postmeta} WHERE meta_key LIKE %s", $wpdb->esc_like( '_invoiceninja_' ) . '%' ) );
-	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key LIKE %s", $wpdb->esc_like( '_invoiceninja_' ) . '%' ) );
+	$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key LIKE %s", $wpdb->esc_like( ( is_multisite() ? $wpdb->get_blog_prefix() : '' ) . '_invoiceninja_' ) . '%' ) );
 	$invoiceninja_hpos = $wpdb->prefix . 'wc_orders_meta';
 	if ( $wpdb->get_var( $wpdb->prepare( 'SHOW TABLES LIKE %s', $invoiceninja_hpos ) ) === $invoiceninja_hpos ) {
 		$wpdb->query( $wpdb->prepare( "DELETE FROM {$invoiceninja_hpos} WHERE meta_key LIKE %s", $wpdb->esc_like( '_invoiceninja_' ) . '%' ) ); // phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared -- our check above.
@@ -87,9 +92,12 @@ function invoiceninja_uninstall_site() {
 		$role->remove_cap( 'manage_invoiceninja' );
 		$role->remove_cap( 'view_invoiceninja' );
 	}
+	return true;
 }
 
 if ( is_multisite() ) {
+	global $wpdb; // This file is included from a function.
+	$invoiceninja_all_deleted = true;
 	foreach ( get_sites(
 		array(
 			'fields' => 'ids',
@@ -97,8 +105,14 @@ if ( is_multisite() ) {
 		)
 	) as $invoiceninja_site_id ) {
 		switch_to_blog( $invoiceninja_site_id );
-		invoiceninja_uninstall_site();
+		$invoiceninja_used = false !== get_option( 'invoiceninja_version', false ) || false !== get_option( 'invoiceninja_settings', false );
+		if ( ! invoiceninja_uninstall_site() && $invoiceninja_used ) {
+			$invoiceninja_all_deleted = false; // This site keeps its data, which may include keys from before 2.0.2.
+		}
 		restore_current_blog();
+	}
+	if ( $invoiceninja_all_deleted ) {
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->usermeta} WHERE meta_key LIKE %s", $wpdb->esc_like( '_invoiceninja_' ) . '%' ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 	}
 } else {
 	invoiceninja_uninstall_site();
