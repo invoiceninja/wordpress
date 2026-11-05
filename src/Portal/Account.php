@@ -98,7 +98,10 @@ final class Account {
 		$this->plugin->store->enqueue();
 		wp_enqueue_script( 'invoiceninja-portal' );
 		$tabs = array_values( array_intersect( self::TABS, array_map( 'strval', (array) ( $a['tabs'] ?? self::TABS ) ) ) );
-		return '<div class="invoiceninja-account" data-invoiceninja-account data-tabs="' . esc_attr( implode( ',', $tabs ? $tabs : self::TABS ) ) . '" data-invoiceninja-store>'
+		// Where to go once the email is confirmed (e.g. back to a product), on this site only.
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a link; nothing changes.
+		$back = ConfirmEmail::back( (string) ( $a['return'] ?? ( isset( $_GET['invoiceninja_return'] ) ? esc_url_raw( wp_unslash( $_GET['invoiceninja_return'] ) ) : '' ) ) );
+		return '<div class="invoiceninja-account" data-invoiceninja-account data-tabs="' . esc_attr( implode( ',', $tabs ? $tabs : self::TABS ) ) . '"' . ( '' !== $back ? ' data-return="' . esc_url( $back ) . '"' : '' ) . ' data-invoiceninja-store>'
 			. '<noscript><p>' . esc_html__( 'Your account needs JavaScript.', 'invoiceninja' ) . '</p></noscript>'
 			. '<p class="invoiceninja-loading">' . esc_html__( 'Loading your account…', 'invoiceninja' ) . '</p></div>';
 	}
@@ -555,7 +558,21 @@ final class Account {
 			exit;
 		}
 		if ( ! $this->verification->isVerified( $user_id ) ) {
-			wp_safe_redirect( add_query_arg( 'invoiceninja_verify', '1', $back ) );
+			// Confirm the email (works without an Account page), then come back to this link.
+			wp_safe_redirect(
+				ConfirmEmail::url(
+					add_query_arg(
+						array_filter(
+							array(
+								'invoiceninja' => $action,
+								'type'         => $type,
+								'id'           => $id,
+							)
+						),
+						home_url( '/' )
+					)
+				)
+			);
 			exit;
 		}
 		try {

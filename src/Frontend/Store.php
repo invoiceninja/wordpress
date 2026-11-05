@@ -93,7 +93,11 @@ final class Store {
 	 * Whether the 1.x products page and cart are shown instead of the blocks.
 	 */
 	public function legacy(): bool {
-		return 'legacy' === $this->plugin->options->setting( 'store.display' );
+		if ( 'legacy' === $this->plugin->options->setting( 'store.display' ) ) {
+			return true;
+		}
+		// A 1.x site whose upgrade hasn't run yet (the 1.x code decides before it runs) keeps its display.
+		return '' === (string) $this->plugin->options->get( 'version', '' ) && \InvoiceNinja\Core\Installer::hasLegacyData();
 	}
 
 	/**
@@ -436,15 +440,17 @@ final class Store {
 			wp_safe_redirect( add_query_arg( 'order', rawurlencode( $number ), $page ) );
 			exit;
 		}
-		$this->standaloneStatus();
+		$this->standalone( $this->orderStatus( array() ) );
 		exit;
 	}
 
 	/**
-	 * A minimal page with the Order Status block, in the theme's styles.
+	 * A minimal page around one block's HTML, in the theme's styles (for links that work
+	 * before the store pages exist).
+	 *
+	 * @param string $html Block HTML, already escaped.
 	 */
-	private function standaloneStatus(): void {
-		$status = $this->orderStatus( array() );
+	public function standalone( string $html ): void {
 		status_header( 200 );
 		header( 'Content-Type: text/html; charset=' . get_option( 'blog_charset' ) );
 		echo '<!doctype html><html ';
@@ -454,7 +460,7 @@ final class Store {
 		echo '</head><body class="' . esc_attr( implode( ' ', get_body_class( 'invoiceninja-standalone' ) ) ) . '">';
 		wp_body_open();
 		echo '<main style="max-width:720px;margin:0 auto;padding:32px 16px">';
-		echo $status; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts by orderStatus().
+		echo $html; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- built from escaped parts by the block's render function.
 		echo '</main>';
 		wp_footer();
 		echo '</body></html>';

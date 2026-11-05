@@ -143,6 +143,8 @@ final class Strings {
 			'confirmTitle'     => __( 'Confirm your email once', 'invoiceninja' ),
 			/* translators: %s: email address */
 			'confirmText'      => __( "We'll email a 6-digit code to %s. After that, your invoices appear here.", 'invoiceninja' ),
+			/* translators: %s: email address */
+			'confirmBack'      => __( "We'll email a 6-digit code to %s. After that, we'll take you back to finish your order.", 'invoiceninja' ),
 			'sendCode'         => __( 'Send code', 'invoiceninja' ),
 			'noHistory'        => __( 'Nothing here yet. Your invoices and payments appear here after your first order.', 'invoiceninja' ),
 			'portalPassword'   => __( "You'll be asked for your billing portal password.", 'invoiceninja' ),

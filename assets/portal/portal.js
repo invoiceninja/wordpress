@@ -74,6 +74,8 @@
 
 	function initAccount( root ) {
 		const wanted = ( root.getAttribute( 'data-tabs' ) || '' ).split( ',' ).filter( Boolean );
+		// Set by the server to a page on this site only (e.g. the product the customer wanted).
+		const back = root.getAttribute( 'data-return' ) || '';
 		const params = new URLSearchParams( window.location.search );
 		const paint = ( nodes ) => {
 			root.textContent = '';
@@ -89,7 +91,7 @@
 					box.appendChild( notice( message.type, message.text ) );
 				}
 				if ( step === 'start' ) {
-					box.appendChild( el( 'p', { text: fmt( t.confirmText, me.email ) } ) );
+					box.appendChild( el( 'p', { text: fmt( back ? t.confirmBack : t.confirmText, me.email ) } ) );
 					box.appendChild( el( 'p', { class: 'invoiceninja-actions' }, el( 'button', { type: 'button', class: 'wp-element-button', onClick: send }, t.sendCode ) ) );
 					return;
 				}
@@ -110,6 +112,11 @@
 			};
 			const confirm = async ( code ) => {
 				const r = await api( 'POST', '/account/verify/confirm', { code } );
+				if ( r.ok && back ) {
+					paint( [ notice( 'info', t.verified ) ] );
+					window.location.assign( back );
+					return;
+				}
 				if ( r.ok ) {
 					load( t.verified );
 					return;
@@ -207,6 +214,11 @@
 			}
 			if ( ! me.verified ) {
 				paint( top.concat( [ verifyBox( me ) ] ) );
+				return;
+			}
+			if ( back && ! message ) {
+				// Already confirmed (e.g. in another tab): straight back.
+				window.location.assign( back );
 				return;
 			}
 			if ( ! me.linked ) {
