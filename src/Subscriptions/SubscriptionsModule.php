@@ -138,10 +138,8 @@ final class SubscriptionsModule implements Module {
 		if ( ! $this->enabled() ) {
 			add_action(
 				'action_scheduler_init',
-				static function (): void {
-					if ( function_exists( 'as_has_scheduled_action' ) && as_has_scheduled_action( SubscriptionSync::HOOK, null, \InvoiceNinja\Core\Queue::GROUP ) ) {
-						as_unschedule_all_actions( SubscriptionSync::HOOK, array(), \InvoiceNinja\Core\Queue::GROUP );
-					}
+				function (): void {
+					$this->plugin->queue->stopRecurring( SubscriptionSync::HOOK );
 				}
 			);
 			return;
@@ -356,7 +354,12 @@ final class SubscriptionsModule implements Module {
 			if ( $on ) {
 				$result = $this->configurator->connect( $id );
 				if ( ! $result['ok'] ) {
-					return Routes::fail( $result['code'], $result['message'], 'other_wordpress' === $result['code'] || 'paused' === $result['code'] ? 409 : 502 );
+					$http = match ( $result['code'] ) {
+						'other_wordpress', 'paused' => 409,
+						'unreachable'               => 422,
+						default                     => 502,
+					};
+					return Routes::fail( $result['code'], $result['message'], $http );
 				}
 				$message = $result['message'];
 			} elseif ( ! $this->configurator->disconnect( $id ) ) {

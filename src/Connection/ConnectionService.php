@@ -98,7 +98,8 @@ final class ConnectionService {
 			$status['version'] = array( 'pass', sprintf( __( '%1$s (needs %2$s or newer)', 'invoiceninja' ), $version, HttpClient::MIN_VERSION ) );
 
 			// Only admins with API access may create webhooks, so an invalid create is a safe probe:
-			// 422 means allowed, 403 means not an admin. Nothing is created either way.
+			// 422 means allowed; "This action is unauthorized." (401, or 403) means not an admin
+			// (the token itself just worked for companies/current). Nothing is created either way.
 			$admin = false;
 			try {
 				$client->post( 'webhooks', array(), array(), 10.0 );
@@ -112,7 +113,7 @@ final class ConnectionService {
 			}
 			if ( ! $admin ) {
 				$status['admin'] = array( 'fail', __( 'Not an admin', 'invoiceninja' ) );
-				throw new ApiException( ErrorKind::NonAdmin, 'POST /webhooks → 403' );
+				throw new ApiException( ErrorKind::NonAdmin, 'POST /webhooks → ' . $probe->getMessage() );
 			}
 			$status['admin']    = array( 'pass', __( 'Can see every product and client', 'invoiceninja' ) );
 			$status['webhooks'] = array( 'pass', __( 'Changes in Invoice Ninja reach this site within seconds', 'invoiceninja' ) );

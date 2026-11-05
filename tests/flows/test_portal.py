@@ -216,3 +216,14 @@ def pay_invoice_ignores_autofill_and_quote_form_captchas():
     finally:
         wp('option', 'delete', 'in_mock_captcha_fail', check_ok=False)
     check(len(mails('a+b@x.com')) == 1, 'and the payment link is sent', describe(api_calls()))
+
+
+@test
+def array_query_parameters_do_not_break_pages():
+    # ?return[]=x is an array: PHP 8 throws a TypeError when it reaches a string function
+    status, _, _ = member().get('/?invoiceninja=verify&return[]=x')
+    check(status in (200, 302), 'the confirm-email page still loads', status)
+    html = wp_eval("$_GET['invoiceninja_return'] = array('x'); echo InvoiceNinja\\Plugin::instance()->module('portal')->account->render(array());")
+    check('data-invoiceninja-account' in html and 'data-return' not in html, 'the Account block ignores an array return address', html[:300])
+    status, _, _ = Browser().get('/?invoiceninja=subscribe&s=SUBM&email[]=x')
+    check(status < 500, 'the subscribe link still answers', status)

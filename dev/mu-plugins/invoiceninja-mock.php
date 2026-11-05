@@ -9,6 +9,7 @@
  *   in_mock_live_stock      "P1:1" stock returned by GET products/{id} (changed since the sync)
  *   in_mock_slow_stock      1: GET products/{id} times out
  *   in_mock_calculate_taxes 1: the company calculates taxes from the client's address
+ *                           (new invoices then get 19% on every line, ignoring the lines' own rates)
  *   in_mock_inclusive_taxes 1: the company's prices include tax
  *   in_mock_checkout_min_seconds  seconds from the first add to checkout (the flows set 0)
  *   in_mock_captcha_fail    1: a quote-form CAPTCHA (invoiceninja_captcha, ignoring its context) refuses everyone
@@ -133,10 +134,11 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
 
     $route = substr( $url, strlen( IN_MOCK_BASE ) );
 
-    // 2.0: admin probe (an invalid webhook create: 422 for admins, 403 for others)
+    // 2.0: admin probe (an invalid webhook create: 422 for admins; for others 401 "This action
+    // is unauthorized.", like Invoice Ninja 5.13)
     if ( $route === 'webhooks' && $method === 'POST' ) {
         return strpos( $token, 'nonadmin' ) === 0
-            ? in_mock_response( [ 'message' => 'This action is unauthorized.' ], 403 )
+            ? in_mock_response( [ 'message' => 'This action is unauthorized.' ], 401 )
             : in_mock_response( [ 'message' => 'The given data was invalid.', 'errors' => [ 'target_url' => [ 'required' ] ] ], 422 );
     }
 
@@ -204,7 +206,11 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         for ( $i = 3; $i <= (int) get_option( 'in_mock_many', 0 ); $i++ ) {
             $products[] = in_mock_product( 'P' . $i, 'Extra ' . $i, 5 + $bump, 0, 0 );
         }
+        $stock_all = get_option( 'in_mock_stock_all', '' ); // Every product sold some: only the stock changed
         foreach ( $products as &$product ) {
+            if ( '' !== (string) $stock_all ) {
+                $product['in_stock_quantity'] = (int) $stock_all;
+            }
             $product['updated_at']  = 1700000000;
             $product['archived_at'] = in_array( $product['id'], $archived, true ) ? 1700000000 : 0;
             $product['is_deleted']  = false;
@@ -249,6 +255,10 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         $invoices = get_option( 'in_mock_invoices', [] );
         $changed  = [];
         foreach ( (array) ( $data['ids'] ?? [] ) as $id ) {
+            // Like the real API: a deleted, cancelled or reversed invoice can't be cancelled
+            if ( isset( $invoices[ $id ] ) && ( $data['action'] ?? '' ) === 'cancel' && ( ! empty( $invoices[ $id ]['is_deleted'] ) || in_array( (string) $invoices[ $id ]['status_id'], [ '5', '6' ], true ) ) ) {
+                return in_mock_response( [ 'message' => 'The given data was invalid.', 'errors' => [ 'action' => [ 'This invoice cannot be cancelled' ] ] ], 422 );
+            }
             if ( isset( $invoices[ $id ] ) && ( $data['action'] ?? '' ) === 'cancel' ) {
                 $invoices[ $id ]['status_id'] = '5';
                 $changed[] = $invoices[ $id ];
@@ -267,9 +277,17 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         $invoices = get_option( 'in_mock_invoices', [] );
         $n        = count( $invoices ) + 1;
         $amount   = 0;
+        // Like Invoice Ninja: each line's tax rates, or its own rate when it calculates taxes
+        $own_tax   = get_option( 'in_mock_calculate_taxes' ) ? 19.0 : null;
+        $inclusive = ! empty( $data['uses_inclusive_taxes'] );
         foreach ( $data['line_items'] ?? [] as $line ) {
-            $amount += (float) $line['cost'] * (float) $line['quantity'];
+            $net     = round( (float) $line['cost'] * (float) $line['quantity'], 2 );
+            $amount += $net;
+            foreach ( null !== $own_tax ? [ $own_tax ] : [ $line['tax_rate1'] ?? 0, $line['tax_rate2'] ?? 0, $line['tax_rate3'] ?? 0 ] as $rate ) {
+                $amount += $inclusive ? 0 : round( $net * (float) $rate / 100, 2 );
+            }
         }
+        $amount = round( $amount, 2 );
         $client_id = (string) ( $data['client_id'] ?? '' );
         $contact   = $client_id === 'NEWCLIENT' ? 'NC1' : 'C1';
         $mine      = [ 'key' => 'INVITE' . $n, 'client_contact_id' => $contact, 'link' => 'https://in.test/client/invoice/INVITE' . $n ];
@@ -309,6 +327,17 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             return in_mock_response( [ 'message' => 'Not found' ], 404 );
         }
         $invoice = $invoices[ $m[1] ];
+        // Changed in Invoice Ninja since: in_mock_invoice_state ("INV1:cancelled", "INV1:deleted")
+        foreach ( array_filter( explode( ',', (string) get_option( 'in_mock_invoice_state', '' ) ) ) as $pair ) {
+            [ $sid, $what ] = array_pad( explode( ':', $pair ), 2, '' );
+            if ( $sid === $invoice['id'] ) {
+                if ( 'deleted' === $what ) {
+                    $invoice['is_deleted'] = true; // Soft-deleted: still 200, like the real API
+                } elseif ( 'cancelled' === $what ) {
+                    $invoice['status_id'] = '5';
+                }
+            }
+        }
         if ( in_array( $invoice['id'], (array) get_option( 'in_mock_paid', [] ), true ) ) {
             $invoice['status_id']    = '4';
             $invoice['balance']      = 0;

@@ -7,6 +7,7 @@
  *   in_mock_subscription_config   id => webhook_configuration (what Invoice Ninja has stored; PUT updates it)
  *   in_mock_subscription_fields   id => fields merged into that subscription (e.g. trial_enabled)
  *   in_mock_subscription_put_fail 1: PUT subscriptions/{id} fails with a 500
+ *   in_mock_subscription_bad_url  1: PUT refuses the callback address (a private one), like Invoice Ninja
  *   in_mock_recurring             id => recurring invoice
  *   in_mock_relay_fail            1: https://relay.test answers 500
  *   in_mock_legacy_reply          JSON reply of https://legacy.test/hook (default {"message":"Success"})
@@ -119,6 +120,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         if ( $method === 'PUT' ) {
             if ( get_option( 'in_mock_subscription_put_fail' ) ) {
                 return $reply( [ 'message' => 'Server Error' ], 500 );
+            }
+            if ( get_option( 'in_mock_subscription_bad_url' ) ) {
+                return $reply( [ 'message' => 'The given data was invalid.', 'errors' => [ 'webhook_configuration.post_purchase_url' => [ 'Invalid URL' ] ] ], 422 );
             }
             $body = json_decode( $raw, true ) ?: [];
             if ( empty( $body['steps'] ) ) {

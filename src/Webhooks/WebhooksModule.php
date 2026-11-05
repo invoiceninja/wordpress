@@ -113,8 +113,8 @@ final class WebhooksModule implements Module {
 		$polling = 'none' !== $this->plugin->credentials->source() && 'instant' !== $this->registrar->state()['mode'];
 		if ( $polling ) {
 			$this->plugin->queue->recurring( Poller::HOOK, Poller::INTERVAL );
-		} elseif ( function_exists( 'as_has_scheduled_action' ) && as_has_scheduled_action( Poller::HOOK, null, Queue::GROUP ) ) {
-			as_unschedule_all_actions( Poller::HOOK, array(), Queue::GROUP );
+		} else {
+			$this->plugin->queue->stopRecurring( Poller::HOOK );
 		}
 	}
 

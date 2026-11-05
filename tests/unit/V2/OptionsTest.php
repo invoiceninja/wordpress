@@ -86,4 +86,112 @@ class OptionsTest extends TestCase
         $this->assertContains( 'invoiceninja_settings', $left );
         $this->assertGreaterThanOrEqual( 4, $fake->queries, 'in batches' );
     }
+
+    /** A wpdb stand-in for one option row; the replica answers 0 to SELECT LAST_INSERT_ID(). */
+    private function splitDb( array $rows )
+    {
+        return new class( $rows ) {
+            public $options = 'wp_options';
+            public $rows;
+            public $rows_affected = 0;
+            public $selects = [];
+            public function __construct( $rows ) { $this->rows = $rows; }
+            public function prepare( $q, ...$a ) { return [ $q, $a ]; }
+            public function query( $p ) {
+                [ $q, $a ] = $p;
+                $this->rows_affected = 0;
+                if ( str_starts_with( $q, 'INSERT IGNORE' ) && ! isset( $this->rows[ $a[0] ] ) ) {
+                    $this->rows[ $a[0] ]  = $a[1];
+                    $this->rows_affected = 1;
+                } elseif ( str_contains( $q, 'LAST_INSERT_ID(option_value + 1)' ) && isset( $this->rows[ $a[0] ] ) ) {
+                    $this->rows[ $a[0] ]  = (string) ( (int) $this->rows[ $a[0] ] + 1 );
+                    $this->rows_affected = 1;
+                } elseif ( str_starts_with( $q, 'UPDATE' ) && 3 === count( $a ) && ( $this->rows[ $a[1] ] ?? null ) === $a[2] ) {
+                    $this->rows[ $a[1] ]  = $a[0];
+                    $this->rows_affected = 1;
+                } elseif ( str_starts_with( $q, 'DELETE' ) && ( $this->rows[ $a[0] ] ?? null ) === $a[1] ) {
+                    unset( $this->rows[ $a[0] ] );
+                    $this->rows_affected = 1;
+                }
+                return $this->rows_affected;
+            }
+            public function get_var( $p ) {
+                $this->selects[] = is_array( $p ) ? $p[0] : $p;
+                if ( 'SELECT LAST_INSERT_ID()' === $p ) {
+                    return '0'; // Routed to a replica: another connection.
+                }
+                return $this->rows[ $p[1][0] ] ?? null;
+            }
+        };
+    }
+
+    private function stubCache( array &$cache ): void
+    {
+        Functions\when( 'wp_cache_get' )->alias( function ( $k, $g ) use ( &$cache ) { return $cache[ $g . ':' . $k ] ?? false; } );
+        Functions\when( 'wp_cache_set' )->alias( function ( $k, $v, $g ) use ( &$cache ) { $cache[ $g . ':' . $k ] = $v; return true; } );
+        Functions\when( 'wp_cache_delete' )->alias( function ( $k, $g ) use ( &$cache ) { unset( $cache[ $g . ':' . $k ] ); return true; } );
+    }
+
+    public function testCountersStillCountWhenLastInsertIdGoesToAReplica()
+    {
+        global $wpdb;
+        $cache = [];
+        $this->stubCache( $cache );
+        $wpdb = $this->splitDb( [] );
+        try {
+            $options = new Options();
+            $this->assertSame( 1, $options->increment( 'ctr_x_1' ) );
+            $this->assertSame( 2, $options->increment( 'ctr_x_1' ) );
+            $this->assertSame( 3, $options->increment( 'ctr_x_1' ), 'not stuck at 1 when the replica says 0' );
+            $this->assertSame( 4, Options::bump( 'invoiceninja_ctr_x_1' ) );
+            $this->assertSame( 0, Options::bump( 'invoiceninja_missing' ), 'no row, no value' );
+        } finally {
+            $wpdb = null;
+        }
+    }
+
+    public function testInsertIdIsReadFromTheConnectionThatRanTheUpdate()
+    {
+        $this->assertSame( 0, Options::insertId( new \stdClass() ), 'no connection' );
+        $db      = new \stdClass();
+        $db->dbh = 'not mysqli';
+        $this->assertSame( 0, Options::insertId( $db ) );
+    }
+
+    public function testAddingACounterKeepsTheAutoloadedOptionsCache()
+    {
+        global $wpdb;
+        $cache = [
+            'options:alloptions' => [ 'blogname' => 'Shop' ],
+            'options:notoptions' => [ 'invoiceninja_ctr_y_1' => true, 'other' => true ],
+        ];
+        $this->stubCache( $cache );
+        $wpdb = $this->splitDb( [] );
+        try {
+            ( new Options() )->increment( 'ctr_y_1' );
+        } finally {
+            $wpdb = null;
+        }
+        $this->assertSame( [ 'blogname' => 'Shop' ], $cache['options:alloptions'], 'counters are not autoloaded' );
+        $this->assertSame( [ 'other' => true ], $cache['options:notoptions'], 'only the new option is no longer "missing"' );
+    }
+
+    public function testLocksAreReplacedAndReleasedOnlyByTheirOwner()
+    {
+        global $wpdb;
+        $cache = [];
+        $this->stubCache( $cache );
+        $wpdb = $this->splitDb( [ 'invoiceninja_lock' => 'a' ] );
+        try {
+            $options = new Options();
+            $this->assertFalse( $options->replaceAtomic( 'lock', 'b', 'c' ) );
+            $this->assertTrue( $options->replaceAtomic( 'lock', 'a', 'c' ) );
+            $this->assertFalse( $options->deleteIf( 'lock', 'a' ), 'the old owner no longer holds it' );
+            $this->assertSame( 'c', $wpdb->rows['invoiceninja_lock'] );
+            $this->assertTrue( $options->deleteIf( 'lock', 'c' ) );
+            $this->assertArrayNotHasKey( 'invoiceninja_lock', $wpdb->rows );
+        } finally {
+            $wpdb = null;
+        }
+    }
 }

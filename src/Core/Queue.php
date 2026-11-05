@@ -26,6 +26,17 @@ final class Queue {
 	public const PARKED = 'invoiceninja_parked_jobs';
 
 	/**
+	 * Sites eachSite() visits at most (network activation and deactivation must finish).
+	 */
+	public const MAX_SITES = 500;
+
+	/**
+	 * Autoloaded option remembering which recurring jobs were checked lately, so the check
+	 * (two Action Scheduler queries per job) runs about once an hour, not on every request.
+	 */
+	public const CHECKED = 'invoiceninja_recurring_checked';
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Logger $logger Logger.
@@ -88,15 +99,63 @@ final class Queue {
 	}
 
 	/**
-	 * Schedule a recurring job once.
+	 * Schedule a recurring job once. Checked at most hourly unless $verify.
 	 *
 	 * @param string $hook     Hook.
 	 * @param int    $interval Seconds.
+	 * @param bool   $verify   Check now (Repair).
 	 */
-	public function recurring( string $hook, int $interval ): void {
-		if ( self::available() && ! as_has_scheduled_action( $hook, null, self::GROUP ) ) {
+	public function recurring( string $hook, int $interval, bool $verify = false ): void {
+		if ( ! self::available() || ( ! $verify && self::checkedLately( $hook, true ) ) ) {
+			return;
+		}
+		if ( ! as_has_scheduled_action( $hook, null, self::GROUP ) ) {
 			as_schedule_recurring_action( time() + wp_rand( 60, 600 ), $interval, $hook, array(), self::GROUP );
 		}
+		self::remember( $hook, true );
+	}
+
+	/**
+	 * Remove a recurring job (a feature was turned off). Checked at most hourly.
+	 *
+	 * @param string $hook Hook.
+	 */
+	public function stopRecurring( string $hook ): void {
+		if ( ! function_exists( 'as_has_scheduled_action' ) || self::checkedLately( $hook, false ) ) {
+			return;
+		}
+		if ( as_has_scheduled_action( $hook, null, self::GROUP ) ) {
+			as_unschedule_all_actions( $hook, array(), self::GROUP );
+		}
+		self::remember( $hook, false );
+	}
+
+	/**
+	 * Whether the job was found scheduled ($on) or not within the last hour.
+	 *
+	 * @param string $hook Hook.
+	 * @param bool   $on   Scheduled.
+	 */
+	private static function checkedLately( string $hook, bool $on ): bool {
+		$checked = get_option( self::CHECKED, array() );
+		$entry   = is_array( $checked ) && is_array( $checked[ $hook ] ?? null ) ? $checked[ $hook ] : null;
+		return null !== $entry && (bool) ( $entry['on'] ?? false ) === $on && (int) ( $entry['at'] ?? 0 ) > time() - HOUR_IN_SECONDS;
+	}
+
+	/**
+	 * Remember a check.
+	 *
+	 * @param string $hook Hook.
+	 * @param bool   $on   Scheduled.
+	 */
+	private static function remember( string $hook, bool $on ): void {
+		$checked          = get_option( self::CHECKED, array() );
+		$checked          = is_array( $checked ) ? $checked : array();
+		$checked[ $hook ] = array(
+			'on' => $on,
+			'at' => time(),
+		);
+		update_option( self::CHECKED, $checked, true );
 	}
 
 	/**
@@ -165,6 +224,7 @@ final class Queue {
 			as_unschedule_all_actions( '', array(), self::GROUP );
 		}
 		delete_option( self::PARKED );
+		delete_option( self::CHECKED );
 	}
 
 	/**
@@ -202,8 +262,40 @@ final class Queue {
 		if ( function_exists( 'as_unschedule_all_actions' ) ) {
 			as_unschedule_all_actions( '', array(), self::GROUP );
 		}
+		delete_option( self::CHECKED ); // Recurring jobs are scheduled again on the next load.
 		if ( $parked ) {
 			update_option( self::PARKED, self::mergeParked( (array) get_option( self::PARKED, array() ), $parked ), false );
+		}
+	}
+
+	/**
+	 * Run $work on this site, or on every site of the network (up to MAX_SITES, the
+	 * most recently updated first) when $network is true.
+	 *
+	 * @param bool     $network Every site of the network.
+	 * @param callable $work    function(): void.
+	 */
+	public static function eachSite( bool $network, callable $work ): void {
+		if ( ! $network || ! is_multisite() || ! function_exists( 'get_sites' ) ) {
+			$work();
+			return;
+		}
+		foreach ( get_sites(
+			array(
+				'fields'   => 'ids',
+				'number'   => self::MAX_SITES,
+				'orderby'  => 'last_updated',
+				'order'    => 'DESC',
+				'archived' => 0,
+				'deleted'  => 0,
+			)
+		) as $site_id ) {
+			switch_to_blog( (int) $site_id );
+			try {
+				$work();
+			} finally {
+				restore_current_blog();
+			}
 		}
 	}
 

@@ -173,13 +173,15 @@ class PostApi {
 			$product_label = get_option( 'invoiceninja_product_label', 'Product' );
 			$slug          = strtolower( $product_label );
 
-			$query_args = array(
-				'post_type'      => 'invoiceninja_product',
-				'posts_per_page' => 5,
-				'order_by'       => 'title', // date, menu_order
-				'order'          => 'ASC',
+			// The admin menu entry shows once there are products; only admin screens need to know.
+			$has_products = is_admin() && (bool) get_posts(
+				array(
+					'post_type'      => 'invoiceninja_product',
+					'posts_per_page' => 1,
+					'fields'         => 'ids',
+					'no_found_rows'  => true,
+				)
 			);
-			$query      = new \WP_Query( $query_args );
 
 			register_post_type(
 				$type['id'],
@@ -189,7 +191,7 @@ class PostApi {
 						'singular_name' => $type['singular_name'],
 					],
 					'hierarchical' => true,
-					'show_in_menu' => $query->have_posts(),
+					'show_in_menu' => $has_products,
 					'public'       => true,
 					'has_archive'  => true,
 					'menu_icon'    => 'dashicons-products',

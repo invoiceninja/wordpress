@@ -95,6 +95,7 @@ abstract class TestCase extends PolyfillTestCase
         } );
         Functions\when( 'get_current_user_id' )->justReturn( 1 );
         Functions\when( 'do_action' )->justReturn( null );
+        Functions\when( 'is_multisite' )->justReturn( false );
         $this->transients = [];
         $this->mails      = [];
         Functions\when( 'get_transient' )->alias( function ( $name ) {

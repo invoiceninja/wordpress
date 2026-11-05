@@ -67,24 +67,39 @@ require_once __DIR__ . '/vendor/woocommerce/action-scheduler/action-scheduler.ph
 
 register_activation_hook(
 	__FILE__,
-	function () {
-		update_option( 'invoiceninja_flush_rewrite', 1 );
+	function ( $network_wide = false ) {
 		if ( \InvoiceNinja\Plugin::booted() ) {
 			\InvoiceNinja\Plugin::instance()->installer->maybeUpgrade();
 		}
-		// Jobs set aside at deactivation go back once Action Scheduler is running (a moment later, from cron).
-		if ( get_option( \InvoiceNinja\Core\Queue::PARKED ) && ! wp_next_scheduled( 'invoiceninja_restore_jobs' ) ) {
-			wp_schedule_single_event( time(), 'invoiceninja_restore_jobs' );
-		}
+		// Every site of the network when activated for the network (each upgrades on its next request).
+		\InvoiceNinja\Core\Queue::eachSite(
+			(bool) $network_wide,
+			function () {
+				update_option( 'invoiceninja_flush_rewrite', 1 );
+				// Jobs set aside at deactivation go back once Action Scheduler is running (a moment later, from cron).
+				if ( get_option( \InvoiceNinja\Core\Queue::PARKED ) && ! wp_next_scheduled( 'invoiceninja_restore_jobs' ) ) {
+					wp_schedule_single_event( time(), 'invoiceninja_restore_jobs' );
+				}
+			}
+		);
 	}
 );
 
 register_deactivation_hook(
 	__FILE__,
-	function () {
-		// Queued orders and other one-off jobs are kept aside and put back on reactivation.
-		\InvoiceNinja\Core\Queue::park();
-		wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
+	function ( $network_wide = false ) {
+		// Queued orders and other one-off jobs are kept aside and put back on reactivation,
+		// on every site when deactivated for the network.
+		\InvoiceNinja\Core\Queue::eachSite(
+			(bool) $network_wide,
+			function () {
+				if ( false === get_option( 'invoiceninja_version', false ) ) {
+					return; // The plugin never ran on this site.
+				}
+				\InvoiceNinja\Core\Queue::park();
+				wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
+			}
+		);
 		flush_rewrite_rules();
 	}
 );

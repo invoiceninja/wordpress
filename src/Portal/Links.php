@@ -54,13 +54,14 @@ final class Links {
 	 * @return array{client_id: string, contact_id: string}|null
 	 */
 	public function get( int $user_id ): ?array {
-		$client = (string) get_user_meta( $user_id, self::CLIENT, true );
+		$client = UserData::get( $user_id, self::CLIENT );
 		if ( '' === $client || ! $this->boundToEmail( $user_id ) ) {
 			return null;
 		}
+		UserData::adopt( $user_id, array( self::CLIENT, self::CONTACT, self::EMAIL ) );
 		return array(
 			'client_id'  => $client,
-			'contact_id' => (string) get_user_meta( $user_id, self::CONTACT, true ),
+			'contact_id' => UserData::get( $user_id, self::CONTACT ),
 		);
 	}
 
@@ -93,9 +94,9 @@ final class Links {
 	 * @param int $user_id User id.
 	 */
 	public function clear( int $user_id ): void {
-		delete_user_meta( $user_id, self::CLIENT );
-		delete_user_meta( $user_id, self::CONTACT );
-		delete_user_meta( $user_id, self::EMAIL );
+		UserData::delete( $user_id, self::CLIENT );
+		UserData::delete( $user_id, self::CONTACT );
+		UserData::delete( $user_id, self::EMAIL );
 		foreach ( Account::TABS as $tab ) {
 			delete_transient( 'invoiceninja_acct_' . $user_id . '_' . $tab );
 		}
@@ -108,7 +109,7 @@ final class Links {
 	 * @return bool Whether a link was removed.
 	 */
 	public function clearStale( int $user_id ): bool {
-		if ( '' === (string) get_user_meta( $user_id, self::CLIENT, true ) || $this->boundToEmail( $user_id ) ) {
+		if ( '' === UserData::get( $user_id, self::CLIENT ) || $this->boundToEmail( $user_id ) ) {
 			return false;
 		}
 		$this->clear( $user_id );
@@ -312,9 +313,9 @@ final class Links {
 		if ( ! $user ) {
 			return;
 		}
-		update_user_meta( $user_id, self::CLIENT, sanitize_text_field( $client_id ) );
-		update_user_meta( $user_id, self::CONTACT, sanitize_text_field( $contact_id ) );
-		update_user_meta( $user_id, self::EMAIL, $this->hash( (string) $user->user_email ) );
+		UserData::set( $user_id, self::CLIENT, sanitize_text_field( $client_id ) );
+		UserData::set( $user_id, self::CONTACT, sanitize_text_field( $contact_id ) );
+		UserData::set( $user_id, self::EMAIL, $this->hash( (string) $user->user_email ) );
 	}
 
 	/**
@@ -324,7 +325,7 @@ final class Links {
 	 */
 	private function boundToEmail( int $user_id ): bool {
 		$user   = $user_id > 0 ? get_userdata( $user_id ) : false;
-		$stored = (string) get_user_meta( $user_id, self::EMAIL, true );
+		$stored = UserData::get( $user_id, self::EMAIL );
 		return $user && '' !== $stored && hash_equals( $this->hash( (string) $user->user_email ), $stored );
 	}
 
@@ -362,12 +363,7 @@ final class Links {
 				'number'      => $limit,
 				'exclude'     => $skip,
 				'orderby'     => 'ID',
-				'meta_query'  => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- background export only.
-					array(
-						'key'     => self::CLIENT,
-						'compare' => 'NOT EXISTS',
-					),
-				),
+				'meta_query'  => UserData::missingQuery( self::CLIENT ), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- background export only.
 				'count_total' => false,
 			)
 		);

@@ -180,7 +180,12 @@ final class Cart {
 	 * price, or backed out of it when the company's prices include tax.
 	 *
 	 * @param array<string, int> $items Items.
-	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>, inclusive: bool}
+	 * When Invoice Ninja calculates taxes from the buyer's address (the company's
+	 * "calculate taxes"), it ignores the products' tax rates and applies its own, so no tax
+	 * is claimed here: the total is before tax and tax_later says it's added on the
+	 * payment page (the invoice).
+	 *
+	 * @return array{lines: list<array<string, mixed>>, subtotal: float, tax: float, total: float, count: int, changed: list<string>, inclusive: bool, tax_later: bool}
 	 */
 	public function summary( array $items ): array {
 		$lines     = array();
@@ -189,6 +194,7 @@ final class Cart {
 		$taxes     = 0.0;
 		$changed   = array();
 		$inclusive = $this->inclusiveTaxes();
+		$later     = self::taxesByInvoiceNinja();
 		foreach ( $items as $product => $quantity ) {
 			$info = $this->product( (string) $product );
 			if ( null === $info ) {
@@ -204,7 +210,7 @@ final class Cart {
 				$changed[] = (string) $product;
 			}
 			$line      = round( $info['price'] * $qty, 2 );
-			$tax       = self::taxFor( $line, array( (float) $info['tax']['tax_rate1'], (float) $info['tax']['tax_rate2'], (float) $info['tax']['tax_rate3'] ), $inclusive );
+			$tax       = $later ? 0.0 : self::taxFor( $line, array( (float) $info['tax']['tax_rate1'], (float) $info['tax']['tax_rate2'], (float) $info['tax']['tax_rate3'] ), $inclusive );
 			$subtotal += $line;
 			$taxes    += $tax;
 			$total    += $inclusive ? $line : $line + $tax;
@@ -230,7 +236,17 @@ final class Cart {
 			'count'     => (int) array_sum( array_column( $lines, 'quantity' ) ),
 			'changed'   => $changed,
 			'inclusive' => $inclusive,
+			'tax_later' => $later,
 		);
+	}
+
+	/**
+	 * Whether Invoice Ninja works out the tax itself (the company's "calculate taxes"),
+	 * from the buyer's address, when the invoice is created.
+	 */
+	public static function taxesByInvoiceNinja(): bool {
+		$state = get_option( 'invoiceninja_connection', array() );
+		return is_array( $state ) && ! empty( $state['company']['calculate_taxes'] );
 	}
 
 	/**

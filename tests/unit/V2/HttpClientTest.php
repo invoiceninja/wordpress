@@ -69,6 +69,8 @@ class HttpClientTest extends TestCase
             'locked'          => [ 403, [ 'message' => 'User access locked' ], [], ErrorKind::Auth ],
             'free plan'       => [ 403, [ 'message' => 'Feature not available with free / unpaid account.' ], [], ErrorKind::PlanRequired ],
             'other 403'       => [ 403, [ 'message' => 'This action is unauthorized.' ], [], ErrorKind::Forbidden ],
+            'policy 401'      => [ 401, [ 'message' => 'This action is unauthorized.' ], [], ErrorKind::Forbidden ],
+            'unauthenticated' => [ 401, [ 'message' => 'Unauthenticated.' ], [], ErrorKind::Auth ],
             'not found'       => [ 404, [], [], ErrorKind::NotFound ],
             'validation'      => [ 422, [ 'message' => 'The given data was invalid.', 'errors' => [ 'email' => [ 'bad' ] ] ], [], ErrorKind::Validation ],
             'duplicate'       => [ 429, [ 'message' => 'Duplicate request' ], [], ErrorKind::Duplicate ],

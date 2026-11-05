@@ -60,15 +60,8 @@ final class OrderNumbers {
 	 * Atomically increment the stored sequence and return the new value.
 	 */
 	private function increment(): int {
-		global $wpdb;
-		$name = Options::PREFIX . 'order_sequence';
 		$this->options->addAtomic( 'order_sequence', (string) self::START );
-		// LAST_INSERT_ID(expr) makes the incremented value readable on this connection only.
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = LAST_INSERT_ID(option_value + 1) WHERE option_name = %s", $name ) );
-		$value = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		wp_cache_delete( $name, 'options' );
-		wp_cache_delete( 'alloptions', 'options' );
+		$value = Options::bump( Options::PREFIX . 'order_sequence' );
 		return $value > self::START ? $value : self::START + 1;
 	}
 }

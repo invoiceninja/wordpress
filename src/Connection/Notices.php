@@ -79,6 +79,17 @@ final class Notices {
 		if ( ! $configured ) {
 			return;
 		}
+		$paused = $this->plugin->options->get( 'sync_paused' );
+		if ( is_array( $paused ) ) {
+			$this->notice(
+				'warning',
+				__( 'Product sync is paused', 'invoiceninja' ),
+				/* translators: 1: products that would change, 2: all products */
+				sprintf( __( '%1$d of %2$d products would change at once. Prices and products stay as they are until you review the changes.', 'invoiceninja' ), (int) ( $paused['changes'] ?? 0 ), (int) ( $paused['total'] ?? 0 ) ),
+				admin_url( 'admin.php?page=invoiceninja-status' ),
+				__( 'Review', 'invoiceninja' )
+			);
+		}
 		$environment = $this->plugin->environment;
 		$confirmed   = $environment->state();
 		if ( null !== $confirmed && '' === $confirmed['fingerprint'] ) {

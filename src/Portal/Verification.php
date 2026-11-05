@@ -60,8 +60,11 @@ final class Verification {
 		if ( ! $user ) {
 			return false;
 		}
-		$verified = '' !== (string) get_user_meta( $user_id, self::AT, true )
-			&& hash_equals( (string) get_user_meta( $user_id, self::EMAIL, true ), $this->hash( (string) $user->user_email ) );
+		$verified = '' !== UserData::get( $user_id, self::AT )
+			&& hash_equals( UserData::get( $user_id, self::EMAIL ), $this->hash( (string) $user->user_email ) );
+		if ( $verified ) {
+			UserData::adopt( $user_id, array( self::AT, self::EMAIL, self::HOW ) );
+		}
 		/**
 		 * Whether a user's email counts as verified (e.g. a membership plugin that already
 		 * confirms emails can return true).
@@ -84,9 +87,9 @@ final class Verification {
 		if ( ! $user ) {
 			return;
 		}
-		update_user_meta( $user_id, self::AT, gmdate( 'Y-m-d H:i:s' ) );
-		update_user_meta( $user_id, self::EMAIL, $this->hash( (string) $user->user_email ) );
-		update_user_meta( $user_id, self::HOW, sanitize_key( $how ) );
+		UserData::set( $user_id, self::AT, gmdate( 'Y-m-d H:i:s' ) );
+		UserData::set( $user_id, self::EMAIL, $this->hash( (string) $user->user_email ) );
+		UserData::set( $user_id, self::HOW, sanitize_key( $how ) );
 		/**
 		 * Fires when a user's email becomes verified.
 		 *
@@ -103,9 +106,9 @@ final class Verification {
 	 * @param int $user_id User id.
 	 */
 	public function clear( int $user_id ): void {
-		delete_user_meta( $user_id, self::AT );
-		delete_user_meta( $user_id, self::EMAIL );
-		delete_user_meta( $user_id, self::HOW );
+		UserData::delete( $user_id, self::AT );
+		UserData::delete( $user_id, self::EMAIL );
+		UserData::delete( $user_id, self::HOW );
 	}
 
 	/**

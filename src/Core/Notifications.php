@@ -18,6 +18,11 @@ use InvoiceNinja\Api\ErrorKind;
 final class Notifications {
 
 	/**
+	 * Failed connection checks in a row (15 minutes apart) before admins are told.
+	 */
+	public const RECHECKS = 3;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Options $options Options.
@@ -42,6 +47,40 @@ final class Notifications {
 	public function recipients(): array {
 		$list = array_filter( array_map( 'sanitize_email', array_map( 'trim', explode( ',', (string) $this->options->setting( 'notifications.recipients' ) ) ) ) );
 		return $list ? array_values( $list ) : array( (string) get_option( 'admin_email' ) );
+	}
+
+	/**
+	 * What follows a connection check: recovered, lost (tell admins), recheck (a blip so
+	 * far: check again soon) or none.
+	 *
+	 * @param bool   $ok       Whether the check worked.
+	 * @param string $was      Status before the check.
+	 * @param string $now      Status after the check.
+	 * @param int    $failures This check's number in a row of failed checks.
+	 */
+	public static function afterCheck( bool $ok, string $was, string $now, int $failures ): string {
+		if ( $ok ) {
+			return 'recovered';
+		}
+		if ( 'connected' !== $was ) {
+			return 'none'; // Already reported, or never connected.
+		}
+		return 'connected' !== $now || $failures >= self::RECHECKS ? 'lost' : 'recheck';
+	}
+
+	/**
+	 * Seconds until the next check, or 0 to wait for the daily one: 15 minutes while it
+	 * may be a blip, then hourly for a day while the problem lasts (so the "back" email
+	 * doesn't wait a day).
+	 *
+	 * @param string $next     What afterCheck() said.
+	 * @param int    $failures Failed checks in a row so far.
+	 */
+	public static function recheckDelay( string $next, int $failures ): int {
+		if ( 'recheck' === $next ) {
+			return 15 * MINUTE_IN_SECONDS;
+		}
+		return 'lost' === $next && $failures < self::RECHECKS + 24 ? HOUR_IN_SECONDS : 0;
 	}
 
 	/**
@@ -88,6 +127,25 @@ final class Notifications {
 				'<p>' . esc_html( sprintf( _n( 'The connection works again after %d minute.', 'The connection works again after %d minutes.', $minutes, 'invoiceninja' ), $minutes ) ) . '</p>'
 			);
 		}
+	}
+
+	/**
+	 * Product sync stopped because too many products would change. Called once per incident.
+	 *
+	 * @param int $changes Products that would change.
+	 * @param int $total   Products synced so far.
+	 */
+	public function syncPaused( int $changes, int $total ): void {
+		if ( ! $this->options->setting( 'notifications.incidents' ) ) {
+			return;
+		}
+		$this->mailer->send(
+			$this->recipients(),
+			__( 'Invoice Ninja product sync is paused', 'invoiceninja' ),
+			/* translators: 1: products that would change, 2: all products */
+			'<p>' . esc_html( sprintf( __( '%1$d of %2$d products would change at once, so the sync stopped before changing anything. Prices and products on your site stay as they are until you review the changes.', 'invoiceninja' ), $changes, $total ) ) . '</p>'
+			. '<p><a href="' . esc_url( admin_url( 'admin.php?page=invoiceninja-status' ) ) . '" style="display:inline-block;background:#2271b1;color:#ffffff;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:600">' . esc_html__( 'Review the changes', 'invoiceninja' ) . '</a></p>'
+		);
 	}
 
 	/**

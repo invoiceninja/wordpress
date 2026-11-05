@@ -900,12 +900,27 @@ final class Routes {
 
 	/**
 	 * POST /sync/products — sync now; `force` applies a sync the circuit breaker stopped.
+	 * A catalog larger than one run writes syncs in the background instead (status queued).
 	 *
 	 * @param \WP_REST_Request $request Request.
 	 */
 	public function syncProducts( \WP_REST_Request $request ): \WP_REST_Response {
-		$force  = (bool) $request->get_param( 'force' );
-		$result = $this->plugin->products->run( true, $force );
+		$force = (bool) $request->get_param( 'force' );
+		if ( $this->plugin->products->large() ) {
+			$this->plugin->products->queue( true, $force );
+			$result = array(
+				'status'    => 'queued',
+				'created'   => 0,
+				'updated'   => 0,
+				'drafted'   => 0,
+				'unchanged' => 0,
+				'total'     => $this->plugin->mapping->count( 'product' ),
+				'remaining' => 0,
+				'message'   => __( 'The sync runs in the background and can take a few minutes.', 'invoiceninja' ),
+			);
+		} else {
+			$result = $this->plugin->products->run( true, $force );
+		}
 		if ( $force ) {
 			$this->plugin->logger->info( 'sync', 'Product sync applied after review' );
 		}

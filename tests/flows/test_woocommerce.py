@@ -328,6 +328,28 @@ def cancelled_and_failed_orders_cancel_their_invoice():
 
 
 @test
+def cancelling_an_order_whose_invoice_was_deleted_or_cancelled_in_invoice_ninja():
+    woo_ready()
+    # Invoice Ninja keeps a deleted invoice (200, is_deleted) and refuses to cancel it (422)
+    gone = new_order(email='cancel.gone@example.com')
+    sync(gone)
+    php("$i = get_option('in_mock_invoices'); $i['%s']['is_deleted'] = true; update_option('in_mock_invoices', $i);" % meta(gone, '_invoiceninja_invoice_id'))
+    php("wc_get_order(%d)->update_status('cancelled');" % gone)
+    reset_mock_log()
+    php("%s->invoices->cancel(%d);" % (M, gone))
+    check(not posts('invoices/bulk'), 'no cancel asked for a deleted invoice', describe(api_calls()))
+    check(meta(gone, '_invoiceninja_error') != 'validation' and meta(gone, '_invoiceninja_status') == 'cancelled', 'the order is done, not an error', (meta(gone, '_invoiceninja_status'), meta(gone, '_invoiceninja_error')))
+    # Cancelled there already (e.g. by hand)
+    done = new_order(email='cancel.done@example.com')
+    sync(done)
+    php("$i = get_option('in_mock_invoices'); $i['%s']['status_id'] = '5'; update_option('in_mock_invoices', $i);" % meta(done, '_invoiceninja_invoice_id'))
+    php("wc_get_order(%d)->update_status('cancelled');" % done)
+    reset_mock_log()
+    php("%s->invoices->cancel(%d);" % (M, done))
+    check(not posts('invoices/bulk') and meta(done, '_invoiceninja_status') == 'cancelled', 'an already cancelled invoice counts as cancelled', describe(api_calls()))
+
+
+@test
 def order_edits_update_the_invoice_unless_invoices_are_locked():
     woo_ready()
     order_id = new_order(email='edit@example.com', quantity=1)

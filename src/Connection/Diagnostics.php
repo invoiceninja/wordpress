@@ -280,7 +280,7 @@ final class Diagnostics {
 		$done[] = __( 'Checked the database tables', 'invoiceninja' );
 		delete_option( 'invoiceninja_install_lock' );
 		if ( Queue::available() ) {
-			$this->plugin->queue->recurring( 'invoiceninja_daily', DAY_IN_SECONDS );
+			$this->plugin->queue->recurring( 'invoiceninja_daily', DAY_IN_SECONDS, true );
 			$done[] = __( 'Checked the scheduled jobs', 'invoiceninja' );
 		}
 		if ( $this->plugin->credentials->encryptLegacyToken() ) {

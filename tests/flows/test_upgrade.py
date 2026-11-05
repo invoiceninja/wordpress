@@ -107,9 +107,19 @@ def live_1x_shop_keeps_taking_orders_and_paused_copies_are_visible():
         out = wp_eval(SAVE + "add_filter('pre_option_home', function () { return 'https://dev-tools.com'; });"
                       + "$e = new InvoiceNinja\\Core\\Environment(InvoiceNinja\\Plugin::instance()->options); echo $e->looksLive() ? 'live' : 'copy';")
         check(out == 'live', 'a word like dev in the domain name is not a staging copy', out)
-        out = wp_eval(SAVE + AS_1X + "add_filter('pre_option_home', function () { return 'https://staging.example.com'; });"
-                      + "$p = InvoiceNinja\\Plugin::instance(); $p->installer->maybeUpgrade(); echo $p->environment->writesAllowed() ? 'allowed' : 'paused';")
+        out = wp_eval(SAVE + AS_1X + "add_filter('pre_option_home', function () { return 'https://shop.example.com'; });"
+                      + "$p = InvoiceNinja\\Plugin::instance(); $p->installer->maybeUpgrade(); echo $p->environment->state() ? 'allowed' : 'paused';")
         check(out == 'allowed', 'a 1.x site keeps taking orders after the update, as in 1.x', out)
+        restore()
+        out = wp_eval(SAVE + AS_1X + "add_filter('pre_option_home', function () { return 'https://staging-shop.example.com'; });"
+                      + "$p = InvoiceNinja\\Plugin::instance(); $p->installer->maybeUpgrade(); echo $p->environment->writesAllowed() ? 'allowed' : 'paused';")
+        check(out == 'paused', 'a staging address waits for an admin, even from 1.x', out)
+        restore()
+        # 2.0.1 allowed orders on a staging copy of a site that came from 1.x: undone
+        out = wp_eval(SAVE + "add_filter('pre_option_home', function () { return 'https://staging.example.com'; });"
+                      + "update_option('invoiceninja_upgraded_from', '1.x'); update_option('invoiceninja_version', '2.0.1'); update_option('invoiceninja_schema_version', 10);"
+                      + "$p = InvoiceNinja\\Plugin::instance(); $p->environment->confirm(0); $p->installer->maybeUpgrade(); echo $p->environment->writesAllowed() ? 'allowed' : 'paused';")
+        check(out == 'paused', "2.0.1's automatic approval of a staging copy is undone", out)
         # localhost looks like a copy: an admin sees that orders are paused
         wp_eval("delete_option('invoiceninja_environment');")
         _, _, html = Browser().login('admin', 'admin').get('/wp-admin/')

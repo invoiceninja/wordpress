@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '10', 'schema at 10', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '11', 'schema at 11', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -47,7 +47,7 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '10', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '11', 'all migrations ran')
     profile = wp('option', 'get', 'invoiceninja_profile')
     check('Mock Company' in profile and 'ck_legacy_key' not in profile and 'pm_legacy_secret' not in profile,
           'the 1.x company profile keeps only its allowlist', profile)
@@ -300,9 +300,21 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
     option('in_mock_many', '12')
     try:
         sync(b)  # adds the extra products (new products don't trip the breaker on a small catalog)
+        # Every product sold some: Invoice Ninja changed only the stock, which shoppers don't see as a change
+        option('in_mock_stock_all', '1')
+        reset_mock_log()
+        r = sync(b)
+        check(r['result']['status'] == 'synced' and r['result']['updated'] >= 12 and not r['paused'], 'stock changes on every product do not pause the sync', r)
+        check(meta(product_ids()['Extra 3'][0], 'in_stock_quantity') == '1', 'the stock is stored', meta(product_ids()['Extra 3'][0], 'in_stock_quantity'))
         option('in_mock_price_bump', '7')
         r = sync(b)
         check(r['result']['status'] == 'paused', 'mass price change paused', r)
+        paused_mails = [m for m in mails('admin@example.com') if 'paused' in m['subject']]
+        check(len(paused_mails) == 1, 'admins get one email', mails())
+        r = sync(b)
+        check(r['result']['status'] == 'paused' and len([m for m in mails('admin@example.com') if 'paused' in m['subject']]) == 1, '...not one per run', mails())
+        _, _, html = Browser().login('admin', 'admin').get('/wp-admin/')
+        check('Product sync is paused' in html, 'and a notice on the Dashboard', html[:300])
         check(r['paused']['changes'] >= 12 and r['paused']['sample'], 'review details stored', r['paused'])
         check(meta(product_ids()['Widget'][0], 'price') != '17', 'nothing changed before review')
         _, d = b.api('GET', '/diagnostics')
@@ -312,6 +324,7 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
         check(meta(product_ids()['Widget'][0], 'price') == '17', 'price applied')
     finally:
         wp('option', 'delete', 'in_mock_price_bump')
+        wp('option', 'delete', 'in_mock_stock_all', check_ok=False)
         wp('option', 'delete', 'in_mock_many')
         sync(b, force=True)
         # Remove the extra test products so later runs start from the two base products
@@ -337,6 +350,58 @@ def upgraded_catalog_syncs_without_tripping_the_breaker():
         wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
                 " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"
                 " wp_delete_post($p->ID, true); $wpdb->delete($wpdb->prefix . 'invoiceninja_map', array('in_type' => 'product', 'in_id' => $id)); } }")
+
+
+@test
+def large_catalogs_sync_in_steps():
+    b = admin()
+    option('in_mock_many', '12')
+    try:
+        # One run writes 5 products (a filter makes the batch small); the rest continue in queued runs
+        out = wp_eval("add_filter('invoiceninja_product_sync_batch', function () { return 5; }); $p = InvoiceNinja\\Plugin::instance();"
+                      " foreach (array('P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11', 'P12') as $id) { $m = $p->mapping->find('product', $id); if ($m) { wp_delete_post($m['wp_id'], true); } }"
+                      " global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->prefix}invoiceninja_map WHERE in_type = 'product' AND in_id NOT IN ('P1', 'P2')\");"
+                      " $first = $p->products->run(true); $busy = $p->products->run();"
+                      " $queued = as_has_scheduled_action('invoiceninja_sync_products', array(array('payload' => array('full' => true, 'continue' => true), 'attempt' => 1)), 'invoiceninja');"
+                      " $runs = array(); do { $r = $p->products->run(true, false, true); $runs[] = $r; } while ($r['remaining'] > 0 && count($runs) < 5);"
+                      " echo wp_json_encode(array('first' => $first, 'busy' => $busy, 'queued' => $queued, 'runs' => $runs, 'count' => $p->mapping->count('product'), 'continue' => get_option('invoiceninja_sync_continue')));")
+        r = json_loads(out)
+        check(r['first']['created'] == 5 and r['first']['remaining'] == 5, 'the first run writes one batch', r['first'])
+        check(r['queued'], 'and queues the next step', r)
+        check(r['busy']['status'] == 'busy', 'the hourly run waits for the steps', r['busy'])
+        check(r['count'] == 12 and r['runs'][-1]['remaining'] == 0 and not r['continue'], 'the steps finish the catalog without pausing', r)
+        _, _, html = Browser().login('admin', 'admin').get('/wp-admin/')
+        check('Product sync is paused' not in html, 'no false alarm', html[:300])
+    finally:
+        wp_eval("as_unschedule_all_actions('invoiceninja_sync_products', array(), 'invoiceninja'); delete_option('invoiceninja_sync_continue');")
+        wp('option', 'delete', 'in_mock_many')
+        wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
+                " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"
+                " wp_delete_post($p->ID, true); $wpdb->delete($wpdb->prefix . 'invoiceninja_map', array('in_type' => 'product', 'in_id' => $id)); } }")
+
+
+@test
+def one_failed_daily_check_is_rechecked_before_admins_are_emailed():
+    b = admin()
+    connect(b)
+    wp_eval("delete_option('invoiceninja_incident_open'); as_unschedule_all_actions('invoiceninja_connection_recheck', array(), 'invoiceninja');")
+    reset_mock_log()
+    option('in_mock_mode', 'down')
+    try:
+        wp_eval("InvoiceNinja\\Plugin::instance()->daily();")
+        check(not [m for m in mails() if 'connection problem' in m['subject']], 'no email for one failed check', mails())
+        queued = wp_eval("echo as_has_scheduled_action('invoiceninja_connection_recheck', null, 'invoiceninja') ? 'yes' : 'no';")
+        check(queued == 'yes', 'checked again in 15 minutes', queued)
+        # Still down at the next two checks: now admins hear about it, once
+        wp_eval("do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 1), 'attempt' => 1));"
+                "do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 2), 'attempt' => 1));"
+                "do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 3), 'attempt' => 1));")
+        check(len([m for m in mails() if 'connection problem' in m['subject']]) == 1, 'one email after three failed checks', mails())
+    finally:
+        option('in_mock_mode', 'up')
+    wp_eval("do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 4), 'attempt' => 1));")
+    check(any('is back' in m['subject'] for m in mails()), 'the next check after it works says it is back', mails())
+    wp_eval("as_unschedule_all_actions('invoiceninja_connection_recheck', array(), 'invoiceninja');")
 
 
 @test
@@ -643,6 +708,93 @@ def admin_orders_list_resend_retry_and_cancel():
     check(status == 404, 'unknown order', status)
     status, _, html = b.get('/wp-admin/admin.php?page=invoiceninja-orders')
     check(status == 200 and 'data-screen="orders"' in html, 'orders screen renders', status)
+
+
+@test
+def invoice_ninjas_own_tax_becomes_the_order_total():
+    store_ready()
+    b = admin()
+    wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); update_post_meta($m['wp_id'], 'tax_name1', 'VAT'); update_post_meta($m['wp_id'], 'tax_rate1', 10);")
+    option('in_mock_calculate_taxes', '1')  # the mock then taxes every line at 19%
+    b.api('POST', '/connection/refresh', {})
+    try:
+        s = shopper()
+        _, cart = s.api('GET', '/cart')
+        check(cart['tax_later'] and cart['tax'] == 0 and cart['total'] == 20.0, "the cart doesn't claim a tax Invoice Ninja will replace", cart)
+        reset_mock_log()
+        details = {'email': 'own.tax@example.com', 'first_name': 'Own', 'last_name': 'Tax', 'country_id': '276', 'postal_code': '10115'}
+        status, started = s.api('POST', '/checkout/start', details)
+        check(status == 200, 'checkout started', started)
+        if started['next'] == 'code':
+            details['code'] = last_code('own.tax@example.com')
+        status, r = s.api('POST', '/checkout/confirm', details)
+        check(status == 200 and r['total'] == 23.8 and not r['tax_later'], "the order total is the invoice's: 20 + 19%", r)
+        mail = [m for m in mails('own.tax@example.com') if 'complete your payment' in m['subject']]
+        check(mail and '23.80' in mail[0]['body'] and '22.00' not in mail[0]['body'], 'the email shows what the buyer pays', mails('own.tax@example.com'))
+        stored = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['total'];" % r['number'])
+        check(float(stored) == 23.8, 'and it is stored', stored)
+    finally:
+        option('in_mock_calculate_taxes', '0')
+        b.api('POST', '/connection/refresh', {})
+        wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); delete_post_meta($m['wp_id'], 'tax_name1'); delete_post_meta($m['wp_id'], 'tax_rate1');")
+
+
+@test
+def invoices_cancelled_or_deleted_in_invoice_ninja_close_the_order():
+    store_ready()
+    b = admin()
+    try:
+        # Deleted in Invoice Ninja (it answers 200 with is_deleted): the order closes, no pay link
+        _, r = checkout(shopper(), 'gone.one@example.com')
+        inv = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_id'];" % r['number'])
+        option('in_mock_invoice_state', inv + ':deleted')
+        key = r['status_url'].split('key=')[1]
+        status, view = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
+        check(status == 200 and view['status'] == 'cancelled' and not view['pay_link'], 'Order Status shows it closed, without the pay link', view)
+        note = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['note'];" % r['number'])
+        check(note == 'invoice_gone', 'with a note for the admin', note)
+        # Cancelled in Invoice Ninja, picked up by a webhook-style refresh
+        _, r2 = checkout(shopper(), 'gone.two@example.com')
+        inv2 = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_id'];" % r2['number'])
+        option('in_mock_invoice_state', inv2 + ':cancelled')
+        wp_eval("$p = InvoiceNinja\\Plugin::instance(); foreach ($p->orders->awaitingForInvoice('%s') as $o) { delete_transient('invoiceninja_order_check_' . $o['id']); $p->orderService->refreshStatus($o); }" % inv2)
+        o = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['status'], ' ', $o['note'];" % r2['number'])
+        check(o == 'cancelled invoice_cancelled', 'a cancelled invoice closes the order', o)
+        # Admin Cancel on an order whose invoice was deleted there: no 502
+        _, r3 = checkout(shopper(), 'gone.three@example.com')
+        row = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['id'], ' ', $o['invoice_id'];" % r3['number']).split()
+        option('in_mock_invoice_state', row[1] + ':deleted')
+        reset_mock_log()
+        status, res = b.api('POST', '/admin/orders/%s/cancel' % row[0], {})
+        check(status == 200 and res['status'] == 'cancelled', 'cancelling an order whose invoice was deleted works', (status, res))
+        check(not [c for c in api_calls() if c['url'].endswith('/invoices/bulk')], 'without asking Invoice Ninja to cancel a deleted invoice', describe(api_calls()))
+    finally:
+        wp('option', 'delete', 'in_mock_invoice_state', check_ok=False)
+
+
+@test
+def change_order_gives_tracked_stock_back():
+    store_ready()
+    b = admin()
+    option('in_mock_track_inventory', '1')
+    b.api('POST', '/connection/refresh', {})
+    try:
+        s = shopper()
+        _, r = checkout(s, 'change.stock@example.com')
+        reset_mock_log()
+        status, changed = s.api('POST', '/orders/last/change', {})
+        check(status == 200 and changed['ok'], 'Change order works', changed)
+        bulk = [c for c in api_calls() if c['url'].endswith('/invoices/bulk')]
+        check(any('"delete"' in c['body'] for c in bulk), 'the unpaid invoice is deleted, which gives its stock back in Invoice Ninja', describe(bulk))
+    finally:
+        option('in_mock_track_inventory', '0')
+        b.api('POST', '/connection/refresh', {})
+    s = shopper()
+    _, r = checkout(s, 'change.nostock@example.com')
+    reset_mock_log()
+    s.api('POST', '/orders/last/change', {})
+    bulk = [c for c in api_calls() if c['url'].endswith('/invoices/bulk')]
+    check(bulk and not any('"delete"' in c['body'] for c in bulk), 'without stock tracking it is only cancelled', describe(bulk))
 
 
 @test
@@ -1008,6 +1160,7 @@ def new_clients_get_currency_language_and_tax_address():
         # A page cached before taxes were turned on still learns about the fields: from the cart...
         status, cart = s.api('GET', '/cart?checkout=1')
         check(status == 200 and cart['tax_address']['fields'] and ['276', 'Germany'] in cart['tax_address']['countries'] and cart['tax_address']['country'] == '840' and isinstance(cart['tax'], (int, float)), 'the checkout cart says the tax address is needed', cart)
+        check(cart['tax_address']['postcode_required'] == ['840'], '...and which countries need a postcode', cart)
         _, plain = s.api('GET', '/cart')
         check('tax_address' not in plain, 'other cart requests stay small', plain)
         email = 'tax.buyer@example.com'
@@ -1022,6 +1175,13 @@ def new_clients_get_currency_language_and_tax_address():
         # The postcode is optional: many countries (UAE, Hong Kong, Qatar…) have none
         status, r = shopper().api('POST', '/checkout/start', {'email': 'no.postcode@example.com', 'first_name': 'No', 'last_name': 'Postcode', 'country_id': '276'})
         check(status == 200 and r['next'] == 'code', 'no postcode goes on to the code', r)
+        # A US buyer's sales tax depends on the state, which Invoice Ninja finds from the ZIP code
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'no.zip@example.com', 'first_name': 'No', 'last_name': 'Zip', 'country_id': '840'})
+        check(status == 422 and r['code'] == 'tax_address' and list(r['fields']) == ['postal_code'] and r['tax_address']['postcode_required'] == ['840'], 'a US buyer must give a ZIP code', r)
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'no.zip@example.com', 'first_name': 'No', 'last_name': 'Zip', 'country_id': '840', 'postal_code': 'SW1A 1AA'})
+        check(status == 422 and list(r['fields']) == ['postal_code'], '...that looks like one', r)
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'no.zip@example.com', 'first_name': 'No', 'last_name': 'Zip', 'country_id': '840', 'postal_code': '94103'})
+        check(status == 200 and r['next'] == 'code', 'a US buyer with a ZIP code goes on to the code', r)
         details.update(country_id='999', postal_code='10115')
         status, r = s.api('POST', '/checkout/start', details)
         check(status == 422 and list(r['fields']) == ['country_id'], 'an unknown country is refused', r)

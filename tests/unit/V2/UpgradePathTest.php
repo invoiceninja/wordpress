@@ -357,7 +357,7 @@ class UpgradePathTest extends TestCase
     // ---------- U4: staging guess ----------
 
     /** @dataProvider hosts */
-    public function testStagingHostNeedsAWholeLabel( string $host, bool $staging )
+    public function testStagingHostLooksInFrontOfTheSitesOwnDomain( string $host, bool $staging )
     {
         $this->assertSame( $staging, Environment::stagingHost( $host ), $host );
     }
@@ -365,15 +365,31 @@ class UpgradePathTest extends TestCase
     public function hosts(): array
     {
         return [
-            'staging sub'      => [ 'staging.example.com', true ],
-            'dev sub'          => [ 'dev.example.com', true ],
-            'nested staging'   => [ 'shop.staging.example.com', true ],
-            'test sub co.uk'   => [ 'test.shop.example.co.uk', true ],
-            'word in a label'  => [ 'my-test-kitchen.com', false ],
-            'dev- domain'      => [ 'dev-tools.com', false ],
-            'domain is dev'    => [ 'shop.dev.com', false ],
-            'stage in a label' => [ 'backstage.example.com', false ],
-            'plain'            => [ 'shop.example.com', false ],
+            'staging sub'          => [ 'staging.example.com', true ],
+            'dev sub'              => [ 'dev.example.com', true ],
+            'nested staging'       => [ 'shop.staging.example.com', true ],
+            'test sub co.uk'       => [ 'test.shop.example.co.uk', true ],
+            'staging- first'       => [ 'staging-shop.example.com', true ],
+            '-dev label'           => [ 'shop-dev.example.com', true ],
+            'numbered'             => [ 'staging2.example.com', true ],
+            'pantheon dev'         => [ 'dev-site.pantheonsite.io', true ],
+            'pantheon test'        => [ 'test-site.pantheonsite.io', true ],
+            'kinsta staging'       => [ 'staging-site-abc123.kinsta.cloud', true ],
+            'wpengine staging'     => [ 'site.staging.wpengine.com', true ],
+            'flywheel staging'     => [ 'shop.flywheelstaging.com', true ],
+            'uppercase'            => [ 'STAGING.Example.com', true ],
+            'word in a label'      => [ 'my-test-kitchen.com', false ],
+            'word in www label'    => [ 'www.my-test-kitchen.com', false ],
+            'dev- domain'          => [ 'dev-tools.com', false ],
+            'dev- domain co.uk'    => [ 'dev-tools.co.uk', false ],
+            'www dev- domain'      => [ 'www.dev-tools.com', false ],
+            'domain is dev'        => [ 'shop.dev.com', false ],
+            'stage in a label'     => [ 'backstage.example.com', false ],
+            'test inside a word'   => [ 'contest.example.com', false ],
+            'pantheon live'        => [ 'live-site.pantheonsite.io', false ],
+            'plain'                => [ 'shop.example.com', false ],
+            'bare domain'          => [ 'example.com', false ],
+            'ip'                   => [ '203.0.113.5', false ],
         ];
     }
 
@@ -389,15 +405,79 @@ class UpgradePathTest extends TestCase
     {
         $this->stubUpgrade();
         $this->legacySite();
-        $this->home_url = 'https://staging.example.com'; // Looks like staging, but 1.x took orders here.
+        $this->home_url = 'https://shop.example.com';
         $this->installer( new Options() )->maybeUpgrade();
 
         $env = new Environment( new Options() );
         $this->assertNotNull( $env->state() );
         $this->assertTrue( $env->writesAllowed() );
 
-        $this->home_url = 'https://copy.example.net';
-        $this->assertFalse( $env->writesAllowed(), 'a clone is still paused' );
+        $this->home_url = 'https://staging.example.com';
+        $this->assertFalse( $env->writesAllowed(), 'a staging clone is still paused' );
+    }
+
+    public function testUpgradeFrom1xLeavesAStagingAddressPaused()
+    {
+        $this->stubUpgrade();
+        $this->legacySite();
+        $this->home_url = 'https://staging.example.com';
+        $this->installer( new Options() )->maybeUpgrade();
+
+        $env = new Environment( new Options() );
+        $this->assertNull( $env->state() );
+        $this->assertFalse( $env->writesAllowed(), 'an admin allows orders' );
+    }
+
+    public function testALaterUpdateOfA1xSiteDoesNotAllowOrders()
+    {
+        // A 2.0.0 site that came from 1.x; its staging copy was paused by 2.0.0
+        $this->stubUpgrade();
+        $this->options['invoiceninja_version']        = '2.0.0';
+        $this->options['invoiceninja_upgraded_from']  = '1.x';
+        $this->options['invoiceninja_schema_version'] = 9;
+        $this->options['invoiceninja_api_token']      = 'plain-1x-token';
+        $this->home_url                               = 'https://staging-shop.example.com';
+        $this->installer( new Options() )->maybeUpgrade();
+
+        $this->assertNull( ( new Environment( new Options() ) )->state() );
+    }
+
+    public function testThe201ConfirmationOfAStagingCopyIsUndone()
+    {
+        $this->stubUpgrade();
+        $this->options['invoiceninja_version']        = '2.0.1';
+        $this->options['invoiceninja_upgraded_from']  = '1.x';
+        $this->options['invoiceninja_schema_version'] = 10;
+        $this->home_url                               = 'https://staging.example.com';
+        ( new Environment( new Options() ) )->confirm( 0 ); // what 2.0.1's update step did
+        $this->installer( new Options() )->maybeUpgrade();
+
+        $env = new Environment( new Options() );
+        $this->assertNull( $env->state() );
+        $this->assertFalse( $env->writesAllowed() );
+    }
+
+    /** @dataProvider keptConfirmations */
+    public function testOtherConfirmationsAreKept( string $url, int $by, string $from )
+    {
+        $this->stubUpgrade();
+        $this->options['invoiceninja_version']        = '2.0.1';
+        $this->options['invoiceninja_upgraded_from']  = $from;
+        $this->options['invoiceninja_schema_version'] = 10;
+        $this->home_url                               = $url;
+        ( new Environment( new Options() ) )->confirm( $by );
+        $this->installer( new Options() )->maybeUpgrade();
+
+        $this->assertTrue( ( new Environment( new Options() ) )->writesAllowed() );
+    }
+
+    public function keptConfirmations(): array
+    {
+        return [
+            'an admin allowed staging' => [ 'https://staging.example.com', 5, '1.x' ],
+            'a live address'           => [ 'https://shop.example.com', 0, '1.x' ],
+            'not from 1.x'             => [ 'https://staging.example.com', 0, '' ],
+        ];
     }
 
     /** @dataProvider notLive */

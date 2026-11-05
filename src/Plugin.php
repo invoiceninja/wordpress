@@ -51,6 +51,11 @@ final class Plugin {
 	public const AFTER_UPGRADE = 'invoiceninja_after_upgrade';
 
 	/**
+	 * Job that checks the connection again after a failed check.
+	 */
+	public const RECHECK = 'invoiceninja_connection_recheck';
+
+	/**
 	 * The instance.
 	 *
 	 * @var Plugin|null
@@ -251,6 +256,14 @@ final class Plugin {
 			}
 		);
 		$this->queue->handle( 'invoiceninja_daily', array( $this, 'daily' ) );
+		$this->queue->handle(
+			self::RECHECK,
+			function ( array $payload ): void {
+				if ( $this->credentials->hasToken() ) {
+					$this->checkConnection( max( 1, (int) ( $payload['failures'] ?? 1 ) ) + 1 );
+				}
+			}
+		);
 		// After any version change, catch up in the background: connect a site that has a
 		// token but never connected through 2.0, refresh the company details and relink products.
 		add_action(
@@ -272,12 +285,10 @@ final class Plugin {
 			function ( array $payload ): void {
 				if ( ! $this->products->enabled() ) {
 					// Turned off since it was scheduled.
-					if ( function_exists( 'as_unschedule_all_actions' ) ) {
-						as_unschedule_all_actions( 'invoiceninja_sync_products', array(), Queue::GROUP );
-					}
+					$this->queue->stopRecurring( 'invoiceninja_sync_products' );
 					return;
 				}
-				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ) );
+				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ), ! empty( $payload['continue'] ) );
 			}
 		);
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
@@ -361,19 +372,38 @@ final class Plugin {
 	}
 
 	/**
+	 * Check the connection and tell admins when it broke or works again. One timeout or
+	 * server error isn't a problem yet: it's checked again in 15 minutes, and admins hear
+	 * about it after Notifications::RECHECKS failed checks in a row (or at once when the
+	 * failure breaks the connection, e.g. a revoked token).
+	 *
+	 * @param int $failures This check's number in a row of failed checks, if it fails.
+	 */
+	private function checkConnection( int $failures ): void {
+		$was  = $this->state->get()['status'];
+		$ok   = in_array( $this->connection->resume(), array( 'connected', 'refreshed' ), true );
+		$next = Notifications::afterCheck( $ok, $was, $this->state->get()['status'], $failures );
+		if ( 'recovered' === $next ) {
+			$this->notifications->connectionRecovered();
+			return;
+		}
+		if ( 'lost' === $next ) {
+			$this->notifications->connectionLost( $this->state->get() );
+		}
+		$delay = Notifications::recheckDelay( $next, $failures );
+		if ( $delay > 0 ) {
+			$this->queue->push( self::RECHECK, array( 'failures' => $failures ), $delay );
+		}
+	}
+
+	/**
 	 * Daily housekeeping: prune the log and re-check the connection.
 	 */
 	public function daily(): void {
 		$this->logger->prune();
 		$this->options->pruneCounters();
 		if ( $this->credentials->hasToken() ) {
-			$was = $this->state->get()['status'];
-			$ok  = in_array( $this->connection->resume(), array( 'connected', 'refreshed' ), true );
-			if ( ! $ok && 'connected' === $was ) {
-				$this->notifications->connectionLost( $this->state->get() );
-			} elseif ( $ok ) {
-				$this->notifications->connectionRecovered();
-			}
+			$this->checkConnection( 1 );
 		}
 		$this->statics->refresh();
 		// Orders whose placing request died: send them again.

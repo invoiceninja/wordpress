@@ -695,8 +695,14 @@ final class OrderToInvoice {
 				$this->forget( $order, '', 'cancelled' );
 				return;
 			}
+			// Invoice Ninja keeps deleted invoices (is_deleted) and won't cancel them, nor
+			// cancelled (5) or reversed (6) ones: there's nothing left to cancel.
+			if ( ! empty( $invoice['is_deleted'] ) ) {
+				$this->forget( $order, '', 'cancelled' );
+				return;
+			}
 			$status = (string) ( $invoice['status_id'] ?? '' );
-			if ( '5' === $status ) {
+			if ( in_array( $status, array( '5', '6' ), true ) ) {
 				$this->closed( $order, $id );
 				return;
 			}
@@ -708,18 +714,34 @@ final class OrderToInvoice {
 			if ( '1' === $status ) {
 				$invoice = $this->markSent( $client, $order, $invoice ); // Invoice Ninja only cancels sent invoices.
 			}
-			$cancelled = self::pick(
-				$client->post(
-					'invoices/bulk',
-					array(
-						'action' => 'cancel',
-						'ids'    => array( $id ),
-					),
-					array(),
-					15.0
-				)->data(),
-				$id
-			);
+			try {
+				$cancelled = self::pick(
+					$client->post(
+						'invoices/bulk',
+						array(
+							'action' => 'cancel',
+							'ids'    => array( $id ),
+						),
+						array(),
+						15.0
+					)->data(),
+					$id
+				);
+			} catch ( ApiException $e ) {
+				if ( ErrorKind::Validation !== $e->kind ) {
+					throw $e;
+				}
+				// "This invoice cannot be cancelled": deleted or cancelled in Invoice Ninja meanwhile?
+				$now = $client->get( 'invoices/' . rawurlencode( $id ), array(), 10.0 )->data();
+				if ( ! empty( $now['is_deleted'] ) ) {
+					$this->forget( $order, '', 'cancelled' );
+					return;
+				}
+				if ( ! in_array( (string) ( $now['status_id'] ?? '' ), array( '5', '6' ), true ) ) {
+					throw $e;
+				}
+				$cancelled = array_merge( $now, array( 'status_id' => '5' ) ); // Reversed counts as closed too.
+			}
 			if ( null === $cancelled || '5' !== (string) ( $cancelled['status_id'] ?? '' ) ) {
 				throw new ApiException( ErrorKind::InvalidResponse, "Invoice Ninja didn't cancel the invoice" ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 			}

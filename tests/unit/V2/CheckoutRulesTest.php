@@ -35,6 +35,34 @@ class CheckoutRulesTest extends TestCase
         $this->assertTrue( $cart->inclusiveTaxes() );
     }
 
+    public function testWhenInvoiceNinjaCalculatesTaxesTheCartClaimsNone()
+    {
+        $cart = new Cart( new Secrets( new Options() ), new Mapping() );
+        $this->assertFalse( $cart->summary( [] )['tax_later'] );
+        $this->options['invoiceninja_connection'] = [ 'company' => [ 'calculate_taxes' => true ] ];
+        $this->assertTrue( Cart::taxesByInvoiceNinja() );
+        $this->assertTrue( $cart->summary( [] )['tax_later'], 'the cart says tax is added on the payment page' );
+        $this->assertTrue( Checkout::taxLater( [ 'invoice_id' => '' ] ), 'an order without its invoice yet: before tax' );
+        $this->assertFalse( Checkout::taxLater( [ 'invoice_id' => 'INV1' ] ), "the invoice's amount is the total" );
+    }
+
+    public function testTheOrderTotalIsTheInvoicesAmount()
+    {
+        $this->assertSame( [ 'total' => 135.65 ], OrderService::invoiceTotal( [ 'amount' => 135.654 ] ), "Invoice Ninja's 19%, not the cart's 12.5%" );
+        $this->assertSame( [ 'total' => 0.0 ], OrderService::invoiceTotal( [ 'amount' => '0' ] ) );
+        $this->assertSame( [], OrderService::invoiceTotal( [] ), 'no amount: keep the cart total' );
+        $this->assertSame( [], OrderService::invoiceTotal( [ 'amount' => 'x' ] ) );
+    }
+
+    public function testDeletedCancelledAndReversedInvoicesCloseTheOrder()
+    {
+        $this->assertSame( 'invoice_gone', OrderService::gone( [ 'is_deleted' => true, 'status_id' => '2' ] ), 'Invoice Ninja keeps deleted invoices (200, is_deleted)' );
+        $this->assertSame( 'invoice_cancelled', OrderService::gone( [ 'status_id' => '5' ] ) );
+        $this->assertSame( 'invoice_cancelled', OrderService::gone( [ 'status_id' => 6 ] ), 'reversed' );
+        $this->assertNull( OrderService::gone( [ 'status_id' => '2', 'is_deleted' => false ] ) );
+        $this->assertNull( OrderService::gone( [ 'status_id' => '4' ] ) );
+    }
+
     public function testTheInvoiceIsToldWhetherPricesIncludeTax()
     {
         $this->assertTrue( OrderService::inclusive( [ 'items' => [ [ 'inclusive' => true ] ] ] ) );
@@ -55,11 +83,26 @@ class CheckoutRulesTest extends TestCase
     {
         $countries = [ '840', '276' ];
         $this->assertSame( [], Checkout::taxAddressErrors( '276', '10115', $countries ) );
-        $this->assertSame( [], Checkout::taxAddressErrors( '840', 'SW1A 1AA', $countries ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '840', '10001', $countries ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '826', 'SW1A 1AA', [ '826' ] ) );
         $this->assertSame( [ 'country_id' ], array_keys( Checkout::taxAddressErrors( '', '', $countries ) ), 'the country is required' );
         $this->assertSame( [ 'country_id' ], array_keys( Checkout::taxAddressErrors( '999', '10115', $countries ) ) );
         $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '276', '<script>', $countries ) ) );
         $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '276', str_repeat( '1', 30 ), $countries ) ) );
+    }
+
+    public function testUsBuyersNeedAZipCodeForTheirStatesTax()
+    {
+        // Invoice Ninja finds a US client's state from the ZIP code; without one it taxes as California
+        $countries = [ '840', '276' ];
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', '', $countries ) ), 'required for the US' );
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', '  ', $countries ) ) );
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', 'SW1A 1AA', $countries ) ), 'must look like a ZIP code' );
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', '1234', $countries ) ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '840', '94103', $countries ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '840', ' 94103-1234 ', $countries ), 'ZIP+4' );
+        $this->assertSame( [], Checkout::taxAddressErrors( '276', '', $countries ), 'still optional elsewhere' );
+        $this->assertSame( [ '840' ], Checkout::POSTCODE_REQUIRED );
     }
 
     public function testThePostcodeIsOptionalForCountriesWithoutOne()

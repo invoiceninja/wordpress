@@ -231,6 +231,10 @@ final class Configurator {
 			}
 			$this->write( $client, $id, $current, $plan['config'] );
 		} catch ( ApiException $e ) {
+			if ( self::urlRefused( $e ) ) {
+				// Invoice Ninja checks the callback address: a private or local one is "Invalid URL".
+				return self::result( false, 'unreachable', __( "Invoice Ninja can't reach this site's address, so it can't report purchases here. The site needs a public address that Invoice Ninja can reach.", 'invoiceninja' ) );
+			}
 			return self::result( false, $e->kind->value, $e->kind->title() . '. ' . $e->kind->fix() );
 		}
 		$saved = $this->get( $id );
@@ -356,6 +360,24 @@ final class Configurator {
 	 */
 	private function write( HttpClient $client, string $id, array $current, array $config, float $budget = 8.0 ): void {
 		self::putConfig( $client, $id, $current, $config, $budget );
+	}
+
+	/**
+	 * Whether Invoice Ninja refused the callback or return address (e.g. a private one:
+	 * 422 webhook_configuration.post_purchase_url "Invalid URL").
+	 *
+	 * @param ApiException $e Error.
+	 */
+	public static function urlRefused( ApiException $e ): bool {
+		if ( ErrorKind::Validation !== $e->kind ) {
+			return false;
+		}
+		foreach ( array_keys( $e->errors ) as $field ) {
+			if ( str_starts_with( (string) $field, 'webhook_configuration' ) ) {
+				return true;
+			}
+		}
+		return false;
 	}
 
 	/**
