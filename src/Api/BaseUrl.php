@@ -35,7 +35,8 @@ final class BaseUrl {
 			return null;
 		}
 		$host = strtolower( (string) $parts['host'] );
-		if ( ! preg_match( '/^(?:[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)*$/', $host ) && ! filter_var( trim( $host, '[]' ), FILTER_VALIDATE_IP ) ) {
+		// Underscores aren't valid in public DNS names, but Docker and LAN names often use them.
+		if ( ! preg_match( '/^(?:[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?)(?:\.[a-z0-9_](?:[a-z0-9_-]{0,61}[a-z0-9_])?)*$/', $host ) && ! filter_var( trim( $host, '[]' ), FILTER_VALIDATE_IP ) ) {
 			return null;
 		}
 		$path = isset( $parts['path'] ) ? (string) $parts['path'] : '';

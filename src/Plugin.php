@@ -46,6 +46,11 @@ use InvoiceNinja\Sync\Mapping;
 final class Plugin {
 
 	/**
+	 * Background job queued after any version change.
+	 */
+	public const AFTER_UPGRADE = 'invoiceninja_after_upgrade';
+
+	/**
 	 * The instance.
 	 *
 	 * @var Plugin|null
@@ -246,6 +251,22 @@ final class Plugin {
 			}
 		);
 		$this->queue->handle( 'invoiceninja_daily', array( $this, 'daily' ) );
+		// After any version change, catch up in the background: connect a site that has a
+		// token but never connected through 2.0, refresh the company details and relink products.
+		add_action(
+			'invoiceninja_upgraded',
+			function (): void {
+				$push = function (): void {
+					$this->queue->push( self::AFTER_UPGRADE );
+				};
+				if ( did_action( 'action_scheduler_init' ) ) {
+					$push();
+				} else {
+					add_action( 'action_scheduler_init', $push, 20 );
+				}
+			}
+		);
+		$this->queue->handle( self::AFTER_UPGRADE, fn() => $this->afterUpgrade() );
 		$this->queue->handle(
 			'invoiceninja_sync_products',
 			function ( array $payload ): void {
@@ -324,6 +345,22 @@ final class Plugin {
 	}
 
 	/**
+	 * Background work after the plugin was updated.
+	 */
+	public function afterUpgrade(): void {
+		// 1.x (also after a downgrade and update again) re-creates product posts: link them.
+		$linked = $this->products->linkLegacyPosts();
+		if ( $linked > 0 ) {
+			$this->logger->info( 'upgrade', sprintf( 'Linked %d products from 1.x', $linked ) );
+		}
+		// Connects a site that never connected through 2.0 (which also syncs products and
+		// refreshes the company lists), or refreshes the company record for new fields.
+		if ( 'refreshed' === $this->connection->resume() ) {
+			$this->statics->refresh();
+		}
+	}
+
+	/**
 	 * Daily housekeeping: prune the log and re-check the connection.
 	 */
 	public function daily(): void {
@@ -331,7 +368,7 @@ final class Plugin {
 		$this->options->pruneCounters();
 		if ( $this->credentials->hasToken() ) {
 			$was = $this->state->get()['status'];
-			$ok  = $this->connection->refresh();
+			$ok  = in_array( $this->connection->resume(), array( 'connected', 'refreshed' ), true );
 			if ( ! $ok && 'connected' === $was ) {
 				$this->notifications->connectionLost( $this->state->get() );
 			} elseif ( $ok ) {

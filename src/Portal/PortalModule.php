@@ -42,6 +42,7 @@ final class PortalModule implements Module {
 		$this->verification->register();
 		$this->links->register();
 		$this->account->register();
+		( new ConfirmEmail( $this->plugin, $this->account ) )->register();
 		( new Users( $this->plugin, $this->verification, $this->links ) )->register();
 		add_action( 'invoiceninja_rest_routes', array( $this, 'routes' ) );
 		add_filter( 'invoiceninja_diagnostics_checks', array( $this, 'checks' ) );

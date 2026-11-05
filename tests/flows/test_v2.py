@@ -28,7 +28,7 @@ def table_exists(name):
 @test
 def install_creates_tables_capabilities_and_secrets():
     check(wp('option', 'get', 'invoiceninja_version').startswith('2.'), 'version recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '9', 'schema at 9', wp('option', 'get', 'invoiceninja_schema_version'))
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '10', 'schema at 10', wp('option', 'get', 'invoiceninja_schema_version'))
     check(table_exists('invoiceninja_log'), 'log table created')
     caps = wp('cap', 'list', 'administrator')
     check('manage_invoiceninja' in caps and 'view_invoiceninja' in caps, 'admin capabilities granted')
@@ -47,7 +47,7 @@ def upgrade_from_1x_encrypts_the_token_and_keeps_1x_working():
     stored = wp('option', 'get', 'invoiceninja_api_token')
     check(stored.startswith('in1:') and 'goodtoken' not in stored, 'plain 1.x token encrypted in place', stored)
     check(wp('option', 'get', 'invoiceninja_upgraded_from') == '1.x', 'upgrade source recorded')
-    check(wp('option', 'get', 'invoiceninja_schema_version') == '9', 'all migrations ran')
+    check(wp('option', 'get', 'invoiceninja_schema_version') == '10', 'all migrations ran')
     profile = wp('option', 'get', 'invoiceninja_profile')
     check('Mock Company' in profile and 'ck_legacy_key' not in profile and 'pm_legacy_secret' not in profile,
           'the 1.x company profile keeps only its allowlist', profile)

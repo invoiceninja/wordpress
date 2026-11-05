@@ -31,6 +31,8 @@ class BaseApi
 
             $base = self::getBaseUrl();
             if ( ! $plugin->state->allowsPrivate( $base ) && \InvoiceNinja\Api\HttpClient::isPrivate( \InvoiceNinja\Api\BaseUrl::host( $base ) ) ) {
+                self::reportPrivateHost( $plugin, \InvoiceNinja\Api\BaseUrl::host( $base ) );
+
                 return null;
             }
         }
@@ -88,6 +90,21 @@ class BaseApi
         }
 
         return null;
+    }
+
+    /**
+     * A request was blocked because the address is on a private network that wasn't allowed:
+     * log it and show admins why (at most once an hour), instead of failing silently.
+     */
+    private static function reportPrivateHost( $plugin, $host )
+    {
+        if ( get_transient( 'invoiceninja_private_host_blocked' ) ) {
+            return;
+        }
+        set_transient( 'invoiceninja_private_host_blocked', 1, HOUR_IN_SECONDS );
+
+        $plugin->logger->warning( 'connection', sprintf( 'Blocked a request to %s: it is on a private network and not allowed in the connection settings', $host ) );
+        $plugin->state->markError( new \InvoiceNinja\Api\ApiException( \InvoiceNinja\Api\ErrorKind::PrivateHost, $host . ' resolves to a private or reserved address' ) );
     }
 
     /**

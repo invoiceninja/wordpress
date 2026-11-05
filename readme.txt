@@ -100,6 +100,16 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 
 == Changelog ==
 
+= 2.0.1 =
+* Fix: sites updated from 1.x with the address left blank connect to hosted Invoice Ninja and keep syncing products.
+* Fix: sites updated from 1.x connect themselves in the background, without running setup.
+* Fix: a self-hosted Invoice Ninja on your own network keeps working after the update. Addresses with underscores are accepted.
+* Fix: a failed update no longer stops the site. It's logged, shown to admins and tried again.
+* Fix: live shops whose domain contains a word like "test" or "dev" are no longer paused as staging copies. Paused sites show a notice.
+* Fix: going back to 1.0.16 and updating again no longer duplicates products.
+* Fix: customers confirm their email on the site before buying, even without an Account page.
+* Fix: the first page load after the update keeps the 1.x shop display.
+
 = 2.0.0 =
 * Rebuilt from the ground up, with automatic migration from 1.x.
 * New:
@@ -116,6 +126,9 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 * Fix: the product import no longer deletes products when Invoice Ninja can't be reached.
 
 == Upgrade Notice ==
+
+= 2.0.1 =
+Fixes for sites updating from 1.x. Existing customers confirm their email once, with a code, before their next purchase.
 
 = 2.0.0 =
 A rebuilt plugin. It requires PHP 8.1 and WordPress 6.7. Your shop keeps its 1.x display until you switch to blocks, and carts in progress are emptied. Shoppers now confirm their email with a code at checkout.

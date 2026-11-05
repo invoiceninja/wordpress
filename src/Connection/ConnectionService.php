@@ -226,6 +226,42 @@ final class ConnectionService {
 	}
 
 	/**
+	 * Check the saved connection in the background. A site that has credentials but never
+	 * connected through 2.0 (upgraded from 1.x, or set in wp-config.php) is tested in full and
+	 * connected, as the setup wizard would; a known company is only refreshed.
+	 *
+	 * @return string connected (newly), refreshed, failed or none (nothing saved).
+	 */
+	public function resume(): string {
+		if ( 'none' === $this->credentials->source() ) {
+			return 'none';
+		}
+		$state = $this->state->get();
+		if ( '' !== (string) ( $state['company']['id'] ?? '' ) ) {
+			return $this->refresh() ? 'refreshed' : 'failed';
+		}
+		$token = $this->credentials->token();
+		if ( null === $token || '' === $token ) {
+			$this->state->markError( new ApiException( null === $token ? ErrorKind::TokenUnreadable : ErrorKind::NotConfigured ) );
+			return 'failed';
+		}
+		$url    = $this->credentials->url();
+		$allow  = $this->state->allowsPrivate( $url );
+		$result = $this->test( $url, $token, $allow );
+		if ( ! $result['ok'] ) {
+			$kind = ErrorKind::tryFrom( (string) ( $result['error']['kind'] ?? '' ) ) ?? ErrorKind::Transport;
+			$this->state->markError( new ApiException( $kind, (string) ( $result['error']['technical'] ?? '' ) ) );
+			$this->logger->warning( 'connection', 'Connecting with the saved token failed: ' . $kind->title( BaseUrl::host( $url ) ), array( 'technical' => (string) ( $result['error']['technical'] ?? '' ) ) );
+			return 'failed';
+		}
+		$this->state->markConnected( $result['company'], $result['version'], true, true, $result['gateways'], $allow ? BaseUrl::host( $url ) : '' );
+		$this->logger->info( 'connection', sprintf( 'Connected to %s with the saved token (Invoice Ninja %s)', (string) $result['company']['name'], $result['version'] ) );
+		/** This action is documented in src/Connection/ConnectionService.php */
+		do_action( 'invoiceninja_connected', $result['company'] );
+		return 'connected';
+	}
+
+	/**
 	 * Re-check the saved connection and refresh the company details.
 	 *
 	 * @return bool Whether it's healthy.

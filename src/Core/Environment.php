@@ -45,20 +45,40 @@ final class Environment {
 	 * Whether this looks like a live site: production type on a public-looking host.
 	 */
 	public function looksLive(): bool {
-		if ( 'production' !== $this->type() ) {
+		if ( 'production' !== $this->type() || $this->looksLocal() ) {
 			return false;
 		}
+		return ! self::stagingHost( strtolower( (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ) ) );
+	}
+
+	/**
+	 * Whether the site runs on this computer or a private network (localhost, .local, .test,
+	 * a private IP address).
+	 */
+	public function looksLocal(): bool {
 		$host = strtolower( (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ) );
 		if ( '' === $host || 'localhost' === $host || preg_match( '/\.(localhost|local|test|example|invalid|lan|internal)$/', $host ) ) {
-			return false;
+			return true;
 		}
-		if ( preg_match( '/(^|[.-])(staging|stage|dev|develop|test|qa|uat)[.-]/', $host ) ) {
-			return false;
+		return filter_var( $host, FILTER_VALIDATE_IP ) && ! filter_var( $host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE );
+	}
+
+	/**
+	 * Whether a whole label in front of the site's own domain says staging, e.g.
+	 * staging.example.com, dev.example.com or shop.staging.example.com, but not
+	 * my-test-kitchen.com or dev-tools.com.
+	 *
+	 * @param string $host Host name.
+	 */
+	public static function stagingHost( string $host ): bool {
+		$labels = explode( '.', $host );
+		// The last two labels are the domain itself (dev.com is a domain, not a dev copy).
+		foreach ( array_slice( $labels, 0, max( 0, count( $labels ) - 2 ) ) as $label ) {
+			if ( in_array( $label, array( 'staging', 'stage', 'dev', 'develop', 'development', 'test', 'testing', 'qa', 'uat' ), true ) ) {
+				return true;
+			}
 		}
-		if ( filter_var( $host, FILTER_VALIDATE_IP ) && ! filter_var( $host, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE | FILTER_FLAG_NO_RES_RANGE ) ) {
-			return false;
-		}
-		return true;
+		return false;
 	}
 
 	/**

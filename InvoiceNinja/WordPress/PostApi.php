@@ -488,7 +488,8 @@ class PostApi {
 
 	/**
 	 * Create the invoice and send a verified buyer to their own invitation. Unverified buyers
-	 * are sent to confirm their email first (2.0's Account page), never to an invoice.
+	 * confirm their email with a code first (2.0's Account block, which works without an
+	 * Account page), then come back to this page; never to an invoice.
 	 *
 	 * @return string A notice to show instead, or '' (after a redirect).
 	 */
@@ -496,14 +497,18 @@ class PostApi {
 		$result = InvoiceApi::purchase( $cart );
 
 		if ( 'verify' === $result['status'] ) {
-			$account = \InvoiceNinja\Plugin::booted() ? \InvoiceNinja\Plugin::instance()->store->pageUrl( 'account' ) : '';
-			if ( '' !== $account && ! headers_sent() ) {
-				wp_safe_redirect( add_query_arg( 'invoiceninja_verify', '1', $account ) );
+			$confirm = class_exists( '\\InvoiceNinja\\Portal\\ConfirmEmail' ) ? \InvoiceNinja\Portal\ConfirmEmail::url( (string) get_permalink() ) : '';
+			if ( '' !== $confirm && ! headers_sent() ) {
+				wp_safe_redirect( $confirm );
 				exit;
 			}
 
-			return '<p class="invoiceninja-notice">' . esc_html__( 'Please confirm your email address before you buy.', 'invoiceninja' )
-				. ' <a href="' . esc_url( wp_lostpassword_url( get_permalink() ) ) . '">' . esc_html__( 'Reset your password to confirm it.', 'invoiceninja' ) . '</a></p>';
+			if ( '' === $confirm ) {
+				$confirm = wp_lostpassword_url( get_permalink() );
+			}
+
+			return '<p class="invoiceninja-notice">' . esc_html__( 'Please confirm your email address once before you buy.', 'invoiceninja' )
+				. ' <a href="' . esc_url( $confirm ) . '">' . esc_html__( 'Confirm your email', 'invoiceninja' ) . '</a></p>';
 		}
 
 		if ( 'ok' === $result['status'] ) {

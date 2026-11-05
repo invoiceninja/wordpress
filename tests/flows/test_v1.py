@@ -162,6 +162,7 @@ def buy_now_unverified_buyer_confirms_the_email_first():
     # 2.0 rule 2: only verified people are sent to an invitation link
     status, location, calls = buy_now('member', verified=False)
     check(location not in INVITE_LINKS and 'in.test' not in (location or ''), 'an unverified buyer is never sent to an invoice', '%s %s' % (status, location))
+    check(status != 302 or 'invoiceninja=verify' in (location or ''), 'they are sent to confirm their email', '%s %s' % (status, location))
     check(not [c for c in calls if c['url'].startswith(IN_BASE + 'clients') or c['url'].startswith(IN_BASE + 'invoices')],
           "no client lookup or invoice for an unverified email", describe(calls))
 
@@ -212,7 +213,7 @@ def portal_sso_for_matching_contact():
     wp_eval("$u = get_user_by('login', 'member'); delete_user_meta($u->ID, '_invoiceninja_verified_at'); delete_user_meta($u->ID, '_invoiceninja_client_id');")
     browser = Browser().login('member', 'pass')
     status, location, _ = browser.get('/?invoiceninja=portal')
-    check(status in (301, 302) and 'invoiceninja_verify=1' in (location or ''), 'an unverified email is sent to confirm it first', '%s %s' % (status, location))
+    check(status in (301, 302) and 'invoiceninja=verify' in (location or '') and 'return=' in (location or ''), 'an unverified email is sent to confirm it first, then back', '%s %s' % (status, location))
     wp_eval("$u = get_user_by('login', 'member'); InvoiceNinja\\Plugin::instance()->module('portal')->verification->mark($u->ID, 'admin');")
     status, location, _ = browser.get('/?invoiceninja=portal')
     check(location == 'https://in.test/client/key_login/KEY_CLIENT_PLUS', "a verified customer goes to their own contact's portal login", '%s %s' % (status, location))

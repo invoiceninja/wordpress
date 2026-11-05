@@ -48,20 +48,60 @@ final class Notices {
 		$state = $this->plugin->state->get();
 		$link  = admin_url( 'admin.php?page=invoiceninja-settings' );
 
+		$failure = $this->plugin->installer->failure();
+		if ( null !== $failure ) {
+			$this->notice(
+				'error',
+				__( "The update didn't finish", 'invoiceninja' ),
+				/* translators: %s: error message */
+				sprintf( __( 'The site keeps working and the update is tried again in a few minutes. Error: %s', 'invoiceninja' ), $failure['message'] ),
+				admin_url( 'admin.php?page=invoiceninja-status' ),
+				__( 'Open Status', 'invoiceninja' )
+			);
+		}
 		if ( $creds->hasToken() && null === $creds->token() ) {
 			$this->notice( 'error', ErrorKind::TokenUnreadable->title(), ErrorKind::TokenUnreadable->fix(), $link, __( 'Paste the token again', 'invoiceninja' ) );
 			return;
 		}
-		if ( 'error' === $state['status'] && null !== $state['error'] ) {
-			$kind = ErrorKind::tryFrom( $state['error']['kind'] ) ?? ErrorKind::Transport;
-			$this->notice( 'error', $kind->title(), $kind->fix(), admin_url( 'admin.php?page=invoiceninja-status' ), __( 'Open Status', 'invoiceninja' ) );
+		$configured = 'none' !== $creds->source();
+		$error      = $state['error'];
+		$kind       = null !== $error ? ( ErrorKind::tryFrom( $error['kind'] ) ?? ErrorKind::Transport ) : null;
+		// A site with a saved token that never connected (e.g. updated from 1.x) shows why too.
+		if ( null !== $kind && ( 'error' === $state['status'] || ( $configured && ( 'disconnected' === $state['status'] || ErrorKind::PrivateHost === $kind ) ) ) ) {
+			$host = '' !== $creds->url() ? \InvoiceNinja\Api\BaseUrl::host( $creds->url() ) : '';
+			if ( ErrorKind::PrivateHost === $kind ) {
+				$this->notice( 'error', $kind->title( $host ), $kind->fix(), admin_url( 'admin.php?page=invoiceninja-setup' ), __( 'Review the connection', 'invoiceninja' ) );
+			} else {
+				$this->notice( 'error', $kind->title( $host ), $kind->fix(), admin_url( 'admin.php?page=invoiceninja-status' ), __( 'Open Status', 'invoiceninja' ) );
+			}
 			return;
 		}
-		if ( 'connected' === $state['status'] && $this->plugin->environment->changed() ) {
+		if ( ! $configured ) {
+			return;
+		}
+		$environment = $this->plugin->environment;
+		$confirmed   = $environment->state();
+		if ( null !== $confirmed && '' === $confirmed['fingerprint'] ) {
+			$this->notice(
+				'warning',
+				__( 'Invoice Ninja orders are paused on this site', 'invoiceninja' ),
+				__( 'An admin paused them. Allow orders again when you are ready.', 'invoiceninja' ),
+				admin_url( 'admin.php?page=invoiceninja-status&tab=tools' ),
+				__( 'Review', 'invoiceninja' )
+			);
+		} elseif ( $environment->changed() ) {
 			$this->notice(
 				'warning',
 				__( 'Invoice Ninja orders are paused on this site', 'invoiceninja' ),
 				__( 'The site address or type changed, which usually means this is a copy. Allow orders when this is your live site.', 'invoiceninja' ),
+				admin_url( 'admin.php?page=invoiceninja-status&tab=tools' ),
+				__( 'Review', 'invoiceninja' )
+			);
+		} elseif ( ! $environment->writesAllowed() ) {
+			$this->notice(
+				'warning',
+				__( 'Invoice Ninja orders are paused on this site', 'invoiceninja' ),
+				__( 'This site looks like a staging or local copy, so it does not create invoices or clients. Allow orders when this is your live site.', 'invoiceninja' ),
 				admin_url( 'admin.php?page=invoiceninja-status&tab=tools' ),
 				__( 'Review', 'invoiceninja' )
 			);
