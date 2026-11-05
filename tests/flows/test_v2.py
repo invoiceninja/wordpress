@@ -1008,6 +1008,7 @@ def new_clients_get_currency_language_and_tax_address():
         # A page cached before taxes were turned on still learns about the fields: from the cart...
         status, cart = s.api('GET', '/cart?checkout=1')
         check(status == 200 and cart['tax_address']['fields'] and ['276', 'Germany'] in cart['tax_address']['countries'] and cart['tax_address']['country'] == '840' and isinstance(cart['tax'], (int, float)), 'the checkout cart says the tax address is needed', cart)
+        check(cart['tax_address']['postcode_required'] == ['840'], '...and which countries need a postcode', cart)
         _, plain = s.api('GET', '/cart')
         check('tax_address' not in plain, 'other cart requests stay small', plain)
         email = 'tax.buyer@example.com'
@@ -1022,6 +1023,13 @@ def new_clients_get_currency_language_and_tax_address():
         # The postcode is optional: many countries (UAE, Hong Kong, Qatar…) have none
         status, r = shopper().api('POST', '/checkout/start', {'email': 'no.postcode@example.com', 'first_name': 'No', 'last_name': 'Postcode', 'country_id': '276'})
         check(status == 200 and r['next'] == 'code', 'no postcode goes on to the code', r)
+        # A US buyer's sales tax depends on the state, which Invoice Ninja finds from the ZIP code
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'no.zip@example.com', 'first_name': 'No', 'last_name': 'Zip', 'country_id': '840'})
+        check(status == 422 and r['code'] == 'tax_address' and list(r['fields']) == ['postal_code'] and r['tax_address']['postcode_required'] == ['840'], 'a US buyer must give a ZIP code', r)
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'no.zip@example.com', 'first_name': 'No', 'last_name': 'Zip', 'country_id': '840', 'postal_code': 'SW1A 1AA'})
+        check(status == 422 and list(r['fields']) == ['postal_code'], '...that looks like one', r)
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'no.zip@example.com', 'first_name': 'No', 'last_name': 'Zip', 'country_id': '840', 'postal_code': '94103'})
+        check(status == 200 and r['next'] == 'code', 'a US buyer with a ZIP code goes on to the code', r)
         details.update(country_id='999', postal_code='10115')
         status, r = s.api('POST', '/checkout/start', details)
         check(status == 422 and list(r['fields']) == ['country_id'], 'an unknown country is refused', r)

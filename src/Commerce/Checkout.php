@@ -45,6 +45,15 @@ final class Checkout {
 	public const FIND_HOOK = 'invoiceninja_find_order';
 
 	/**
+	 * Countries whose tax Invoice Ninja works out from the postcode, so it can't be left out.
+	 * In Invoice Ninja's tax rules only the United States (840) has subregions (the state),
+	 * found from the client's state or else its ZIP code; checkout doesn't ask for a state,
+	 * and with neither Invoice Ninja falls back to California's rate. Other regions (EU,
+	 * UK, Australia, Singapore…) are taxed by country alone.
+	 */
+	public const POSTCODE_REQUIRED = array( '840' );
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Plugin         $plugin  Plugin.
@@ -174,7 +183,9 @@ final class Checkout {
 	 * What the checkout form needs for the tax address. Sent with the cart and with a
 	 * tax_address error, since a cached page may predate taxes being turned on or off.
 	 *
-	 * @return array{fields: bool, countries: list<array{0: string, 1: string}>, country: string}
+	 * postcode_required lists the country ids that need a postcode.
+	 *
+	 * @return array{fields: bool, countries: list<array{0: string, 1: string}>, country: string, postcode_required: list<string>}
 	 */
 	public function taxConfig(): array {
 		$fields    = $this->taxFields();
@@ -183,9 +194,10 @@ final class Checkout {
 			$countries[] = array( (string) $id, (string) $name );
 		}
 		return array(
-			'fields'    => $fields,
-			'countries' => $countries,
-			'country'   => (string) ( $this->plugin->state->get()['company']['country_id'] ?? '' ),
+			'fields'            => $fields,
+			'countries'         => $countries,
+			'country'           => (string) ( $this->plugin->state->get()['company']['country_id'] ?? '' ),
+			'postcode_required' => $fields ? self::POSTCODE_REQUIRED : array(),
 		);
 	}
 
@@ -208,15 +220,16 @@ final class Checkout {
 			'code'        => 'tax_address',
 			'message'     => isset( $errors['country_id'] )
 				? __( 'Choose your country. We need it to work out the tax.', 'invoiceninja' )
-				: __( 'Check your postcode.', 'invoiceninja' ),
+				: ( $errors['postal_code'] ?? __( 'Check your postcode.', 'invoiceninja' ) ),
 			'fields'      => $errors,
 			'tax_address' => $this->taxConfig(),
 		);
 	}
 
 	/**
-	 * Field errors for a tax address. The country is required; the postcode is optional
-	 * (many countries have none), so only its format is checked, and only when it's given.
+	 * Field errors for a tax address. The country is required. The postcode is required
+	 * where the tax depends on it (a US ZIP code: 12345 or 12345-6789) and optional
+	 * elsewhere (many countries have none), where only its format is checked when given.
 	 *
 	 * @param string            $country   Invoice Ninja country id.
 	 * @param string            $postcode  Postcode.
@@ -229,7 +242,13 @@ final class Checkout {
 		if ( '' === $country || ! in_array( $country, array_map( 'strval', $countries ), true ) ) {
 			$errors['country_id'] = __( 'Choose your country.', 'invoiceninja' );
 		}
-		if ( '' !== $postcode && ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9 -]{0,15}$/', $postcode ) ) {
+		if ( in_array( $country, self::POSTCODE_REQUIRED, true ) ) {
+			if ( '' === $postcode ) {
+				$errors['postal_code'] = __( 'Enter your ZIP code. We need it to work out the tax.', 'invoiceninja' );
+			} elseif ( '840' === $country && ! preg_match( '/^[0-9]{5}(-[0-9]{4})?$/', $postcode ) ) {
+				$errors['postal_code'] = __( 'Check your ZIP code.', 'invoiceninja' );
+			}
+		} elseif ( '' !== $postcode && ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9 -]{0,15}$/', $postcode ) ) {
 			$errors['postal_code'] = __( 'Check your postcode.', 'invoiceninja' );
 		}
 		return $errors;

@@ -55,11 +55,26 @@ class CheckoutRulesTest extends TestCase
     {
         $countries = [ '840', '276' ];
         $this->assertSame( [], Checkout::taxAddressErrors( '276', '10115', $countries ) );
-        $this->assertSame( [], Checkout::taxAddressErrors( '840', 'SW1A 1AA', $countries ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '840', '10001', $countries ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '826', 'SW1A 1AA', [ '826' ] ) );
         $this->assertSame( [ 'country_id' ], array_keys( Checkout::taxAddressErrors( '', '', $countries ) ), 'the country is required' );
         $this->assertSame( [ 'country_id' ], array_keys( Checkout::taxAddressErrors( '999', '10115', $countries ) ) );
         $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '276', '<script>', $countries ) ) );
         $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '276', str_repeat( '1', 30 ), $countries ) ) );
+    }
+
+    public function testUsBuyersNeedAZipCodeForTheirStatesTax()
+    {
+        // Invoice Ninja finds a US client's state from the ZIP code; without one it taxes as California
+        $countries = [ '840', '276' ];
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', '', $countries ) ), 'required for the US' );
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', '  ', $countries ) ) );
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', 'SW1A 1AA', $countries ) ), 'must look like a ZIP code' );
+        $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '840', '1234', $countries ) ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '840', '94103', $countries ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '840', ' 94103-1234 ', $countries ), 'ZIP+4' );
+        $this->assertSame( [], Checkout::taxAddressErrors( '276', '', $countries ), 'still optional elsewhere' );
+        $this->assertSame( [ '840' ], Checkout::POSTCODE_REQUIRED );
     }
 
     public function testThePostcodeIsOptionalForCountriesWithoutOne()
