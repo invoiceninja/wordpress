@@ -132,6 +132,10 @@ final class ProductSync {
 			}
 			$desired = self::desired( $item );
 			$map     = $mapped[ $id ] ?? null;
+			if ( null !== $map && ! isset( $statuses[ $map['wp_id'] ] ) ) {
+				// Its post is gone (1.x re-creates posts after a downgrade): link the 1.x post instead.
+				$map = null;
+			}
 			$post_id = $map ? $map['wp_id'] : (int) ( $legacy[ $id ] ?? 0 );
 			$status  = $statuses[ $post_id ] ?? null;
 			if ( null === $status ) {
@@ -243,6 +247,9 @@ final class ProductSync {
 		try {
 			$desired = self::desired( $product );
 			$map     = $this->mapping->find( 'product', $id );
+			if ( null !== $map && ( false === get_post_status( (int) $map['wp_id'] ) || self::POST_TYPE !== get_post_type( (int) $map['wp_id'] ) ) ) {
+				$map = null; // Its post is gone: link a 1.x post for it, if there is one.
+			}
 			$post_id = $map ? (int) $map['wp_id'] : (int) ( $this->legacyIndex()[ $id ] ?? 0 );
 			$status  = $post_id > 0 ? get_post_status( $post_id ) : false;
 			if ( false === $status || self::POST_TYPE !== get_post_type( $post_id ) ) {
@@ -349,12 +356,14 @@ final class ProductSync {
 	}
 
 	/**
-	 * Link 1.x product posts (meta product_id) into the mapping table. When 1.x left
-	 * several posts for one product, the newest is kept and the others become drafts.
+	 * Link 1.x product posts (meta product_id) into the mapping table: products not linked
+	 * yet, and products whose linked post is gone (1.x deletes and re-creates every post, also
+	 * after a downgrade). When 1.x left several posts for one product, the newest is kept and
+	 * the others become drafts. Products whose linked post still exists are left alone.
 	 */
 	public function linkLegacyPosts(): int {
 		$linked = 0;
-		$by_id  = array();
+		$groups = array();
 		$posts  = get_posts(
 			array(
 				'post_type'      => self::POST_TYPE,
@@ -367,25 +376,28 @@ final class ProductSync {
 		);
 		foreach ( $posts as $post ) {
 			$in_id = self::cleanId( (string) get_post_meta( $post->ID, 'product_id', true ) );
-			if ( '' === $in_id ) {
+			if ( '' !== $in_id ) {
+				$groups[ $in_id ][] = $post; // Newest first.
+			}
+		}
+		$mapped = $this->mapping->all( 'product' );
+		foreach ( $groups as $in_id => $group ) {
+			$map = $mapped[ (string) $in_id ] ?? null;
+			if ( null !== $map && self::POST_TYPE === get_post_type( (int) $map['wp_id'] ) ) {
 				continue;
 			}
-			if ( isset( $by_id[ $in_id ] ) ) {
-				if ( 'draft' !== $post->post_status ) {
+			foreach ( array_slice( $group, 1 ) as $older ) {
+				if ( 'draft' !== $older->post_status && 'trash' !== $older->post_status ) {
 					wp_update_post(
 						array(
-							'ID'          => $post->ID,
+							'ID'          => $older->ID,
 							'post_status' => 'draft',
 						)
 					);
 				}
-				continue;
 			}
-			$by_id[ $in_id ] = $post->ID;
-			if ( null === $this->mapping->find( 'product', $in_id ) ) {
-				$this->mapping->save( 'product', $in_id, 'post', (int) $post->ID, '' );
-				++$linked;
-			}
+			$this->mapping->save( 'product', (string) $in_id, 'post', (int) $group[0]->ID, '' );
+			++$linked;
 		}
 		return $linked;
 	}
