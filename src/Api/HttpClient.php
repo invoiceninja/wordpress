@@ -318,7 +318,9 @@ final class HttpClient {
 			return new ApiException( ErrorKind::Redirect, trim( $status . ' Location: ' . $location ), $status, array(), null, $location );
 		}
 		if ( 401 === $status ) {
-			return new ApiException( ErrorKind::Auth, $detail, $status );
+			// Invoice Ninja answers a valid token without permission for the action with 401
+			// "This action is unauthorized." (a policy check), not 403: that's not a bad token.
+			return new ApiException( stripos( $message, 'unauthorized' ) !== false ? ErrorKind::Forbidden : ErrorKind::Auth, $detail, $status );
 		}
 		if ( 403 === $status ) {
 			$kind = match ( true ) {

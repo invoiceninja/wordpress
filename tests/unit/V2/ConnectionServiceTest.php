@@ -59,14 +59,24 @@ class ConnectionServiceTest extends TestCase
         $this->assertSame( [ 'Stripe' ], $result['gateways'] );
     }
 
-    public function testNonAdminToken()
+    /** @dataProvider nonAdminReplies */
+    public function testNonAdminToken( int $code )
     {
-        $this->routes['POST webhooks'] = [ 403, [ 'message' => 'This action is unauthorized.' ] ];
+        $this->routes['POST webhooks'] = [ $code, [ 'message' => 'This action is unauthorized.' ] ];
         $result = $this->service()->test( 'in.test', 'tok' );
 
         $this->assertFalse( $result['ok'] );
-        $this->assertSame( 'non_admin', $result['error']['kind'] );
+        $this->assertSame( 'non_admin', $result['error']['kind'], 'not "invalid token"' );
         $this->assertSame( 'fail', $this->statuses( $result )['admin'] );
+        $this->assertSame( 'pass', $this->statuses( $result )['token'] );
+    }
+
+    public function nonAdminReplies(): array
+    {
+        return [
+            'Invoice Ninja 5.13 (401)' => [ 401 ],
+            'older (403)'              => [ 403 ],
+        ];
     }
 
     public function testOldVersion()

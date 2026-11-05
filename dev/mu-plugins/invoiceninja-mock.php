@@ -134,10 +134,11 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
 
     $route = substr( $url, strlen( IN_MOCK_BASE ) );
 
-    // 2.0: admin probe (an invalid webhook create: 422 for admins, 403 for others)
+    // 2.0: admin probe (an invalid webhook create: 422 for admins; for others 401 "This action
+    // is unauthorized.", like Invoice Ninja 5.13)
     if ( $route === 'webhooks' && $method === 'POST' ) {
         return strpos( $token, 'nonadmin' ) === 0
-            ? in_mock_response( [ 'message' => 'This action is unauthorized.' ], 403 )
+            ? in_mock_response( [ 'message' => 'This action is unauthorized.' ], 401 )
             : in_mock_response( [ 'message' => 'The given data was invalid.', 'errors' => [ 'target_url' => [ 'required' ] ] ], 422 );
     }
 
