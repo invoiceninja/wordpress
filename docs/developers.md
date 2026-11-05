@@ -9,6 +9,7 @@ The hook API follows semantic versioning: names and payload shapes don't change 
 | Action | Arguments | When |
 |---|---|---|
 | `invoiceninja_connected` | `array $company` | The site connected, or reconnected after a token change |
+| `invoiceninja_connection_refreshed` | `array $company` | The saved connection was re-checked and the company details refreshed (at least daily) |
 | `invoiceninja_disconnected` | | The connection was removed |
 | `invoiceninja_company_switched` | `string $old_id, array $company` | The token now belongs to another company |
 | `invoiceninja_products_synced` | `array $result` | A product sync finished |

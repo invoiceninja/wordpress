@@ -42,6 +42,8 @@ class SettingsApi
 
         // 2.0 tests and saves the connection; refresh the 1.x company profile once it succeeded
         add_action( 'invoiceninja_connected', [ $this, 'refreshProfile' ] );
+        // ...and keep it current (inventory tracking, currency, colours) as 1.x's hourly refresh did.
+        add_action( 'invoiceninja_connection_refreshed', [ $this, 'refreshProfile' ] );
     }
 
     public function refreshProfile()

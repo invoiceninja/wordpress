@@ -260,6 +260,10 @@
 				}
 				submit.disabled = false;
 				submit.removeAttribute( 'aria-busy' );
+				// Disabling the focused button sent focus to the page; put it back for keyboard users.
+				if ( ! document.activeElement || document.activeElement === document.body ) {
+					submit.focus();
+				}
 			} );
 		} );
 	}
@@ -298,11 +302,14 @@
 			const toggle = root.querySelector( 'button' );
 			const panel = root.querySelector( '.invoiceninja-minicart__panel' );
 			const badge = root.querySelector( '[data-invoiceninja-count]' );
+			// The button's own words, without the count badge.
+			const name = Array.prototype.filter.call( toggle.childNodes, ( node ) => node !== badge && ! ( node.contains && node.contains( badge ) ) )
+				.map( ( node ) => node.textContent ).join( '' ).trim() || t.cart;
 			const paint = () => {
 				const count = cart.count();
 				badge.textContent = count ? String( count ) : '';
 				badge.hidden = ! count;
-				toggle.setAttribute( 'aria-label', count ? toggle.textContent.trim() + ', ' + count + ' ' + t.items : toggle.textContent.trim() );
+				toggle.setAttribute( 'aria-label', count ? name + ', ' + fmt( 1 === count ? t.oneItem : t.manyItems, count ) : name );
 			};
 			paint();
 			cart.listeners.push( () => {
@@ -408,7 +415,7 @@
 			const id = 'invoiceninja-' + name;
 			return el( 'p', { class: 'invoiceninja-field' },
 				el( 'label', { for: id }, label, attrs && attrs.optional ? el( 'span', { class: 'invoiceninja-muted', text: ' ' + t.optional } ) : null ),
-				el( 'input', Object.assign( { id, name, value: state.details[ name ] || '', onInput: ( e ) => {
+				el( 'input', Object.assign( { id, name, type: 'text', value: state.details[ name ] || '', onInput: ( e ) => {
 					state.details[ name ] = e.target.value;
 				} }, attrs && attrs.input ? attrs.input : {} ) ),
 				help ? el( 'span', { id: id + '-help', class: 'invoiceninja-help', text: help } ) : null );
@@ -635,7 +642,7 @@
 				} }, t.editCart ) ) ) ];
 			},
 			code() {
-				const input = el( 'input', { id: 'invoiceninja-code', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', 'aria-describedby': 'invoiceninja-code-help', class: 'invoiceninja-code', value: state.code, onInput: ( e ) => {
+				const input = el( 'input', { id: 'invoiceninja-code', type: 'text', inputmode: 'numeric', autocomplete: 'one-time-code', maxlength: '6', 'aria-describedby': 'invoiceninja-code-help', class: 'invoiceninja-code', value: state.code, onInput: ( e ) => {
 					state.code = e.target.value.replace( /\D/g, '' ).slice( 0, 6 );
 					e.target.value = state.code;
 					if ( state.code.length === 6 ) {
@@ -913,7 +920,11 @@
 		if ( ! cookie( 'invoiceninja_order_flag' ) || document.querySelector( '[data-invoiceninja-status]' ) ) {
 			return;
 		}
-		const first = document.querySelector( '[data-invoiceninja-store]' );
+		// Above the page's own store content, never inside the header next to a Mini Cart.
+		const blocks = Array.prototype.filter.call( document.querySelectorAll( '[data-invoiceninja-store]' ), ( node ) =>
+			! node.hasAttribute( 'data-invoiceninja-minicart' ) && ! node.closest( 'header, [data-invoiceninja-minicart]' ) );
+		const main = document.querySelector( 'main' );
+		const first = blocks.length ? blocks[ 0 ] : ( main && main.firstChild ) || null;
 		if ( ! first ) {
 			return;
 		}

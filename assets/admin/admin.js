@@ -559,7 +559,7 @@
 				defs.map( ( [ id, title, desc ] ) => h( 'label', { key: id },
 					h( 'input', { type: 'checkbox', checked: !! features[ id ], onChange: () => setFeatures( Object.assign( {}, features, { [ id ]: ! features[ id ] } ) ) } ),
 					h( 'span', null, h( 'strong', null, title ), h( 'span', { className: 'in-muted' }, desc ) ) ) ),
-				h( 'p', { className: 'in-muted' }, __( 'The store, account, form and subscription blocks arrive in the next alphas; your choices are saved now.', 'invoiceninja' ) ) );
+				h( 'p', { className: 'in-muted' }, __( 'You can change these later on the Home screen.', 'invoiceninja' ) ) );
 		}
 
 		if ( current === 'email' ) {
@@ -958,6 +958,7 @@
 				if ( action === 'send_test' ) {
 					const r = await api( '/mail/test', { method: 'POST', data: {} } );
 					setMessage( r.sent ? sprintf( /* translators: %s: email */ __( 'Test email sent to %s.', 'invoiceninja' ), r.to ) : __( "WordPress couldn't send the email.", 'invoiceninja' ) );
+					await run(); // The Email check row shows the test straight away.
 				}
 			} catch ( e ) {
 				setMessage( errorText( e ) );
@@ -1148,7 +1149,11 @@
 		if ( r.status === 'failed' ) {
 			return sprintf( /* translators: %s: reason */ __( 'The sync failed: %s', 'invoiceninja' ), r.message );
 		}
-		return sprintf( /* translators: 1: added, 2: updated, 3: unpublished */ __( 'Products synced: %1$d added, %2$d updated, %3$d unpublished.', 'invoiceninja' ), r.created, r.updated, r.drafted );
+		if ( r.status === 'queued' || r.status === 'busy' ) {
+			return r.message || __( 'The sync is running in the background. Check back in a few minutes.', 'invoiceninja' );
+		}
+		const done = sprintf( /* translators: 1: added, 2: updated, 3: unpublished */ __( 'Products synced: %1$d added, %2$d updated, %3$d unpublished.', 'invoiceninja' ), r.created, r.updated, r.drafted );
+		return r.remaining > 0 ? done + ' ' + sprintf( /* translators: %d: number of products */ __( '%d more products sync in the background.', 'invoiceninja' ), r.remaining ) : done;
 	}
 
 	// ---------- Welcome to 2.0 ----------
@@ -1399,7 +1404,7 @@
 				h( 'tbody', null,
 					! data ? h( 'tr', null, h( 'td', { colSpan: boot.can.manage ? 7 : 6 }, __( 'Loading…', 'invoiceninja' ) ) ) : null,
 					data && data.items.length === 0 ? h( 'tr', null, h( 'td', { colSpan: boot.can.manage ? 7 : 6 },
-						filters.status || filters.search ? __( 'No orders match.', 'invoiceninja' ) : __( 'No orders yet. They appear here as soon as someone checks out.', 'invoiceninja' ) ) ) : null,
+						filters.status || filters.search || filters.month ? __( 'No orders match.', 'invoiceninja' ) : __( 'No orders yet. They appear here as soon as someone checks out.', 'invoiceninja' ) ) ) : null,
 					data ? data.items.map( ( o ) => {
 						const [ tone, label ] = ORDER_STATUS[ o.status ] || [ 'neutral', o.status ];
 						const actions = [];

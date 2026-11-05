@@ -199,7 +199,7 @@
 .invoiceninja-field input { min-block-size: 2.75rem; font: inherit; }
 .invoiceninja-help { color: var(--invoiceninja-muted); font-size: 0.9em; }
 .invoiceninja-code { inline-size: 11em; font-size: 1.6em !important; letter-spacing: 0.3em; font-variant-numeric: tabular-nums; }
-.invoiceninja-check label { display: inline-flex; gap: 0.5rem; align-items: center; min-block-size: 2.75rem; }
+.invoiceninja-check label { display: inline-flex; flex-wrap: wrap; gap: 0 0.5rem; align-items: center; min-block-size: 2.75rem; }
 .invoiceninja-summary { display: flex; flex-direction: column; gap: 0.5rem; }
 .invoiceninja-lines { list-style: none; margin: 0; padding: 0; }
 .invoiceninja-line {

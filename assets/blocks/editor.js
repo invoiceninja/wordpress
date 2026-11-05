@@ -110,6 +110,7 @@
 		'invoiceninja/checkout': __( 'Shoppers see their cart, then their details, the email code and the payment button here.', 'invoiceninja' ),
 		'invoiceninja/order-status': __( 'Shoppers see their order here when they open the link in their email.', 'invoiceninja' ),
 		'invoiceninja/pay-invoice': __( 'Customers enter an invoice number and email here, and get its payment link by email.', 'invoiceninja' ),
+		'invoiceninja/account': __( 'Logged-in customers see their invoices, quotes, payments, credits and subscriptions here, after confirming their email once.', 'invoiceninja' ),
 	};
 
 	function edit( name ) {

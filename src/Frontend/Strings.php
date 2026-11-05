@@ -145,6 +145,11 @@ final class Strings {
 			'unavailableText'  => __( 'Your cart is saved. Please try again later, or contact us to order.', 'invoiceninja' ),
 			'soldOut'          => __( 'Sold out', 'invoiceninja' ),
 			'items'            => __( 'items', 'invoiceninja' ),
+			'cart'             => __( 'Cart', 'invoiceninja' ),
+			'oneItem'          => __( '1 item', 'invoiceninja' ),
+			/* translators: %s: number of items in the cart */
+			'manyItems'        => __( '%s items', 'invoiceninja' ),
+			'accountCodeHelp'  => __( 'Type or paste it. We confirm your email as soon as all 6 digits are in.', 'invoiceninja' ),
 			'accountLogin'     => __( 'Log in to see your invoices and payments.', 'invoiceninja' ),
 			'confirmTitle'     => __( 'Confirm your email once', 'invoiceninja' ),
 			/* translators: %s: email address */

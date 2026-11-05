@@ -10,6 +10,7 @@
 	const { h, Fragment, useState, __, sprintf, api, errorText, saveSettings, Button, Notice, boot } = ui;
 
 	function Customers() {
+		const [ accountPage, setAccountPage ] = useState( boot.settings && boot.settings.pages && boot.settings.pages.account ? {} : null );
 		const [ s, setS ] = useState( ( boot.settings && boot.settings.customers ) || { sync: 'purchase', roles: 'customer,subscriber' } );
 		const [ busy, setBusy ] = useState( '' );
 		const [ message, setMessage ] = useState( '' );
@@ -62,10 +63,12 @@
 				} }, __( 'Mark as confirmed…', 'invoiceninja' ) ) ) : null,
 			h( 'h2', null, __( 'Account page', 'invoiceninja' ) ),
 			h( 'p', null, __( 'A page with the Account block, where customers see their invoices, quotes, payments, credits and subscriptions.', 'invoiceninja' ) ),
-			h( 'p', null, h( Button, { busy: busy === 'page', onClick: () => run( 'page', async () => {
-				const r = await api( '/pages', { method: 'POST', data: { pages: [ 'account' ] } } );
-				setMessage( r.pages && r.pages.account ? __( 'The Account page is ready.', 'invoiceninja' ) : __( 'The Account page already exists.', 'invoiceninja' ) );
-			} ) }, __( 'Create the Account page', 'invoiceninja' ) ) ) );
+			accountPage ? h( 'p', null, accountPage.url ? h( Fragment, null, __( 'Your Account page:', 'invoiceninja' ), ' ', h( 'a', { href: accountPage.url }, __( 'View', 'invoiceninja' ) ), ' · ', h( 'a', { href: accountPage.edit }, __( 'Edit', 'invoiceninja' ) ) ) : __( 'Your Account page exists. Find it under Pages.', 'invoiceninja' ) )
+				: h( 'p', null, h( Button, { busy: busy === 'page', onClick: () => run( 'page', async () => {
+					const r = await api( '/pages', { method: 'POST', data: { pages: [ 'account' ] } } );
+					setAccountPage( r.pages && r.pages.account ? r.pages.account : {} );
+					setMessage( __( 'The Account page is ready.', 'invoiceninja' ) );
+				} ) }, __( 'Create the Account page', 'invoiceninja' ) ) ) );
 	}
 
 	ui.addTab( { id: 'customers', label: __( 'Customers', 'invoiceninja' ), can: ( b ) => b.can.manage, render: Customers } );

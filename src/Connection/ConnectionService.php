@@ -279,6 +279,13 @@ final class ConnectionService {
 				throw new ApiException( ErrorKind::VersionTooOld, 'X-APP-VERSION ' . $version );
 			}
 			$this->state->markConnected( $company, $version, $state['admin'], $state['webhooks'], $gateways, $state['private_host'] );
+			/**
+			 * Fires after the saved connection was re-checked and the company details refreshed.
+			 *
+			 * @since 2.0.2
+			 * @param array $company Company summary.
+			 */
+			do_action( 'invoiceninja_connection_refreshed', $company );
 			return true;
 		} catch ( ApiException $e ) {
 			$this->state->markError( $e );

@@ -253,6 +253,13 @@ final class QuoteForm {
 		if ( null === $form ) {
 			return Routes::fail( 'form_changed', __( 'This form has changed since the page loaded. Reload the page and try again.', 'invoiceninja' ), 400 );
 		}
+		// Missing or invalid fields first: a person who sends too soon sees what to fill in.
+		$result = FormConfig::validate( $form['config'], $input );
+		if ( $result['errors'] ) {
+			$response = Routes::fail( 'invalid', __( 'Please fix the highlighted fields.', 'invoiceninja' ), 422 );
+			$response->set_data( (array) $response->get_data() + array( 'errors' => $result['errors'] ) );
+			return $response;
+		}
 		/**
 		 * Seconds a person needs at least to fill in the Quote Request Form.
 		 *
@@ -283,12 +290,6 @@ final class QuoteForm {
 		 */
 		if ( ! apply_filters( 'invoiceninja_captcha', true, $input, 'quote_form' ) ) {
 			return Routes::fail( 'captcha', __( 'Please complete the check to show you are not a robot.', 'invoiceninja' ), 422 );
-		}
-		$result = FormConfig::validate( $form['config'], $input );
-		if ( $result['errors'] ) {
-			$response = Routes::fail( 'invalid', __( 'Please fix the highlighted fields.', 'invoiceninja' ), 422 );
-			$response->set_data( (array) $response->get_data() + array( 'errors' => $result['errors'] ) );
-			return $response;
 		}
 		$values  = $result['values'];
 		$hour    = (int) floor( time() / HOUR_IN_SECONDS );

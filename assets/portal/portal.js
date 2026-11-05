@@ -117,7 +117,7 @@
 					}
 				} } );
 				box.appendChild( el( 'p', { text: fmt( t.codeSent, me.email ) } ) );
-				box.appendChild( el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-account-code', text: t.code } ), input, el( 'span', { id: 'invoiceninja-account-code-help', class: 'invoiceninja-help', text: t.codeHelp } ) ) );
+				box.appendChild( el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-account-code', text: t.code } ), input, el( 'span', { id: 'invoiceninja-account-code-help', class: 'invoiceninja-help', text: t.accountCodeHelp || t.codeHelp } ) ) );
 				// Resend only once the server will send another code, with a countdown until then.
 				const resend = el( 'p', { class: 'invoiceninja-muted' } );
 				const paintResend = () => {
