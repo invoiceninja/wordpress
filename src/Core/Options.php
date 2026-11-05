@@ -119,10 +119,117 @@ final class Options {
 		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
 		$wpdb->query( $wpdb->prepare( "INSERT IGNORE INTO {$wpdb->options} (option_name, option_value, autoload) VALUES (%s, %s, 'off')", $name, $value ) );
 		$created = 1 === (int) $wpdb->rows_affected;
-		wp_cache_delete( $name, 'options' );
-		wp_cache_delete( 'notoptions', 'options' );
-		wp_cache_delete( 'alloptions', 'options' );
+		self::forgetCached( $name );
 		return $created;
+	}
+
+	/**
+	 * Drop one option from the object cache after writing it with SQL. Rows written that
+	 * way are never autoloaded, so the cached autoloaded options (alloptions) stay valid;
+	 * only this option and its entry in the "doesn't exist" list are dropped.
+	 *
+	 * @param string $name Full option name.
+	 */
+	public static function forgetCached( string $name ): void {
+		wp_cache_delete( $name, 'options' );
+		$missing = wp_cache_get( 'notoptions', 'options' );
+		if ( is_array( $missing ) && isset( $missing[ $name ] ) ) {
+			unset( $missing[ $name ] );
+			wp_cache_set( 'notoptions', $missing, 'options' );
+		}
+	}
+
+	/**
+	 * Replace an option's value only if it still holds $expected, atomically (for locks).
+	 * Returns whether this call replaced it.
+	 *
+	 * @param string $key      Key without the prefix.
+	 * @param string $expected Value it must hold now.
+	 * @param string $value    New value.
+	 */
+	public function replaceAtomic( string $key, string $expected, string $value ): bool {
+		global $wpdb;
+		$name = self::PREFIX . $key;
+		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'query' ) || ! isset( $wpdb->options ) ) {
+			if ( (string) get_option( $name, '' ) !== $expected ) {
+				return false;
+			}
+			update_option( $name, $value, false );
+			return true;
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = %s WHERE option_name = %s AND option_value = %s", $value, $name, $expected ) );
+		$replaced = 1 === (int) $wpdb->rows_affected;
+		self::forgetCached( $name );
+		return $replaced;
+	}
+
+	/**
+	 * Delete an option only if it still holds $expected, atomically (releasing a lock).
+	 *
+	 * @param string $key      Key without the prefix.
+	 * @param string $expected Value it must hold.
+	 */
+	public function deleteIf( string $key, string $expected ): bool {
+		global $wpdb;
+		$name = self::PREFIX . $key;
+		if ( ! is_object( $wpdb ) || ! method_exists( $wpdb, 'query' ) || ! isset( $wpdb->options ) ) {
+			if ( (string) get_option( $name, '' ) !== $expected ) {
+				return false;
+			}
+			return delete_option( $name );
+		}
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->options} WHERE option_name = %s AND option_value = %s", $name, $expected ) );
+		$deleted = 1 === (int) $wpdb->rows_affected;
+		wp_cache_delete( $name, 'options' );
+		return $deleted;
+	}
+
+	/**
+	 * Add one to a numeric option in a single UPDATE and return the new value.
+	 *
+	 * LAST_INSERT_ID(expr) makes the new value readable on the connection that ran the
+	 * UPDATE. It's read from that UPDATE's own reply (mysqli_insert_id) rather than with a
+	 * second query: with a read/write split (HyperDB, LudicrousDB, ProxySQL) a separate
+	 * SELECT LAST_INSERT_ID() can go to a replica and return 0. Without mysqli it falls
+	 * back to that SELECT, then to reading the row.
+	 *
+	 * @param string $name Full option name.
+	 * @return int The new value, or 0 when the option doesn't exist.
+	 */
+	public static function bump( string $name ): int {
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = LAST_INSERT_ID(option_value + 1) WHERE option_name = %s", $name ) );
+		$updated = (int) $wpdb->rows_affected;
+		$value   = $updated > 0 ? self::insertId( $wpdb ) : 0;
+		if ( $updated > 0 && $value <= 0 ) {
+			$value = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		}
+		if ( $updated > 0 && $value <= 0 ) {
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			$value = (int) $wpdb->get_var( $wpdb->prepare( "SELECT option_value FROM {$wpdb->options} WHERE option_name = %s", $name ) );
+		}
+		self::forgetCached( $name );
+		return $value;
+	}
+
+	/**
+	 * The LAST_INSERT_ID the last statement on wpdb's connection reported, or 0.
+	 *
+	 * @param object $db wpdb (or a drop-in such as HyperDB; its dbh is the connection just used).
+	 */
+	public static function insertId( object $db ): int {
+		$dbh = isset( $db->dbh ) ? $db->dbh : null;
+		if ( ! $dbh instanceof \mysqli ) {
+			return 0;
+		}
+		try {
+			return (int) mysqli_insert_id( $dbh );
+		} catch ( \Throwable $e ) {
+			return 0;
+		}
 	}
 
 	/**
@@ -145,11 +252,7 @@ final class Options {
 		if ( $this->addAtomic( $key, '1' ) ) {
 			return 1;
 		}
-		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		$wpdb->query( $wpdb->prepare( "UPDATE {$wpdb->options} SET option_value = LAST_INSERT_ID(option_value + 1) WHERE option_name = %s", $name ) );
-		$value = (int) $wpdb->get_var( 'SELECT LAST_INSERT_ID()' ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-		wp_cache_delete( $name, 'options' );
-		return max( 1, $value );
+		return max( 1, self::bump( $name ) );
 	}
 
 	/**
