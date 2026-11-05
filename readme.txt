@@ -1,4 +1,5 @@
 === Invoice Ninja ===
+Contributors: hillel369
 Tags: invoice, billing, payments, quotes, subscriptions
 Requires at least: 6.7
 Tested up to: 7.1
