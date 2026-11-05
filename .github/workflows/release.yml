@@ -63,12 +63,34 @@ jobs:
             invoiceninja.zip
             build/invoiceninja
 
+      - name: Release notes
+        # .github/releases/<tag>.md when there is one, otherwise this version's changelog
+        # entry from readme.txt.
+        run: |
+          notes=".github/releases/${GITHUB_REF_NAME}.md"
+          if [ -f "$notes" ]; then
+            cp "$notes" release-notes.md
+          else
+            version="${GITHUB_REF_NAME#v}"
+            awk -v v="= $version =" '
+              $0 == "== Changelog ==" { section = 1; next }
+              section && $0 == v { on = 1; next }
+              on && (/^= / || /^== /) { exit }
+              on { print }
+            ' readme.txt > release-notes.md
+            if [ ! -s release-notes.md ]; then
+              echo "::error::No release notes: add .github/releases/${GITHUB_REF_NAME}.md or a '= ${version} =' changelog entry in readme.txt."
+              exit 1
+            fi
+          fi
+          cat release-notes.md
+
       - name: Publish the GitHub release
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ github.ref_name }}
           prerelease: ${{ contains(github.ref_name, '-') }}
-          generate_release_notes: true
+          body_path: release-notes.md
           files: invoiceninja.zip
 
   deploy:
