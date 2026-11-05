@@ -174,7 +174,7 @@ final class QuoteCreator {
 			);
 			$client_id = $found['client_id'];
 			if ( '' === $client_id ) {
-				throw new ApiException( ErrorKind::InvalidResponse, 'Invoice Ninja returned no client id' );
+				throw new ApiException( ErrorKind::InvalidResponse, 'Invoice Ninja returned no client id' ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 			}
 			$this->leads->update(
 				$id,
@@ -311,7 +311,7 @@ final class QuoteCreator {
 	private function created( array $lead, array $quote ): void {
 		$quote_id = (string) ( $quote['id'] ?? '' );
 		if ( '' === $quote_id ) {
-			throw new ApiException( ErrorKind::InvalidResponse, 'Invoice Ninja returned no quote id' );
+			throw new ApiException( ErrorKind::InvalidResponse, 'Invoice Ninja returned no quote id' ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
 		$ok = $this->leads->transition(
 			(int) $lead['id'],

@@ -33,6 +33,9 @@ def setup():
     if not lib.wp_ok('core', 'is-installed'):
         lib.wp('core', 'install', '--url=' + lib.BASE, '--title=Invoice Ninja Tests', '--admin_user=admin',
                '--admin_password=admin', '--admin_email=admin@example.com', '--skip-email')
+    woo_version = os.environ.get('WOOCOMMERCE_VERSION')
+    if woo_version and not lib.wp_ok('plugin', 'is-installed', 'woocommerce'):
+        lib.wp('plugin', 'install', 'woocommerce', '--version=' + woo_version)
     wp_version = os.environ.get('WP_VERSION')
     if wp_version:
         lib.wp('core', 'update', '--version=' + wp_version, '--force')

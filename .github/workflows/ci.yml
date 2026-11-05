@@ -117,6 +117,7 @@ jobs:
     env:
       WP_IMAGE_TAG: ${{ matrix.image }}
       WP_VERSION: ${{ matrix.wp }}
+      WOOCOMMERCE_VERSION: ${{ matrix.woocommerce }}  # tests/flows/run.py installs it after WordPress
       COMPOSE: docker compose -f dev/docker-compose.yml
     steps:
       - uses: actions/checkout@v4
@@ -130,9 +131,6 @@ jobs:
         run: |
           $COMPOSE pull --quiet
           $COMPOSE up -d --wait
-      - name: Install WooCommerce
-        if: matrix.woocommerce
-        run: $COMPOSE run --rm -T cli plugin install woocommerce --version=${{ matrix.woocommerce }}
       - name: Run end-to-end flows
         run: python3 tests/flows/run.py suite:${{ matrix.suites }}
       - name: Show logs on failure

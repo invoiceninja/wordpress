@@ -426,7 +426,7 @@ final class Redirects {
 			esc_html( $message ),
 			esc_html__( 'Subscription', 'invoiceninja' ),
 			array(
-				'response'  => $status,
+				'response'  => absint( $status ),
 				'back_link' => true,
 			)
 		);

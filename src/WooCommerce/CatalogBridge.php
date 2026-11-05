@@ -127,14 +127,13 @@ final class CatalogBridge {
 		do {
 			$posts = get_posts(
 				array(
-					'post_type'        => ProductSync::POST_TYPE,
-					'post_status'      => 'publish',
-					'posts_per_page'   => self::BATCH,
-					'paged'            => $page,
-					'orderby'          => 'ID',
-					'order'            => 'ASC',
-					'suppress_filters' => true,
-					'no_found_rows'    => true,
+					'post_type'      => ProductSync::POST_TYPE,
+					'post_status'    => 'publish',
+					'posts_per_page' => self::BATCH,
+					'paged'          => $page,
+					'orderby'        => 'ID',
+					'order'          => 'ASC',
+					'no_found_rows'  => true,
 				)
 			);
 			foreach ( $posts as $post ) {
