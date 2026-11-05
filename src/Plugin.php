@@ -285,9 +285,7 @@ final class Plugin {
 			function ( array $payload ): void {
 				if ( ! $this->products->enabled() ) {
 					// Turned off since it was scheduled.
-					if ( function_exists( 'as_unschedule_all_actions' ) ) {
-						as_unschedule_all_actions( 'invoiceninja_sync_products', array(), Queue::GROUP );
-					}
+					$this->queue->stopRecurring( 'invoiceninja_sync_products' );
 					return;
 				}
 				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ), ! empty( $payload['continue'] ) );

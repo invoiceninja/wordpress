@@ -138,10 +138,8 @@ final class SubscriptionsModule implements Module {
 		if ( ! $this->enabled() ) {
 			add_action(
 				'action_scheduler_init',
-				static function (): void {
-					if ( function_exists( 'as_has_scheduled_action' ) && as_has_scheduled_action( SubscriptionSync::HOOK, null, \InvoiceNinja\Core\Queue::GROUP ) ) {
-						as_unschedule_all_actions( SubscriptionSync::HOOK, array(), \InvoiceNinja\Core\Queue::GROUP );
-					}
+				function (): void {
+					$this->plugin->queue->stopRecurring( SubscriptionSync::HOOK );
 				}
 			);
 			return;
