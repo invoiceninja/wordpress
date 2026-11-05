@@ -65,7 +65,7 @@ final class ConfirmEmail {
 		if ( ! isset( $_GET['invoiceninja'] ) || 'verify' !== sanitize_key( wp_unslash( $_GET['invoiceninja'] ) ) ) {
 			return;
 		}
-		$back = self::back( isset( $_GET['return'] ) ? esc_url_raw( wp_unslash( $_GET['return'] ) ) : '' );
+		$back = self::back( isset( $_GET['return'] ) && is_string( $_GET['return'] ) ? esc_url_raw( wp_unslash( $_GET['return'] ) ) : '' );
 		// phpcs:enable
 		nocache_headers();
 		if ( ! is_user_logged_in() ) {

@@ -106,7 +106,7 @@ final class Redirects {
 		} else {
 			// phpcs:disable WordPress.Security.NonceVerification.Recommended -- optional prefill from a form on this site.
 			$prefill = array(
-				'email'      => isset( $_GET['email'] ) ? sanitize_email( wp_unslash( $_GET['email'] ) ) : '',
+				'email'      => isset( $_GET['email'] ) && is_string( $_GET['email'] ) ? sanitize_email( wp_unslash( $_GET['email'] ) ) : '',
 				'first_name' => isset( $_GET['first_name'] ) ? sanitize_text_field( wp_unslash( $_GET['first_name'] ) ) : '',
 				'last_name'  => isset( $_GET['last_name'] ) ? sanitize_text_field( wp_unslash( $_GET['last_name'] ) ) : '',
 			);

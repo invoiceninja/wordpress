@@ -100,7 +100,7 @@ final class Account {
 		$tabs = array_values( array_intersect( self::TABS, array_map( 'strval', (array) ( $a['tabs'] ?? self::TABS ) ) ) );
 		// Where to go once the email is confirmed (e.g. back to a product), on this site only.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a link; nothing changes.
-		$back = ConfirmEmail::back( (string) ( $a['return'] ?? ( isset( $_GET['invoiceninja_return'] ) ? esc_url_raw( wp_unslash( $_GET['invoiceninja_return'] ) ) : '' ) ) );
+		$back = ConfirmEmail::back( (string) ( $a['return'] ?? ( isset( $_GET['invoiceninja_return'] ) && is_string( $_GET['invoiceninja_return'] ) ? esc_url_raw( wp_unslash( $_GET['invoiceninja_return'] ) ) : '' ) ) );
 		return '<div class="invoiceninja-account" data-invoiceninja-account data-tabs="' . esc_attr( implode( ',', $tabs ? $tabs : self::TABS ) ) . '"' . ( '' !== $back ? ' data-return="' . esc_url( $back ) . '"' : '' ) . ' data-invoiceninja-store>'
 			. '<noscript><p>' . esc_html__( 'Your account needs JavaScript.', 'invoiceninja' ) . '</p></noscript>'
 			. '<p class="invoiceninja-loading">' . esc_html__( 'Loading your account…', 'invoiceninja' ) . '</p></div>';
