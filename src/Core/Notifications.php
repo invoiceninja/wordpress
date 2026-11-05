@@ -62,8 +62,11 @@ final class Notifications {
 		if ( $ok ) {
 			return 'recovered';
 		}
+		if ( 'error' === $was ) {
+			return 'down'; // Already reported: keep checking so the "back" email isn't a day late.
+		}
 		if ( 'connected' !== $was ) {
-			return 'none'; // Already reported, or never connected.
+			return 'none'; // Never connected.
 		}
 		return 'connected' !== $now || $failures >= self::RECHECKS ? 'lost' : 'recheck';
 	}
@@ -80,7 +83,7 @@ final class Notifications {
 		if ( 'recheck' === $next ) {
 			return 15 * MINUTE_IN_SECONDS;
 		}
-		return 'lost' === $next && $failures < self::RECHECKS + 24 ? HOUR_IN_SECONDS : 0;
+		return in_array( $next, array( 'lost', 'down' ), true ) && $failures < self::RECHECKS + 24 ? HOUR_IN_SECONDS : 0;
 	}
 
 	/**

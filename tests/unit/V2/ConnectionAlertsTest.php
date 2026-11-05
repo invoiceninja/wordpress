@@ -22,7 +22,10 @@ class ConnectionAlertsTest extends TestCase
     public function testABrokenConnectionIsReportedAtOnce()
     {
         $this->assertSame( 'lost', Notifications::afterCheck( false, 'connected', 'error', 1 ), 'e.g. a revoked token' );
-        $this->assertSame( 'none', Notifications::afterCheck( false, 'error', 'error', 1 ), 'already reported' );
+        $this->assertSame( 'down', Notifications::afterCheck( false, 'error', 'error', 2 ), 'already reported: no second email' );
+        $this->assertSame( HOUR_IN_SECONDS, Notifications::recheckDelay( 'down', 2 ), 'but checked hourly, so the back email comes soon' );
+        $this->assertSame( 0, Notifications::recheckDelay( 'down', Notifications::RECHECKS + 24 ), 'for a day at most' );
+        $this->assertSame( 'none', Notifications::afterCheck( false, 'disconnected', 'disconnected', 1 ), 'never connected' );
         $this->assertSame( 0, Notifications::recheckDelay( 'none', 1 ) );
     }
 

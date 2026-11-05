@@ -1,5 +1,6 @@
 """End-to-end flows for the 2.0 foundation (M1): install/upgrade, connection, REST, screens, CLI."""
 
+import csv
 from lib import (Browser, api_calls, check, describe, option, reset_mock_log, wp, wp_eval, wp_ok,
                  in_container)
 
@@ -227,8 +228,8 @@ def cli_status_doctor_and_environment():
 
 def product_ids():
     out = wp('post', 'list', '--post_type=invoiceninja_product', '--post_status=any', '--fields=ID,post_title,post_status', '--format=csv')
-    rows = [line.split(',') for line in out.splitlines()[1:]]
-    return {r[1]: (r[0], r[2]) for r in rows}
+    rows = list(csv.reader(out.splitlines()[1:]))  # WP-CLI quotes titles with spaces
+    return {r[1]: (r[0], r[2]) for r in rows if len(r) >= 3}
 
 
 def meta(post_id, key):
@@ -323,9 +324,9 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
         check(r['result']['status'] == 'synced' and not r['paused'], 'applied after review', r)
         check(meta(product_ids()['Widget'][0], 'price') == '17', 'price applied')
     finally:
-        wp('option', 'delete', 'in_mock_price_bump')
-        wp('option', 'delete', 'in_mock_stock_all', check_ok=False)
-        wp('option', 'delete', 'in_mock_many')
+        # check_ok=False: a failure above may have come before an option was set.
+        for name in ('in_mock_price_bump', 'in_mock_stock_all', 'in_mock_many'):
+            wp('option', 'delete', name, check_ok=False)
         sync(b, force=True)
         # Remove the extra test products so later runs start from the two base products
         wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"

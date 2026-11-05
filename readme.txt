@@ -100,6 +100,23 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 
 == Changelog ==
 
+= 2.0.2 =
+* Fix: when Invoice Ninja calculates the tax, the order total and emails match the invoice, and the cart says tax is added on the payment page. US buyers enter a ZIP code so they're charged their own state's sales tax.
+* Fix: orders whose invoice was cancelled or deleted in Invoice Ninja are closed, and cancelling such an order no longer fails.
+* Fix: "Change order" gives tracked stock back in Invoice Ninja.
+* Fix: product sync no longer pauses because of stock changes; admins get a notice and an email when it does pause. Large catalogs sync in steps in the background.
+* Fix: staging copies stay paused after an update; more staging addresses are recognised.
+* Fix: checkout, Mini Cart, Order Status and Account show "couldn't reach the site" with Try again instead of getting stuck, and a cached Checkout page no longer keeps saying ordering is unavailable.
+* Fix: with login required, checkout shows and uses the account's email.
+* Fix: adding more than is in stock says "Only N available"; Buy Now on a sold-out product no longer opens an empty checkout.
+* Fix: product names with "&" display correctly; the order banner no longer lands in the site header.
+* Fix: the Quote Request Form hides after sending, shows field errors first, and autofill can no longer drop a request as spam.
+* Fix: the Account page works when the browser sends no referrer; tabs and Resend behave when clicked quickly.
+* Fix (1.x display): on classic themes Buy Now and Checkout reach the payment page, refreshing after Add to cart doesn't add it again, the company details (like inventory tracking) refresh daily, and hand-placed 1.x buttons work in the blocks display.
+* Fix: a non-admin token is reported as "Not an admin", and a private address for subscriptions gets a clear message.
+* Fix: order numbers and limits work with read-replica databases; multisite sites keep their own customer links; network deactivation keeps queued jobs; no "connection problem" email for a single failed check; fewer queries on every page; no PHP error on links with unexpected parameters.
+* Accessibility: keyboard focus stays on Add to cart and the cart's +, − and Remove buttons; the Mini Cart has a correct label.
+
 = 2.0.1 =
 * Fix: sites updated from 1.x with the address left blank connect to hosted Invoice Ninja and keep syncing products.
 * Fix: sites updated from 1.x connect themselves in the background, without running setup.
@@ -131,6 +148,9 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 * Fix: the product import no longer deletes products when Invoice Ninja can't be reached.
 
 == Upgrade Notice ==
+
+= 2.0.2 =
+Fixes for checkout totals when Invoice Ninja calculates tax, product sync, staging copies and the 1.x display. Recommended for all 2.0 sites.
 
 = 2.0.1 =
 Fixes for sites updating from 1.x. Existing customers confirm their email once, with a code, before their next purchase.

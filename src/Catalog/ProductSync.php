@@ -408,7 +408,9 @@ final class ProductSync {
 		if ( null === $post ) {
 			return true;
 		}
-		return $post['title'] !== (string) $desired['post']['post_title']
+		// Titles saved without a user (cron, webhooks) are HTML-encoded ("Fish &amp; Chips").
+		$plain = static fn( string $text ): string => html_entity_decode( $text, ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+		return $plain( (string) $post['title'] ) !== $plain( (string) $desired['post']['post_title'] )
 			|| $post['price'] !== (string) $desired['meta']['price']
 			|| ( 'publish' === $desired['post']['post_status'] ) !== in_array( $post['status'], array( 'publish', 'private', 'pending', 'future' ), true );
 	}

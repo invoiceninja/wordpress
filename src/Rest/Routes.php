@@ -68,6 +68,11 @@ final class Routes {
 
 		$this->route( '/ping', 'GET', array( $this, 'ping' ), '__return_true' );
 
+		// Our replies are for this site's own pages only: no JSONP, and no CORS headers for
+		// other origins (core sends both by default), so no other page can read them.
+		add_filter( 'rest_pre_dispatch', array( $this, 'refuseJsonp' ), 10, 3 );
+		add_filter( 'rest_pre_serve_request', array( $this, 'noCrossOrigin' ), 20, 4 );
+
 		$same_site = array( $this, 'sameSite' );
 		$this->route( '/cart', 'GET', array( $this, 'getCart' ), '__return_true' );
 		$this->route( '/cart/items', 'POST', array( $this, 'setCartItem' ), $same_site );
@@ -225,6 +230,48 @@ final class Routes {
 	}
 
 	/**
+	 * Whether a request is for this plugin's routes.
+	 *
+	 * @param mixed $request Request.
+	 */
+	private static function ours( $request ): bool {
+		return $request instanceof \WP_REST_Request && 0 === strpos( ltrim( (string) $request->get_route(), '/' ), self::NS );
+	}
+
+	/**
+	 * Refuse JSONP (?_jsonp=) on this plugin's routes: it would let any page read a reply.
+	 *
+	 * @param mixed            $result  Response so far.
+	 * @param \WP_REST_Server  $server  Server.
+	 * @param \WP_REST_Request $request Request.
+	 * @return mixed
+	 */
+	public function refuseJsonp( $result, $server, $request ) {
+		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- only checks that the parameter is there.
+		if ( null === $result && isset( $_GET['_jsonp'] ) && self::ours( $request ) ) {
+			return new \WP_Error( 'invoiceninja_no_jsonp', __( 'JSONP is not available here.', 'invoiceninja' ), array( 'status' => 400 ) );
+		}
+		return $result;
+	}
+
+	/**
+	 * Take back the CORS headers core sends for any Origin, unless the request comes from
+	 * this site, so other origins can't read replies with the visitor's cookies.
+	 *
+	 * @param bool              $served  Whether the request was already served.
+	 * @param mixed             $result  Result.
+	 * @param \WP_REST_Request  $request Request.
+	 * @param \WP_REST_Server   $server  Server.
+	 */
+	public function noCrossOrigin( $served, $result, $request, $server ): bool { // phpcs:ignore Generic.CodeAnalysis.UnusedFunctionParameter.FoundAfterLastUsed -- the filter's signature.
+		if ( self::ours( $request ) && '' !== (string) ( $request->get_header( 'origin' ) ?? '' ) && ! $this->sameSite( $request ) && ! headers_sent() ) {
+			header_remove( 'Access-Control-Allow-Origin' );
+			header_remove( 'Access-Control-Allow-Credentials' );
+		}
+		return (bool) $served;
+	}
+
+	/**
 	 * Public writes must come from this site's own pages (Origin or Referer), which protects
 	 * the cookie-based cart without nonces that page caches would break.
 	 *
@@ -282,7 +329,8 @@ final class Routes {
 			$summary['unavailable'] = null !== $this->plugin->checkout->unavailable()
 				|| 'off' === $this->plugin->options->setting( 'store.mode' )
 				|| ! \InvoiceNinja\Frontend\Store::enabled();
-			$account                = $this->accountEmail();
+			// Only to this site's own pages: the cart reply is public.
+			$account = $this->sameSite( $request ) ? $this->accountEmail() : '';
 			if ( '' !== $account ) {
 				$summary['account_email'] = $account;
 			}

@@ -899,8 +899,8 @@
 			try {
 				const r = await api( '/sync/products', { method: 'POST', data: { force: true } } );
 				setReview( null );
+				await run(); // Refresh the checks first: run() clears the message.
 				setMessage( syncMessage( r.result ) );
-				await run();
 			} catch ( e ) {
 				setMessage( errorText( e ) );
 			}
@@ -952,13 +952,14 @@
 				}
 				if ( action === 'sync_now' ) {
 					const r = await api( '/sync/products', { method: 'POST', data: {} } );
+					await run();
 					setMessage( syncMessage( r.result ) );
-					return await run();
+					return;
 				}
 				if ( action === 'send_test' ) {
 					const r = await api( '/mail/test', { method: 'POST', data: {} } );
-					setMessage( r.sent ? sprintf( /* translators: %s: email */ __( 'Test email sent to %s.', 'invoiceninja' ), r.to ) : __( "WordPress couldn't send the email.", 'invoiceninja' ) );
 					await run(); // The Email check row shows the test straight away.
+					setMessage( r.sent ? sprintf( /* translators: %s: email */ __( 'Test email sent to %s.', 'invoiceninja' ), r.to ) : __( "WordPress couldn't send the email.", 'invoiceninja' ) );
 				}
 			} catch ( e ) {
 				setMessage( errorText( e ) );

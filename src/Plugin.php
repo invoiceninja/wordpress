@@ -288,7 +288,17 @@ final class Plugin {
 					$this->queue->stopRecurring( 'invoiceninja_sync_products' );
 					return;
 				}
-				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ), ! empty( $payload['continue'] ) );
+				$result = $this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ), ! empty( $payload['continue'] ) );
+				if ( ! empty( $payload['continue'] ) ) {
+					$status = (string) ( $result['status'] ?? '' );
+					if ( 'busy' === $status ) {
+						// Another run (e.g. a webhook update) held the lock: carry on in a minute.
+						$this->queue->push( 'invoiceninja_sync_products', $payload, MINUTE_IN_SECONDS );
+					} elseif ( 'failed' === $status ) {
+						// Let the hourly sync pick it up; the cursor never passed what wasn't written.
+						$this->options->delete( 'sync_continue' );
+					}
+				}
 			}
 		);
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
