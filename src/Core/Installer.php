@@ -23,7 +23,7 @@ use InvoiceNinja\Connection\Credentials;
  */
 final class Installer {
 
-	public const SCHEMA = 10;
+	public const SCHEMA = 11;
 
 	/**
 	 * Seconds to wait after a failed upgrade before trying again.
@@ -67,7 +67,7 @@ final class Installer {
 				$this->options->set( 'upgraded_from', '1.x' );
 			}
 			$this->createTables();
-			$this->migrate( (int) $this->options->get( 'schema_version', 0 ) );
+			$this->migrate( (int) $this->options->get( 'schema_version', 0 ), $from );
 			// Migration 1 again: 1.x saves the token in plain text, also after a downgrade.
 			if ( $this->credentials->encryptLegacyToken() ) {
 				$this->logger->info( 'upgrade', 'Encrypted the saved API token' );
@@ -162,9 +162,10 @@ final class Installer {
 	/**
 	 * Run each migration after $from, recording progress after each step.
 	 *
-	 * @param int $from Last completed schema version.
+	 * @param int    $from    Last completed schema version.
+	 * @param string $version The plugin version being upgraded from ('1.x' from 1.x, '' on a new install).
 	 */
-	private function migrate( int $from ): void {
+	private function migrate( int $from, string $version ): void {
 		$steps = array(
 			1  => function (): void {
 				// Encrypt a 1.x plain-text token in place.
@@ -232,8 +233,16 @@ final class Installer {
 					$this->logger->info( 'upgrade', 'Removed secrets from the saved 1.x company profile' );
 				}
 			},
-			10 => function (): void {
-				$this->keepLegacyConnection();
+			10 => function () use ( $version ): void {
+				// Orders stay allowed only while upgrading from 1.x itself, not on a later update
+				// of a site that came from 1.x (its staging copy may have been paused since).
+				$this->keepLegacyConnection( '1.x' === $version );
+			},
+			11 => function (): void {
+				// 2.0.1 allowed orders on any site that came from 1.x, staging copies included.
+				if ( '1.x' === $this->options->get( 'upgraded_from', '' ) && self::undoStagingConfirmation( new Environment( $this->options ) ) ) {
+					$this->logger->warning( 'upgrade', 'Orders are paused on this site because it looks like a staging copy. An admin can allow them again.' );
+				}
 			},
 		);
 		foreach ( $steps as $version => $step ) {
@@ -266,8 +275,10 @@ final class Installer {
 	/**
 	 * Keep a 1.x site working as it did: hosted when the address was blank, its own
 	 * private-network address, and orders allowed on a live site.
+	 *
+	 * @param bool $from_1x Whether this is the update from 1.x itself (orders are only allowed then).
 	 */
-	private function keepLegacyConnection(): void {
+	private function keepLegacyConnection( bool $from_1x ): void {
 		// 1.x said to leave the address blank for hosted Invoice Ninja.
 		if ( ! defined( 'INVOICENINJA_API_URL' ) && '' === trim( (string) $this->options->get( 'api_url', '' ) ) && $this->credentials->hasToken() ) {
 			$this->options->set( 'api_url', BaseUrl::HOSTED, true );
@@ -289,12 +300,31 @@ final class Installer {
 				$this->logger->warning( 'upgrade', sprintf( '%s is on the private network; a network admin needs to allow it in the setup', BaseUrl::host( $url ) ) );
 			}
 		}
-		// 1.x had no staging check: a live production site keeps taking orders.
+		// 1.x had no staging check: a live production site keeps taking orders. A staging
+		// address still waits for an admin, as does a site updated from 1.x before (its
+		// staging copy may have been paused since, and an admin may have paused it).
 		$environment = new Environment( $this->options );
-		if ( null === $environment->state() && 'production' === $environment->type() && ! $environment->looksLocal() ) {
+		if ( $from_1x && null === $environment->state() && $environment->looksLive() ) {
 			$environment->confirm( 0 );
 			$this->logger->info( 'upgrade', 'Orders stay allowed on this site, as in 1.x' );
 		}
+	}
+
+	/**
+	 * Undo an automatic confirmation of a staging-looking address (made by 2.0.1's update
+	 * step), so orders wait for an admin. A confirmation an admin made is kept.
+	 *
+	 * @param Environment $environment Environment.
+	 * @return bool Whether it was undone.
+	 */
+	public static function undoStagingConfirmation( Environment $environment ): bool {
+		$state = $environment->state();
+		$host  = strtolower( (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ) );
+		if ( null === $state || 0 !== $state['by'] || '' === $state['fingerprint'] || ! hash_equals( $state['fingerprint'], $environment->fingerprint() ) || ! Environment::stagingHost( $host ) ) {
+			return false;
+		}
+		$environment->forget();
+		return true;
 	}
 
 	/**

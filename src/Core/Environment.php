@@ -64,21 +64,60 @@ final class Environment {
 	}
 
 	/**
-	 * Whether a whole label in front of the site's own domain says staging, e.g.
-	 * staging.example.com, dev.example.com or shop.staging.example.com, but not
-	 * my-test-kitchen.com or dev-tools.com.
+	 * Words that mark a staging or development copy.
+	 */
+	private const STAGING_WORDS = array( 'staging', 'stage', 'dev', 'develop', 'development', 'test', 'testing', 'qa', 'uat' );
+
+	/**
+	 * Hosting services' domains used only for staging and temporary sites.
+	 */
+	private const STAGING_DOMAINS = array( 'flywheelstaging.com', 'instawp.xyz' );
+
+	/**
+	 * Whether the host looks like a staging copy.
+	 *
+	 * The rule: a staging word (staging, stage, dev, develop, development, test, testing,
+	 * qa, uat; a number may follow, as in staging2) that is a whole label, or a whole
+	 * hyphen-separated part of one, in front of the site's own domain; or a host on a
+	 * staging-only hosting domain. So staging.example.com, shop.dev.example.com,
+	 * staging-shop.example.com, shop-dev.example.com, staging2.example.com,
+	 * dev-site.pantheonsite.io and staging-site.kinsta.cloud match. The site's own domain
+	 * (the last two labels, three for example.co.uk-style domains) is never looked at,
+	 * so my-test-kitchen.com, dev-tools.com and shop.dev.com don't; nor do words inside
+	 * a word (backstage.example.com, contest.example.com).
 	 *
 	 * @param string $host Host name.
 	 */
 	public static function stagingHost( string $host ): bool {
-		$labels = explode( '.', $host );
-		// The last two labels are the domain itself (dev.com is a domain, not a dev copy).
-		foreach ( array_slice( $labels, 0, max( 0, count( $labels ) - 2 ) ) as $label ) {
-			if ( in_array( $label, array( 'staging', 'stage', 'dev', 'develop', 'development', 'test', 'testing', 'qa', 'uat' ), true ) ) {
+		$host = rtrim( strtolower( $host ), '.' );
+		foreach ( self::STAGING_DOMAINS as $domain ) {
+			if ( str_ends_with( $host, '.' . $domain ) ) {
 				return true;
 			}
 		}
+		$labels = explode( '.', $host );
+		foreach ( array_slice( $labels, 0, max( 0, count( $labels ) - self::domainLabels( $labels ) ) ) as $label ) {
+			foreach ( explode( '-', $label ) as $part ) {
+				if ( in_array( rtrim( $part, '0123456789' ), self::STAGING_WORDS, true ) ) {
+					return true;
+				}
+			}
+		}
 		return false;
+	}
+
+	/**
+	 * How many trailing labels make up the site's own domain: two (example.com), or three
+	 * under a country's second-level suffix (example.co.uk, example.com.au).
+	 *
+	 * @param list<string> $labels Host labels.
+	 */
+	private static function domainLabels( array $labels ): int {
+		$count = count( $labels );
+		if ( $count >= 3 && 2 === strlen( $labels[ $count - 1 ] ) && in_array( $labels[ $count - 2 ], array( 'co', 'com', 'net', 'org', 'gov', 'edu', 'ac', 'or', 'ne', 'go', 'ltd', 'plc', 'nom', 'gob' ), true ) ) {
+			return 3;
+		}
+		return 2;
 	}
 
 	/**
@@ -137,6 +176,13 @@ final class Environment {
 				'at'          => time(),
 			)
 		);
+	}
+
+	/**
+	 * Forget the confirmation: orders wait for an admin again (unless the site looks live).
+	 */
+	public function forget(): void {
+		$this->options->delete( self::OPTION );
 	}
 
 	/**
