@@ -381,6 +381,30 @@ def large_catalogs_sync_in_steps():
 
 
 @test
+def one_failed_daily_check_is_rechecked_before_admins_are_emailed():
+    b = admin()
+    connect(b)
+    wp_eval("delete_option('invoiceninja_incident_open'); as_unschedule_all_actions('invoiceninja_connection_recheck', array(), 'invoiceninja');")
+    reset_mock_log()
+    option('in_mock_mode', 'down')
+    try:
+        wp_eval("InvoiceNinja\\Plugin::instance()->daily();")
+        check(not [m for m in mails() if 'connection problem' in m['subject']], 'no email for one failed check', mails())
+        queued = wp_eval("echo as_has_scheduled_action('invoiceninja_connection_recheck', null, 'invoiceninja') ? 'yes' : 'no';")
+        check(queued == 'yes', 'checked again in 15 minutes', queued)
+        # Still down at the next two checks: now admins hear about it, once
+        wp_eval("do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 1), 'attempt' => 1));"
+                "do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 2), 'attempt' => 1));"
+                "do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 3), 'attempt' => 1));")
+        check(len([m for m in mails() if 'connection problem' in m['subject']]) == 1, 'one email after three failed checks', mails())
+    finally:
+        option('in_mock_mode', 'up')
+    wp_eval("do_action('invoiceninja_connection_recheck', array('payload' => array('failures' => 4), 'attempt' => 1));")
+    check(any('is back' in m['subject'] for m in mails()), 'the next check after it works says it is back', mails())
+    wp_eval("as_unschedule_all_actions('invoiceninja_connection_recheck', array(), 'invoiceninja');")
+
+
+@test
 def order_numbers_are_unique_and_readable():
     out = wp_eval("$n = new InvoiceNinja\\Commerce\\OrderNumbers(InvoiceNinja\\Plugin::instance()->options, InvoiceNinja\\Plugin::instance()->secrets); echo $n->next(), ' ', $n->next();")
     a, b = out.split()

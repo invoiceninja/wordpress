@@ -18,6 +18,11 @@ use InvoiceNinja\Api\ErrorKind;
 final class Notifications {
 
 	/**
+	 * Failed connection checks in a row (15 minutes apart) before admins are told.
+	 */
+	public const RECHECKS = 3;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Options $options Options.
@@ -42,6 +47,40 @@ final class Notifications {
 	public function recipients(): array {
 		$list = array_filter( array_map( 'sanitize_email', array_map( 'trim', explode( ',', (string) $this->options->setting( 'notifications.recipients' ) ) ) ) );
 		return $list ? array_values( $list ) : array( (string) get_option( 'admin_email' ) );
+	}
+
+	/**
+	 * What follows a connection check: recovered, lost (tell admins), recheck (a blip so
+	 * far: check again soon) or none.
+	 *
+	 * @param bool   $ok       Whether the check worked.
+	 * @param string $was      Status before the check.
+	 * @param string $now      Status after the check.
+	 * @param int    $failures This check's number in a row of failed checks.
+	 */
+	public static function afterCheck( bool $ok, string $was, string $now, int $failures ): string {
+		if ( $ok ) {
+			return 'recovered';
+		}
+		if ( 'connected' !== $was ) {
+			return 'none'; // Already reported, or never connected.
+		}
+		return 'connected' !== $now || $failures >= self::RECHECKS ? 'lost' : 'recheck';
+	}
+
+	/**
+	 * Seconds until the next check, or 0 to wait for the daily one: 15 minutes while it
+	 * may be a blip, then hourly for a day while the problem lasts (so the "back" email
+	 * doesn't wait a day).
+	 *
+	 * @param string $next     What afterCheck() said.
+	 * @param int    $failures Failed checks in a row so far.
+	 */
+	public static function recheckDelay( string $next, int $failures ): int {
+		if ( 'recheck' === $next ) {
+			return 15 * MINUTE_IN_SECONDS;
+		}
+		return 'lost' === $next && $failures < self::RECHECKS + 24 ? HOUR_IN_SECONDS : 0;
 	}
 
 	/**
