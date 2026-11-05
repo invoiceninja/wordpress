@@ -638,6 +638,8 @@ final class Checkout {
 			'total'          => (float) $order['total'],
 			'subtotal'       => round( array_sum( array_map( static fn( $i ): float => (float) ( is_array( $i ) ? ( $i['line_total'] ?? ( (float) ( $i['price'] ?? 0 ) * (int) ( $i['quantity'] ?? 0 ) ) ) : 0 ), $items ) ), 2 ),
 			'inclusive'      => OrderService::inclusive( $order ),
+			// Invoice Ninja adds its own tax and the invoice isn't made yet: the total is before tax.
+			'tax_later'      => self::taxLater( $order ),
 			'invoice_number' => (string) $order['invoice_number'],
 			'items'          => array_map(
 				static fn( array $i ): array => array(
@@ -657,6 +659,16 @@ final class Checkout {
 			$view['status_url'] = $this->statusUrl( $order );
 		}
 		return $view;
+	}
+
+	/**
+	 * Whether the order's total is still before tax: Invoice Ninja works out the tax itself
+	 * (its "calculate taxes") and the invoice, whose amount becomes the total, isn't made yet.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 */
+	public static function taxLater( array $order ): bool {
+		return '' === (string) $order['invoice_id'] && Cart::taxesByInvoiceNinja();
 	}
 
 	/**
@@ -749,8 +761,13 @@ final class Checkout {
 				'message' => __( 'That order can no longer be changed. If you have paid, your receipt is on its way.', 'invoiceninja' ),
 			);
 		}
+		// When the company tracks stock, only deleting an invoice gives its stock back in
+		// Invoice Ninja (a cancelled one keeps it reserved, and the new order takes it again).
+		// This invoice was made moments ago for this shopper and never paid, so it's deleted;
+		// the price is a gap in the invoice numbers. Without stock tracking it's cancelled.
+		$delete = ! empty( $this->plugin->state->get()['company']['track_inventory'] );
 		try {
-			$this->service->cancel( $order );
+			$this->service->cancel( $order, $delete );
 		} catch ( \InvoiceNinja\Commerce\OrderConflict | \InvoiceNinja\Api\ApiException $e ) {
 			return array(
 				'ok'      => false,
@@ -849,7 +866,11 @@ final class Checkout {
 		foreach ( (array) $order['items'] as $item ) {
 			$lines .= '<tr><td style="padding:4px 0">' . esc_html( wp_specialchars_decode( (string) $item['title'], ENT_QUOTES ) ) . ' × ' . (int) $item['quantity'] . '</td><td style="padding:4px 0;text-align:right">' . esc_html( $money->money( (float) $item['line_total'] ) ) . '</td></tr>';
 		}
-		$table = '<table style="width:100%;border-collapse:collapse;border:1px solid #dcdcde;margin:12px 0" cellpadding="8">' . $lines . '<tr><td style="font-weight:600;border-top:1px solid #dcdcde">' . esc_html__( 'Total', 'invoiceninja' ) . '</td><td style="font-weight:600;text-align:right;border-top:1px solid #dcdcde">' . esc_html( $money->money( (float) $order['total'] ) ) . '</td></tr></table>';
+		if ( self::taxLater( $order ) ) {
+			$lines .= '<tr><td style="padding:4px 0;color:#50575e">' . esc_html__( 'Tax', 'invoiceninja' ) . '</td><td style="padding:4px 0;text-align:right;color:#50575e">' . esc_html__( 'Added on the payment page', 'invoiceninja' ) . '</td></tr>';
+		}
+		$label = self::taxLater( $order ) ? __( 'Total before tax', 'invoiceninja' ) : __( 'Total', 'invoiceninja' );
+		$table = '<table style="width:100%;border-collapse:collapse;border:1px solid #dcdcde;margin:12px 0" cellpadding="8">' . $lines . '<tr><td style="font-weight:600;border-top:1px solid #dcdcde">' . esc_html( $label ) . '</td><td style="font-weight:600;text-align:right;border-top:1px solid #dcdcde">' . esc_html( $money->money( (float) $order['total'] ) ) . '</td></tr></table>';
 		if ( 'awaiting_payment' === $order['status'] && '' !== (string) $order['pay_link'] ) {
 			/* translators: %s: order number */
 			$subject = sprintf( __( 'Order #%s · complete your payment', 'invoiceninja' ), $order['number'] );

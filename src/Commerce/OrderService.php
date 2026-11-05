@@ -152,8 +152,13 @@ final class OrderService {
 				if ( ErrorKind::NotFound !== $e->kind ) {
 					throw $e;
 				}
-				// Deleted in Invoice Ninja: there's nothing left to pay or cancel there.
-				if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => 'invoice_gone' ) ) ) {
+				$invoice = array( 'is_deleted' => true );
+			}
+			// Deleted (Invoice Ninja keeps it, with is_deleted) or reversed there: there's
+			// nothing left to pay or cancel. Invoice Ninja refuses to cancel those.
+			$gone = self::gone( $invoice );
+			if ( null !== $gone && ( 'invoice_gone' === $gone || '6' === (string) ( $invoice['status_id'] ?? '' ) ) ) {
+				if ( ! $this->orders->transition( (int) $order['id'], array( 'awaiting_payment', 'attention', 'queued' ), 'cancelled', array( 'note' => $gone ) ) ) {
 					throw new OrderConflict( esc_html__( 'This order changed in the meantime. Reload and try again.', 'invoiceninja' ) );
 				}
 				return (array) $this->orders->find( (int) $order['id'] );
@@ -188,7 +193,20 @@ final class OrderService {
 	 */
 	private function closeInvoice( HttpClient $client, string $invoice_id, bool $delete, bool $already_cancelled = false ): bool {
 		if ( ! $already_cancelled ) {
-			$cancelled = $this->cancelInvoice( $client, $invoice_id );
+			try {
+				$cancelled = $this->cancelInvoice( $client, $invoice_id );
+			} catch ( ApiException $e ) {
+				// "This invoice cannot be cancelled": deleted or cancelled in Invoice Ninja meanwhile?
+				$now  = ErrorKind::Validation === $e->kind ? $client->get( 'invoices/' . rawurlencode( $invoice_id ), array(), 10.0 )->data() : array();
+				$gone = self::gone( $now );
+				if ( null === $gone ) {
+					throw $e;
+				}
+				if ( 'invoice_gone' === $gone ) {
+					return false;
+				}
+				$cancelled = $now;
+			}
 			if ( (float) ( $cancelled['paid_to_date'] ?? 0 ) > 0 ) {
 				return true; // A payment arrived just before the cancel: never delete it.
 			}
@@ -197,6 +215,19 @@ final class OrderService {
 			$this->cancelInvoice( $client, $invoice_id, true );
 		}
 		return false;
+	}
+
+	/**
+	 * Whether an invoice is closed in Invoice Ninja: invoice_gone when it was deleted (it's
+	 * kept with is_deleted), invoice_cancelled when cancelled (5) or reversed (6), else null.
+	 *
+	 * @param array<string, mixed> $invoice Invoice.
+	 */
+	public static function gone( array $invoice ): ?string {
+		if ( ! empty( $invoice['is_deleted'] ) ) {
+			return 'invoice_gone';
+		}
+		return in_array( (string) ( $invoice['status_id'] ?? '' ), array( '5', '6' ), true ) ? 'invoice_cancelled' : null;
 	}
 
 	/**
@@ -255,10 +286,11 @@ final class OrderService {
 	}
 
 	/**
-	 * Check payment with Invoice Ninja (rate-limited per order).
+	 * Check the invoice in Invoice Ninja (rate-limited per order): paid, cancelled or
+	 * deleted there, or a different amount (Invoice Ninja's own tax).
 	 *
 	 * @param array<string, mixed> $order Order.
-	 * @return array<string, mixed> The order, updated if it was paid.
+	 * @return array<string, mixed> The order, updated.
 	 */
 	public function refreshStatus( array $order ): array {
 		if ( 'awaiting_payment' !== $order['status'] || '' === (string) $order['invoice_id'] ) {
@@ -282,6 +314,19 @@ final class OrderService {
 			}
 			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s paid', $order['number'] ), array(), 'order', (string) $order['number'] );
 			return (array) $this->orders->find( (int) $order['id'] );
+		}
+		// Cancelled, reversed or deleted in Invoice Ninja: the order is closed (no pay link).
+		$gone = self::gone( $invoice );
+		if ( null !== $gone ) {
+			if ( $this->orders->transition( (int) $order['id'], array( 'awaiting_payment' ), 'cancelled', array( 'note' => $gone ) ) ) {
+				$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s closed: its invoice was %s in Invoice Ninja', $order['number'], 'invoice_gone' === $gone ? 'deleted' : 'cancelled' ), array(), 'order', (string) $order['number'] );
+			}
+			return (array) $this->orders->find( (int) $order['id'] );
+		}
+		$total = self::invoiceTotal( $invoice );
+		if ( isset( $total['total'] ) && abs( $total['total'] - (float) $order['total'] ) >= 0.005 ) {
+			$this->orders->update( (int) $order['id'], $total );
+			$order['total'] = $total['total'];
 		}
 		return $order;
 	}
@@ -461,6 +506,17 @@ final class OrderService {
 	}
 
 	/**
+	 * The invoice's amount as the order total: what the buyer pays. It differs from the
+	 * cart's when Invoice Ninja applied its own tax (its "calculate taxes" setting).
+	 *
+	 * @param array<string, mixed> $invoice Invoice.
+	 * @return array{total?: float}
+	 */
+	public static function invoiceTotal( array $invoice ): array {
+		return isset( $invoice['amount'] ) && is_numeric( $invoice['amount'] ) && (float) $invoice['amount'] >= 0 ? array( 'total' => round( (float) $invoice['amount'], 2 ) ) : array();
+	}
+
+	/**
 	 * Whether the order's prices included tax when it was placed.
 	 *
 	 * @param array<string, mixed> $order Order.
@@ -495,7 +551,7 @@ final class OrderService {
 			'pay_link'       => esc_url_raw( $link ),
 			'note'           => '' === $link ? 'no_invitation' : '',
 			'placed_at'      => gmdate( 'Y-m-d H:i:s' ),
-		);
+		) + self::invoiceTotal( $invoice );
 		if ( ! $this->orders->transition( (int) $order['id'], array( 'placing' ), 'awaiting_payment', $fields ) ) {
 			// Cancelled by an admin while the invoice was being created: cancel the invoice too.
 			$current = (array) $this->orders->find( (int) $order['id'] );

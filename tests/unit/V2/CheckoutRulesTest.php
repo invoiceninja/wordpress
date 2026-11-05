@@ -35,6 +35,34 @@ class CheckoutRulesTest extends TestCase
         $this->assertTrue( $cart->inclusiveTaxes() );
     }
 
+    public function testWhenInvoiceNinjaCalculatesTaxesTheCartClaimsNone()
+    {
+        $cart = new Cart( new Secrets( new Options() ), new Mapping() );
+        $this->assertFalse( $cart->summary( [] )['tax_later'] );
+        $this->options['invoiceninja_connection'] = [ 'company' => [ 'calculate_taxes' => true ] ];
+        $this->assertTrue( Cart::taxesByInvoiceNinja() );
+        $this->assertTrue( $cart->summary( [] )['tax_later'], 'the cart says tax is added on the payment page' );
+        $this->assertTrue( Checkout::taxLater( [ 'invoice_id' => '' ] ), 'an order without its invoice yet: before tax' );
+        $this->assertFalse( Checkout::taxLater( [ 'invoice_id' => 'INV1' ] ), "the invoice's amount is the total" );
+    }
+
+    public function testTheOrderTotalIsTheInvoicesAmount()
+    {
+        $this->assertSame( [ 'total' => 135.65 ], OrderService::invoiceTotal( [ 'amount' => 135.654 ] ), "Invoice Ninja's 19%, not the cart's 12.5%" );
+        $this->assertSame( [ 'total' => 0.0 ], OrderService::invoiceTotal( [ 'amount' => '0' ] ) );
+        $this->assertSame( [], OrderService::invoiceTotal( [] ), 'no amount: keep the cart total' );
+        $this->assertSame( [], OrderService::invoiceTotal( [ 'amount' => 'x' ] ) );
+    }
+
+    public function testDeletedCancelledAndReversedInvoicesCloseTheOrder()
+    {
+        $this->assertSame( 'invoice_gone', OrderService::gone( [ 'is_deleted' => true, 'status_id' => '2' ] ), 'Invoice Ninja keeps deleted invoices (200, is_deleted)' );
+        $this->assertSame( 'invoice_cancelled', OrderService::gone( [ 'status_id' => '5' ] ) );
+        $this->assertSame( 'invoice_cancelled', OrderService::gone( [ 'status_id' => 6 ] ), 'reversed' );
+        $this->assertNull( OrderService::gone( [ 'status_id' => '2', 'is_deleted' => false ] ) );
+        $this->assertNull( OrderService::gone( [ 'status_id' => '4' ] ) );
+    }
+
     public function testTheInvoiceIsToldWhetherPricesIncludeTax()
     {
         $this->assertTrue( OrderService::inclusive( [ 'items' => [ [ 'inclusive' => true ] ] ] ) );

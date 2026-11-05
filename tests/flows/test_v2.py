@@ -711,6 +711,93 @@ def admin_orders_list_resend_retry_and_cancel():
 
 
 @test
+def invoice_ninjas_own_tax_becomes_the_order_total():
+    store_ready()
+    b = admin()
+    wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); update_post_meta($m['wp_id'], 'tax_name1', 'VAT'); update_post_meta($m['wp_id'], 'tax_rate1', 10);")
+    option('in_mock_calculate_taxes', '1')  # the mock then taxes every line at 19%
+    b.api('POST', '/connection/refresh', {})
+    try:
+        s = shopper()
+        _, cart = s.api('GET', '/cart')
+        check(cart['tax_later'] and cart['tax'] == 0 and cart['total'] == 20.0, "the cart doesn't claim a tax Invoice Ninja will replace", cart)
+        reset_mock_log()
+        details = {'email': 'own.tax@example.com', 'first_name': 'Own', 'last_name': 'Tax', 'country_id': '276', 'postal_code': '10115'}
+        status, started = s.api('POST', '/checkout/start', details)
+        check(status == 200, 'checkout started', started)
+        if started['next'] == 'code':
+            details['code'] = last_code('own.tax@example.com')
+        status, r = s.api('POST', '/checkout/confirm', details)
+        check(status == 200 and r['total'] == 23.8 and not r['tax_later'], "the order total is the invoice's: 20 + 19%", r)
+        mail = [m for m in mails('own.tax@example.com') if 'complete your payment' in m['subject']]
+        check(mail and '23.80' in mail[0]['body'] and '22.00' not in mail[0]['body'], 'the email shows what the buyer pays', mails('own.tax@example.com'))
+        stored = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['total'];" % r['number'])
+        check(float(stored) == 23.8, 'and it is stored', stored)
+    finally:
+        option('in_mock_calculate_taxes', '0')
+        b.api('POST', '/connection/refresh', {})
+        wp_eval("$m = InvoiceNinja\\Plugin::instance()->mapping->find('product', 'P1'); delete_post_meta($m['wp_id'], 'tax_name1'); delete_post_meta($m['wp_id'], 'tax_rate1');")
+
+
+@test
+def invoices_cancelled_or_deleted_in_invoice_ninja_close_the_order():
+    store_ready()
+    b = admin()
+    try:
+        # Deleted in Invoice Ninja (it answers 200 with is_deleted): the order closes, no pay link
+        _, r = checkout(shopper(), 'gone.one@example.com')
+        inv = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_id'];" % r['number'])
+        option('in_mock_invoice_state', inv + ':deleted')
+        key = r['status_url'].split('key=')[1]
+        status, view = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
+        check(status == 200 and view['status'] == 'cancelled' and not view['pay_link'], 'Order Status shows it closed, without the pay link', view)
+        note = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['note'];" % r['number'])
+        check(note == 'invoice_gone', 'with a note for the admin', note)
+        # Cancelled in Invoice Ninja, picked up by a webhook-style refresh
+        _, r2 = checkout(shopper(), 'gone.two@example.com')
+        inv2 = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_id'];" % r2['number'])
+        option('in_mock_invoice_state', inv2 + ':cancelled')
+        wp_eval("$p = InvoiceNinja\\Plugin::instance(); foreach ($p->orders->awaitingForInvoice('%s') as $o) { delete_transient('invoiceninja_order_check_' . $o['id']); $p->orderService->refreshStatus($o); }" % inv2)
+        o = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['status'], ' ', $o['note'];" % r2['number'])
+        check(o == 'cancelled invoice_cancelled', 'a cancelled invoice closes the order', o)
+        # Admin Cancel on an order whose invoice was deleted there: no 502
+        _, r3 = checkout(shopper(), 'gone.three@example.com')
+        row = wp_eval("$o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); echo $o['id'], ' ', $o['invoice_id'];" % r3['number']).split()
+        option('in_mock_invoice_state', row[1] + ':deleted')
+        reset_mock_log()
+        status, res = b.api('POST', '/admin/orders/%s/cancel' % row[0], {})
+        check(status == 200 and res['status'] == 'cancelled', 'cancelling an order whose invoice was deleted works', (status, res))
+        check(not [c for c in api_calls() if c['url'].endswith('/invoices/bulk')], 'without asking Invoice Ninja to cancel a deleted invoice', describe(api_calls()))
+    finally:
+        wp('option', 'delete', 'in_mock_invoice_state', check_ok=False)
+
+
+@test
+def change_order_gives_tracked_stock_back():
+    store_ready()
+    b = admin()
+    option('in_mock_track_inventory', '1')
+    b.api('POST', '/connection/refresh', {})
+    try:
+        s = shopper()
+        _, r = checkout(s, 'change.stock@example.com')
+        reset_mock_log()
+        status, changed = s.api('POST', '/orders/last/change', {})
+        check(status == 200 and changed['ok'], 'Change order works', changed)
+        bulk = [c for c in api_calls() if c['url'].endswith('/invoices/bulk')]
+        check(any('"delete"' in c['body'] for c in bulk), 'the unpaid invoice is deleted, which gives its stock back in Invoice Ninja', describe(bulk))
+    finally:
+        option('in_mock_track_inventory', '0')
+        b.api('POST', '/connection/refresh', {})
+    s = shopper()
+    _, r = checkout(s, 'change.nostock@example.com')
+    reset_mock_log()
+    s.api('POST', '/orders/last/change', {})
+    bulk = [c for c in api_calls() if c['url'].endswith('/invoices/bulk')]
+    check(bulk and not any('"delete"' in c['body'] for c in bulk), 'without stock tracking it is only cancelled', describe(bulk))
+
+
+@test
 def stock_is_checked_live_before_the_code():
     store_ready()
     b = admin()

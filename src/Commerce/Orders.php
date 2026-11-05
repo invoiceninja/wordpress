@@ -120,7 +120,7 @@ final class Orders {
 	 */
 	public function update( int $id, array $fields ): void {
 		global $wpdb;
-		$allowed = array( 'status', 'client_id', 'invoice_id', 'invoice_number', 'pay_link', 'attempts', 'note', 'paid_at', 'placed_at', 'customer' );
+		$allowed = array( 'status', 'client_id', 'invoice_id', 'invoice_number', 'pay_link', 'attempts', 'note', 'paid_at', 'placed_at', 'customer', 'total' );
 		$fields  = array_intersect_key( $fields, array_flip( $allowed ) );
 		if ( isset( $fields['status'] ) && ! in_array( $fields['status'], self::STATUSES, true ) ) {
 			unset( $fields['status'] );
@@ -357,14 +357,15 @@ final class Orders {
 			return $kind ? $kind->title() . '. ' . $kind->fix() : '';
 		}
 		$notes = array(
-			'paused'         => __( 'Orders are paused on this site, so it waits until you allow them.', 'invoiceninja' ),
-			'gave_up'        => __( "Invoice Ninja couldn't be reached for several hours. Retry when it's back.", 'invoiceninja' ),
-			'no_invitation'  => __( "Invoice Ninja didn't return a payment link for this buyer. Send the invoice from Invoice Ninja.", 'invoiceninja' ),
-			'invoice_gone'   => __( 'The invoice was deleted in Invoice Ninja, so the order was closed.', 'invoiceninja' ),
-			'cleanup_failed' => __( "The unpaid-orders cleanup couldn't close this order. Check its invoice in Invoice Ninja.", 'invoiceninja' ),
-			'kept_unpaid'    => __( 'Left open by the unpaid-orders cleanup: its invoice has a payment or credit.', 'invoiceninja' ),
-			'check_invoice'  => __( "Cancelled, but Invoice Ninja couldn't be checked for an invoice. Look there for this order number as the PO number.", 'invoiceninja' ),
-			'currency'       => __( "Not invoiced: the buyer's client in Invoice Ninja uses another currency. Change the client's currency and retry, or invoice it there.", 'invoiceninja' ),
+			'paused'            => __( 'Orders are paused on this site, so it waits until you allow them.', 'invoiceninja' ),
+			'gave_up'           => __( "Invoice Ninja couldn't be reached for several hours. Retry when it's back.", 'invoiceninja' ),
+			'no_invitation'     => __( "Invoice Ninja didn't return a payment link for this buyer. Send the invoice from Invoice Ninja.", 'invoiceninja' ),
+			'invoice_gone'      => __( 'The invoice was deleted in Invoice Ninja, so the order was closed.', 'invoiceninja' ),
+			'invoice_cancelled' => __( 'The invoice was cancelled in Invoice Ninja, so the order was closed.', 'invoiceninja' ),
+			'cleanup_failed'    => __( "The unpaid-orders cleanup couldn't close this order. Check its invoice in Invoice Ninja.", 'invoiceninja' ),
+			'kept_unpaid'       => __( 'Left open by the unpaid-orders cleanup: its invoice has a payment or credit.', 'invoiceninja' ),
+			'check_invoice'     => __( "Cancelled, but Invoice Ninja couldn't be checked for an invoice. Look there for this order number as the PO number.", 'invoiceninja' ),
+			'currency'          => __( "Not invoiced: the buyer's client in Invoice Ninja uses another currency. Change the client's currency and retry, or invoice it there.", 'invoiceninja' ),
 		);
 		return $notes[ $note ] ?? $note;
 	}
