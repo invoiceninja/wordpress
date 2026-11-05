@@ -102,7 +102,7 @@ def subs_ready():
     b = admin()
     status, s = b.api('POST', '/settings', {'modules': {'subs': True}, 'subscriptions': {'suspend_days': 7}})
     check(status == 200 and s['modules']['subs'] and s['subscriptions']['suspend_days'] == 7, 'Subscriptions on', s)
-    for name in ('in_mock_subscription_config', 'in_mock_subscription_put_fail', 'in_mock_recurring', 'in_mock_relay_fail',
+    for name in ('in_mock_subscription_config', 'in_mock_subscription_put_fail', 'in_mock_subscription_bad_url', 'in_mock_recurring', 'in_mock_relay_fail',
                  'in_mock_legacy_reply', 'in_mock_legacy_down', 'in_mock_eligible', 'in_mock_payments',
                  'in_mock_subscription_fields', 'in_mock_paid'):
         wp('option', 'delete', name, check_ok=False)
@@ -225,6 +225,14 @@ def opting_in_sets_and_restores_webhook_configuration():
 
     status, r = b.api('POST', '/admin/subscriptions/SUBM', {'connected': False})
     check(status == 200 and mock_config('SUBM') == LEGACY, 'opt-out restores the original', mock_config('SUBM'))
+
+    # Invoice Ninja refuses a callback address it can't reach (private or local): say so plainly
+    option('in_mock_subscription_bad_url', '1')
+    try:
+        status, r = b.api('POST', '/admin/subscriptions/SUBM', {'connected': True})
+        check(status == 422 and r['code'] == 'unreachable' and 'public address' in r['message'], 'a private address is explained, not a generic error', (status, r))
+    finally:
+        wp('option', 'delete', 'in_mock_subscription_bad_url')
 
     # A restore that fails is loud, and can be retried
     b.api('POST', '/admin/subscriptions/SUBY', {'connected': True})

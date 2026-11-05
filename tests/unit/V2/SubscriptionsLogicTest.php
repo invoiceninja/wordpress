@@ -104,4 +104,12 @@ class SubscriptionsLogicTest extends TestCase
         $this->assertFalse( $rows[2]['links']['payment_method'] );
         $this->assertSame( 'Pro', $rows[0]['name'] );
     }
+
+    public function testARefusedCallbackAddressIsRecognised()
+    {
+        $refused = new \InvoiceNinja\Api\ApiException( \InvoiceNinja\Api\ErrorKind::Validation, '422', 422, [ 'webhook_configuration.post_purchase_url' => [ 'Invalid URL' ] ] );
+        $this->assertTrue( Configurator::urlRefused( $refused ) );
+        $this->assertFalse( Configurator::urlRefused( new \InvoiceNinja\Api\ApiException( \InvoiceNinja\Api\ErrorKind::Validation, '422', 422, [ 'steps' => [ 'required' ] ] ) ) );
+        $this->assertFalse( Configurator::urlRefused( new \InvoiceNinja\Api\ApiException( \InvoiceNinja\Api\ErrorKind::Server, '500' ) ) );
+    }
 }

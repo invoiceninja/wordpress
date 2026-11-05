@@ -354,7 +354,12 @@ final class SubscriptionsModule implements Module {
 			if ( $on ) {
 				$result = $this->configurator->connect( $id );
 				if ( ! $result['ok'] ) {
-					return Routes::fail( $result['code'], $result['message'], 'other_wordpress' === $result['code'] || 'paused' === $result['code'] ? 409 : 502 );
+					$http = match ( $result['code'] ) {
+						'other_wordpress', 'paused' => 409,
+						'unreachable'               => 422,
+						default                     => 502,
+					};
+					return Routes::fail( $result['code'], $result['message'], $http );
 				}
 				$message = $result['message'];
 			} elseif ( ! $this->configurator->disconnect( $id ) ) {
