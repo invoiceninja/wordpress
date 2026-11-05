@@ -13,6 +13,8 @@
 	max-inline-size: 40rem;
 }
 .invoiceninja-quote-form__form { display: flex; flex-direction: column; gap: var(--invoiceninja-gap); }
+/* forms.js hides the form after a request is sent: the display above must not undo [hidden]. */
+.invoiceninja-quote-form [hidden] { display: none !important; }
 .invoiceninja-quote-form .invoiceninja-field select,
 .invoiceninja-quote-form .invoiceninja-field textarea { font: inherit; min-block-size: 2.75rem; }
 .invoiceninja-quote-form .invoiceninja-field textarea { resize: vertical; }

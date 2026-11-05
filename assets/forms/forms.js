@@ -199,14 +199,17 @@
 				showSummary( t.offline );
 				return;
 			}
-			busy( false );
 			if ( result.form && token ) {
 				token.value = result.form; // The old token had expired: the next try uses this one.
 			}
 			if ( response.ok && result.ok ) {
+				// Sent: the button stays disabled, so the request can't be sent twice.
+				submit.removeAttribute( 'aria-busy' );
+				submit.textContent = label;
 				success( result );
 				return;
 			}
+			busy( false );
 			if ( result.errors ) {
 				showErrors( result.errors, result.message || t.error );
 			} else {

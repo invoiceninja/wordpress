@@ -177,8 +177,8 @@ final class QuoteForm {
 			. '<form class="invoiceninja-quote-form__form" method="post" action="' . esc_url( rest_url( Routes::NS . '/quote-requests' ) ) . '" novalidate>'
 			. '<div class="invoiceninja-quote-form__summary" tabindex="-1" hidden></div>'
 			. $html
-			// Spam trap: people never see or fill it.
-			. '<p class="invoiceninja-sr" aria-hidden="true"><label for="' . esc_attr( $prefix . 'website' ) . '">' . esc_html__( 'Leave this empty', 'invoiceninja' ) . '</label><input type="text" id="' . esc_attr( $prefix . 'website' ) . '" name="website" tabindex="-1" autocomplete="off"></p>'
+			// Spam trap: people never see or fill it, and its name is one autofill and password managers leave alone.
+			. '<p class="invoiceninja-sr" aria-hidden="true"><label for="' . esc_attr( $prefix . 'trap' ) . '">' . esc_html__( 'Leave this empty', 'invoiceninja' ) . '</label><input type="text" id="' . esc_attr( $prefix . 'trap' ) . '" name="' . esc_attr( Routes::TRAP ) . '" tabindex="-1" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore></p>'
 			. '<input type="hidden" name="form" value="' . esc_attr( $this->token( $config, time() ) ) . '">'
 			. '<p class="invoiceninja-actions"><button type="submit" class="wp-element-button">' . esc_html( '' !== $submit ? $submit : __( 'Send request', 'invoiceninja' ) ) . '</button></p>'
 			. ( '' !== $reply ? '<p class="invoiceninja-muted invoiceninja-quote-form__reply">' . esc_html( $reply ) . '</p>' : '' )
@@ -203,6 +203,17 @@ final class QuoteForm {
 			return 'too_fast';
 		}
 		return $age > self::MAX_AGE ? 'expired' : 'ok';
+	}
+
+	/**
+	 * Whether the spam trap was filled in. Only the trap's own name counts: an old cached
+	 * page's "website" field is ignored (autofill and password managers fill it for people),
+	 * and a request without the trap counts as empty.
+	 *
+	 * @param array<string, mixed> $input Submitted values.
+	 */
+	public static function trapped( array $input ): bool {
+		return Checkout::trapped( array( 'trap' => $input[ Routes::TRAP ] ?? '' ) );
 	}
 
 	/**
@@ -234,7 +245,7 @@ final class QuoteForm {
 		$ip     = Routes::clientIp();
 		$thanks = $this->thanks();
 		// Bots that fill every field get the same reply as people, and nothing is saved.
-		if ( '' !== trim( (string) ( is_scalar( $input['website'] ?? '' ) ? $input['website'] : 'x' ) ) ) {
+		if ( self::trapped( $input ) ) {
 			$this->plugin->logger->log( LogLevel::Info, 'forms', 'Quote request dropped: spam trap filled' );
 			return new \WP_REST_Response( $thanks );
 		}

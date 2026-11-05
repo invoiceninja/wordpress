@@ -29,6 +29,14 @@
 	white-space: nowrap;
 }
 
+/* The scripts show and hide parts with the hidden attribute: no display rule may undo it. */
+[class^="invoiceninja-"][hidden],
+[class*=" invoiceninja-"][hidden],
+[data-invoiceninja-store] [hidden],
+[data-invoiceninja-quote-form] [hidden],
+[data-invoiceninja-account] [hidden],
+[data-invoiceninja-payinvoice] [hidden] { display: none !important; }
+
 .invoiceninja-muted { color: var(--invoiceninja-muted); }
 .invoiceninja-loading { color: var(--invoiceninja-muted); }
 

@@ -181,4 +181,13 @@ class FormsTest extends TestCase
         $this->assertSame( $now, FormConfig::verify( $token, str_repeat( 'k', 64 ) )['time'], 'the render time is signed' );
         $this->assertNull( FormConfig::verify( $token, str_repeat( 'j', 64 ) ) );
     }
+
+    public function testTheSpamTrapIsTheCheckoutsNotWebsite()
+    {
+        $this->assertTrue( \InvoiceNinja\Forms\QuoteForm::trapped( [ 'in_leave_empty' => 'http://spam.example' ] ) );
+        $this->assertTrue( \InvoiceNinja\Forms\QuoteForm::trapped( [ 'in_leave_empty' => [ 'x' ] ] ), 'not a plain value' );
+        $this->assertFalse( \InvoiceNinja\Forms\QuoteForm::trapped( [ 'in_leave_empty' => ' ' ] ) );
+        $this->assertFalse( \InvoiceNinja\Forms\QuoteForm::trapped( [] ), 'a missing trap counts as empty' );
+        $this->assertFalse( \InvoiceNinja\Forms\QuoteForm::trapped( [ 'website' => 'https://jane.example' ] ), 'an autofilled "website" field keeps the lead' );
+    }
 }
