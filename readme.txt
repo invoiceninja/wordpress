@@ -4,7 +4,7 @@ Tags: invoice, billing, payments, quotes, subscriptions
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.0.0
+Stable tag: 2.0.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -109,6 +109,11 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 * Fix: going back to 1.0.16 and updating again no longer duplicates products.
 * Fix: customers confirm their email on the site before buying, even without an Account page.
 * Fix: the first page load after the update keeps the 1.x shop display.
+* Fix: when Invoice Ninja calculates tax, checkout asks only for the country (the postcode is optional), so buyers from countries without postcodes can order. The fields appear even on cached pages.
+* Fix: orders held up on the shop's side no longer count toward a buyer's unpaid-orders limit, and the limit is now 5.
+* Fix: browser autofill and password managers no longer cause checkout or Pay Invoice requests to be dropped as spam.
+* Fix: a CAPTCHA set up for the Quote Request Form no longer blocks checkout or Pay Invoice (they have their own filters now).
+* Fix: an add-on registering a REST route that isn't allowed no longer breaks the REST API and the block editor.
 
 = 2.0.0 =
 * Rebuilt from the ground up, with automatic migration from 1.x.
