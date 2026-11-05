@@ -180,9 +180,9 @@
 		async load( forCheckout ) {
 			// The REST root may already have a query (plain permalinks: ?rest_route=).
 			this.data = await api( 'GET', '/cart' + ( forCheckout ? ( cfg.rest.indexOf( '?' ) < 0 ? '?' : '&' ) + 'checkout=1' : '' ) );
-			if ( this.data.tax ) {
-				applyTax( this.data.tax );
-				delete this.data.tax;
+			if ( this.data.tax_address ) {
+				applyTax( this.data.tax_address );
+				delete this.data.tax_address;
 			}
 			this.emit();
 			return this.data;
@@ -434,7 +434,7 @@
 				state.message = null;
 			} else if ( result.code === 'tax_address' ) {
 				// The server needs the tax address even if this (cached) page didn't know.
-				applyTax( result.tax );
+				applyTax( result.tax_address );
 				state.step = 'details';
 			}
 			return false;

@@ -258,7 +258,7 @@ final class Routes {
 		$cart    = $this->plugin->cart;
 		$summary = $cart->summary( $cart->items( $cart->currentId() ) );
 		if ( $request->get_param( 'checkout' ) ) {
-			$summary['tax'] = $this->plugin->checkout->taxConfig();
+			$summary['tax_address'] = $this->plugin->checkout->taxConfig(); // 'tax' is the cart's tax amount.
 		}
 		return new \WP_REST_Response( $summary );
 	}

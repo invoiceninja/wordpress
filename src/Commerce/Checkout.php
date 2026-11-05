@@ -204,13 +204,13 @@ final class Checkout {
 			return null;
 		}
 		return array(
-			'ok'      => false,
-			'code'    => 'tax_address',
-			'message' => isset( $errors['country_id'] )
+			'ok'          => false,
+			'code'        => 'tax_address',
+			'message'     => isset( $errors['country_id'] )
 				? __( 'Choose your country. We need it to work out the tax.', 'invoiceninja' )
 				: __( 'Check your postcode.', 'invoiceninja' ),
-			'fields'  => $errors,
-			'tax'     => $this->taxConfig(),
+			'fields'      => $errors,
+			'tax_address' => $this->taxConfig(),
 		);
 	}
 

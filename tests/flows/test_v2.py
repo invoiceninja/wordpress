@@ -1007,14 +1007,14 @@ def new_clients_get_currency_language_and_tax_address():
         s = shopper()
         # A page cached before taxes were turned on still learns about the fields: from the cart...
         status, cart = s.api('GET', '/cart?checkout=1')
-        check(status == 200 and cart['tax']['fields'] and ['276', 'Germany'] in cart['tax']['countries'] and cart['tax']['country'] == '840', 'the checkout cart says the tax address is needed', cart)
+        check(status == 200 and cart['tax_address']['fields'] and ['276', 'Germany'] in cart['tax_address']['countries'] and cart['tax_address']['country'] == '840' and isinstance(cart['tax'], (int, float)), 'the checkout cart says the tax address is needed', cart)
         _, plain = s.api('GET', '/cart')
-        check('tax' not in plain, 'other cart requests stay small', plain)
+        check('tax_address' not in plain, 'other cart requests stay small', plain)
         email = 'tax.buyer@example.com'
         details = {'email': email, 'first_name': 'Tax', 'last_name': 'Payer'}
         status, r = s.api('POST', '/checkout/start', details)
         check(status == 422 and r['code'] == 'tax_address' and set(r['fields']) == {'country_id'}, 'the country is needed before the code', r)
-        check(r['tax']['fields'] and ['276', 'Germany'] in r['tax']['countries'], '...and from the error, with the countries to show', r)
+        check(r['tax_address']['fields'] and ['276', 'Germany'] in r['tax_address']['countries'], '...and from the error, with the countries to show', r)
         check(not mails(email), 'no code yet')
         details.update(country_id='276', postal_code='12#45')
         status, r = s.api('POST', '/checkout/start', details)
