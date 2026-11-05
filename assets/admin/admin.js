@@ -659,12 +659,14 @@
 				h( Notice, { type: 'info', title: __( 'The connection is set in wp-config.php', 'invoiceninja' ) }, h( 'p', null, __( 'INVOICENINJA_API_URL and INVOICENINJA_API_TOKEN are defined there, so they can only be changed there.', 'invoiceninja' ) ) ),
 				h( ConnectionCard, { connection: conn } ) );
 		}
-		const urlChanged = normalizePreview( url ) !== conn.url;
+		// A blank address means hosted Invoice Ninja, as it did in 1.x.
+		const target = url.trim() ? url : 'https://invoicing.co';
+		const urlChanged = normalizePreview( target ) !== conn.url;
 		const save = async ( confirmSwitch ) => {
 			setBusy( true );
 			setMessage( '' );
 			try {
-				const r = await api( '/connection', { method: 'POST', data: { url, token, allow_private: !! conn.state.private_host && conn.state.private_host === hostOf( url ), confirm_switch: !! confirmSwitch } } );
+				const r = await api( '/connection', { method: 'POST', data: { url: target, token, allow_private: !! conn.state.private_host && conn.state.private_host === hostOf( target ), confirm_switch: !! confirmSwitch } } );
 				setResult( r );
 				if ( r.saved ) {
 					setConn( r.connection );
@@ -695,7 +697,7 @@
 				h( Card, { title: __( 'Invoice Ninja connection', 'invoiceninja' ) },
 					h( 'div', { className: 'in-field' },
 						h( 'label', { htmlFor: 'in-url' }, __( 'Invoice Ninja address', 'invoiceninja' ) ),
-						h( 'input', { id: 'in-url', className: 'regular-text', type: 'text', inputMode: 'url', value: url, onChange: ( e ) => setUrl( e.target.value ) } ),
+						h( 'input', { id: 'in-url', className: 'regular-text', type: 'text', inputMode: 'url', value: url, placeholder: 'https://invoicing.co', onChange: ( e ) => setUrl( e.target.value ) } ),
 						urlChanged ? h( 'p', { className: 'description' }, __( 'Changing the address needs the token again.', 'invoiceninja' ) ) : null ),
 					h( 'div', { className: 'in-field' },
 						h( 'label', { htmlFor: 'in-token' }, __( 'API token', 'invoiceninja' ) ),

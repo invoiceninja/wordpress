@@ -65,6 +65,28 @@ final class ConnectionState {
 	}
 
 	/**
+	 * Allow this host to be on a private network (kept until the next connect).
+	 *
+	 * @param string $host Host.
+	 */
+	public function allowPrivateHost( string $host ): void {
+		$state                 = $this->options->get( self::OPTION, array() );
+		$state                 = is_array( $state ) ? $state : array();
+		$state['private_host'] = strtolower( $host );
+		$this->options->set( self::OPTION, $state, true );
+	}
+
+	/**
+	 * Whether a private host may be allowed without a person choosing it now. On multisite
+	 * only network admins may allow one, so only an address set in wp-config.php counts.
+	 *
+	 * @param bool $from_constant The address comes from wp-config.php.
+	 */
+	public static function privateAllowedWithoutAdmin( bool $from_constant ): bool {
+		return ! is_multisite() || $from_constant;
+	}
+
+	/**
 	 * Whether we're connected and the last check didn't break the connection.
 	 */
 	public function connected(): bool {

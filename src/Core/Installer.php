@@ -9,6 +9,11 @@ declare(strict_types=1);
 
 namespace InvoiceNinja\Core;
 
+use InvoiceNinja\Api\ApiException;
+use InvoiceNinja\Api\BaseUrl;
+use InvoiceNinja\Api\ErrorKind;
+use InvoiceNinja\Api\HttpClient;
+use InvoiceNinja\Connection\ConnectionState;
 use InvoiceNinja\Connection\Credentials;
 
 /**
@@ -18,7 +23,12 @@ use InvoiceNinja\Connection\Credentials;
  */
 final class Installer {
 
-	public const SCHEMA = 9;
+	public const SCHEMA = 10;
+
+	/**
+	 * Seconds to wait after a failed upgrade before trying again.
+	 */
+	public const RETRY_AFTER = 600;
 
 	/**
 	 * Constructor.
@@ -47,18 +57,23 @@ final class Installer {
 	 * Upgrade if needed. Safe to call on every request.
 	 */
 	public function maybeUpgrade(): void {
-		if ( ! $this->due() || ! $this->lock() ) {
+		if ( ! $this->due() || $this->waiting() || ! $this->lock() ) {
 			return;
 		}
 		try {
 			$from = (string) $this->options->get( 'version', '' );
-			if ( '' === $from && $this->hasLegacyData() ) {
+			if ( '' === $from && self::hasLegacyData() ) {
 				$from = '1.x';
 				$this->options->set( 'upgraded_from', '1.x' );
 			}
 			$this->createTables();
 			$this->migrate( (int) $this->options->get( 'schema_version', 0 ) );
+			// Migration 1 again: 1.x saves the token in plain text, also after a downgrade.
+			if ( $this->credentials->encryptLegacyToken() ) {
+				$this->logger->info( 'upgrade', 'Encrypted the saved API token' );
+			}
 			$this->options->set( 'version', INVOICENINJA_VERSION, true );
+			$this->options->delete( 'upgrade_failed' );
 			if ( '' !== $from && INVOICENINJA_VERSION !== $from ) {
 				$this->logger->info( 'upgrade', sprintf( 'Upgraded from %s to %s', $from, INVOICENINJA_VERSION ) );
 				/**
@@ -70,9 +85,62 @@ final class Installer {
 				 */
 				do_action( 'invoiceninja_upgraded', $from, INVOICENINJA_VERSION );
 			}
+		} catch ( \Throwable $e ) {
+			// Never take the site down: record it, show admins a notice and try again later.
+			$this->failed( $e );
 		} finally {
 			$this->unlock();
 		}
+	}
+
+	/**
+	 * Record a failed upgrade.
+	 *
+	 * @param \Throwable $e What went wrong.
+	 */
+	private function failed( \Throwable $e ): void {
+		$message = sprintf( '%s in %s:%d', $e->getMessage(), basename( $e->getFile() ), $e->getLine() );
+		try {
+			$this->options->set(
+				'upgrade_failed',
+				array(
+					'at'      => time(),
+					'version' => INVOICENINJA_VERSION,
+					'step'    => (int) $this->options->get( 'schema_version', 0 ) + 1,
+					'message' => substr( $message, 0, 500 ),
+				)
+			);
+			$this->logger->error( 'upgrade', 'The update to ' . INVOICENINJA_VERSION . ' failed and will be tried again: ' . $message, array( 'exception' => get_class( $e ) ) );
+		} catch ( \Throwable $ignored ) {
+			// The log table may be what failed.
+			error_log( 'Invoice Ninja: the update failed: ' . $message ); // phpcs:ignore WordPress.PHP.DevelopmentFunctions.error_log_error_log -- last resort when the log table is unusable.
+		}
+	}
+
+	/**
+	 * The last failed upgrade, if the current version hasn't finished upgrading.
+	 *
+	 * @return array{at: int, version: string, step: int, message: string}|null
+	 */
+	public function failure(): ?array {
+		$failed = $this->options->get( 'upgrade_failed' );
+		if ( ! is_array( $failed ) || ! $this->due() ) {
+			return null;
+		}
+		return array(
+			'at'      => (int) ( $failed['at'] ?? 0 ),
+			'version' => (string) ( $failed['version'] ?? '' ),
+			'step'    => (int) ( $failed['step'] ?? 0 ),
+			'message' => (string) ( $failed['message'] ?? '' ),
+		);
+	}
+
+	/**
+	 * Whether a recent failure means waiting before trying again.
+	 */
+	private function waiting(): bool {
+		$failed = $this->options->get( 'upgrade_failed' );
+		return is_array( $failed ) && (int) ( $failed['at'] ?? 0 ) > time() - self::RETRY_AFTER;
 	}
 
 	/**
@@ -98,22 +166,22 @@ final class Installer {
 	 */
 	private function migrate( int $from ): void {
 		$steps = array(
-			1 => function (): void {
+			1  => function (): void {
 				// Encrypt a 1.x plain-text token in place.
 				if ( $this->credentials->encryptLegacyToken() ) {
 					$this->logger->info( 'upgrade', 'Encrypted the saved API token' );
 				}
 			},
-			2 => function (): void {
+			2  => function (): void {
 				foreach ( Secrets::PURPOSES as $purpose ) {
 					$this->secrets->get( $purpose );
 				}
 				$this->secrets->siteCode();
 			},
-			3 => static function (): void {
+			3  => static function (): void {
 				Capabilities::grant();
 			},
-			4 => function (): void {
+			4  => function (): void {
 				// 2.0 syncs products in place; link 1.x posts and retire its hourly delete-and-reimport.
 				$linked = \InvoiceNinja\Plugin::instance()->products->linkLegacyPosts();
 				wp_clear_scheduled_hook( 'invoiceninja_auto_refresh' );
@@ -121,13 +189,13 @@ final class Installer {
 					$this->logger->info( 'upgrade', sprintf( 'Linked %d products from 1.x', $linked ) );
 				}
 			},
-			5 => static function (): void {
+			5  => static function (): void {
 				// Tables were widened; createTables() above already applied it.
 			},
-			6 => static function (): void {
+			6  => static function (): void {
 				// Orders table; created by createTables() above.
 			},
-			7 => function (): void {
+			7  => function (): void {
 				// 1.x purchase modes. Login stays required: 1.0.15 required it for every purchase.
 				$legacy = get_option( 'invoiceninja_online_purchases', false );
 				if ( false === $legacy ) {
@@ -155,14 +223,17 @@ final class Installer {
 				$this->logger->info( 'upgrade', sprintf( 'Kept the 1.x store settings: %s, login required, legacy display', $mode ) );
 				$this->options->set( 'welcome_pending', 1 );
 			},
-			8 => static function (): void {
+			8  => static function (): void {
 				// Orders gained placed_at; createTables() above added it.
 			},
-			9 => function (): void {
+			9  => function (): void {
 				// 1.x stored the whole company record (company key, mail secrets); keep only what it reads.
 				if ( self::reduceLegacyProfile() ) {
 					$this->logger->info( 'upgrade', 'Removed secrets from the saved 1.x company profile' );
 				}
+			},
+			10 => function (): void {
+				$this->keepLegacyConnection();
 			},
 		);
 		foreach ( $steps as $version => $step ) {
@@ -193,9 +264,43 @@ final class Installer {
 	}
 
 	/**
+	 * Keep a 1.x site working as it did: hosted when the address was blank, its own
+	 * private-network address, and orders allowed on a live site.
+	 */
+	private function keepLegacyConnection(): void {
+		// 1.x said to leave the address blank for hosted Invoice Ninja.
+		if ( ! defined( 'INVOICENINJA_API_URL' ) && '' === trim( (string) $this->options->get( 'api_url', '' ) ) && $this->credentials->hasToken() ) {
+			$this->options->set( 'api_url', BaseUrl::HOSTED, true );
+			$this->logger->info( 'upgrade', 'No Invoice Ninja address was saved, so the hosted service is used, as in 1.x' );
+		}
+		if ( '1.x' !== $this->options->get( 'upgraded_from', '' ) ) {
+			return;
+		}
+		$state = new ConnectionState( $this->options );
+		$url   = $this->credentials->url();
+		$known = $state->get();
+		// The admin chose this address in 1.x, where private addresses worked.
+		if ( '' !== $url && '' === $known['private_host'] && '' === (string) ( $known['company']['id'] ?? '' ) && HttpClient::isPrivate( BaseUrl::host( $url ) ) ) {
+			if ( ConnectionState::privateAllowedWithoutAdmin( $this->credentials->urlFromConstant() ) ) {
+				$state->allowPrivateHost( BaseUrl::host( $url ) );
+				$this->logger->info( 'upgrade', sprintf( 'Allowed %s on the private network, as in 1.x', BaseUrl::host( $url ) ) );
+			} else {
+				$state->markError( new ApiException( ErrorKind::PrivateHost, BaseUrl::host( $url ) . ': on multisite a network admin needs to allow it' ) );
+				$this->logger->warning( 'upgrade', sprintf( '%s is on the private network; a network admin needs to allow it in the setup', BaseUrl::host( $url ) ) );
+			}
+		}
+		// 1.x had no staging check: a live production site keeps taking orders.
+		$environment = new Environment( $this->options );
+		if ( null === $environment->state() && 'production' === $environment->type() && ! $environment->looksLocal() ) {
+			$environment->confirm( 0 );
+			$this->logger->info( 'upgrade', 'Orders stay allowed on this site, as in 1.x' );
+		}
+	}
+
+	/**
 	 * Whether 1.x left settings behind.
 	 */
-	private function hasLegacyData(): bool {
+	public static function hasLegacyData(): bool {
 		return '' !== (string) get_option( 'invoiceninja_api_token', '' )
 			|| false !== get_option( 'invoiceninja_profile', false )
 			|| false !== get_option( 'invoiceninja_online_purchases', false );

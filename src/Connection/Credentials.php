@@ -49,14 +49,22 @@ final class Credentials {
 	}
 
 	/**
-	 * The normalised base URL, or '' when unset.
+	 * The normalised base URL, or '' when unset. A token without an address means hosted
+	 * Invoice Ninja: 1.x told hosted users to leave the address blank.
 	 */
 	public function url(): string {
 		$raw = defined( 'INVOICENINJA_API_URL' ) ? (string) constant( 'INVOICENINJA_API_URL' ) : (string) $this->options->get( 'api_url', '' );
 		if ( '' === trim( $raw ) ) {
-			return '';
+			return $this->hasToken() ? BaseUrl::HOSTED : '';
 		}
 		return BaseUrl::normalize( $raw ) ?? '';
+	}
+
+	/**
+	 * Whether the address comes from wp-config.php.
+	 */
+	public function urlFromConstant(): bool {
+		return defined( 'INVOICENINJA_API_URL' ) && '' !== trim( (string) constant( 'INVOICENINJA_API_URL' ) );
 	}
 
 	/**
@@ -70,7 +78,16 @@ final class Credentials {
 		if ( '' === $stored ) {
 			return '';
 		}
-		return Secrets::isEnvelope( $stored ) ? $this->secrets->decrypt( $stored ) : $stored;
+		if ( Secrets::isEnvelope( $stored ) ) {
+			return $this->secrets->decrypt( $stored );
+		}
+		// A plain-text token: 1.x saved it, possibly again after a downgrade. Encrypt it now.
+		try {
+			$this->encryptLegacyToken();
+		} catch ( \Throwable $e ) {
+			unset( $e ); // Still usable in plain text; the next read tries again.
+		}
+		return $stored;
 	}
 
 	/**
