@@ -204,7 +204,11 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         for ( $i = 3; $i <= (int) get_option( 'in_mock_many', 0 ); $i++ ) {
             $products[] = in_mock_product( 'P' . $i, 'Extra ' . $i, 5 + $bump, 0, 0 );
         }
+        $stock_all = get_option( 'in_mock_stock_all', '' ); // Every product sold some: only the stock changed
         foreach ( $products as &$product ) {
+            if ( '' !== (string) $stock_all ) {
+                $product['in_stock_quantity'] = (int) $stock_all;
+            }
             $product['updated_at']  = 1700000000;
             $product['archived_at'] = in_array( $product['id'], $archived, true ) ? 1700000000 : 0;
             $product['is_deleted']  = false;

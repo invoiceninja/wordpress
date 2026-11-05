@@ -277,7 +277,7 @@ final class Plugin {
 					}
 					return;
 				}
-				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ) );
+				$this->products->run( ! empty( $payload['full'] ), ! empty( $payload['force'] ), ! empty( $payload['continue'] ) );
 			}
 		);
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );

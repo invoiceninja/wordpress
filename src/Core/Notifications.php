@@ -91,6 +91,25 @@ final class Notifications {
 	}
 
 	/**
+	 * Product sync stopped because too many products would change. Called once per incident.
+	 *
+	 * @param int $changes Products that would change.
+	 * @param int $total   Products synced so far.
+	 */
+	public function syncPaused( int $changes, int $total ): void {
+		if ( ! $this->options->setting( 'notifications.incidents' ) ) {
+			return;
+		}
+		$this->mailer->send(
+			$this->recipients(),
+			__( 'Invoice Ninja product sync is paused', 'invoiceninja' ),
+			/* translators: 1: products that would change, 2: all products */
+			'<p>' . esc_html( sprintf( __( '%1$d of %2$d products would change at once, so the sync stopped before changing anything. Prices and products on your site stay as they are until you review the changes.', 'invoiceninja' ), $changes, $total ) ) . '</p>'
+			. '<p><a href="' . esc_url( admin_url( 'admin.php?page=invoiceninja-status' ) ) . '" style="display:inline-block;background:#2271b1;color:#ffffff;padding:10px 18px;border-radius:4px;text-decoration:none;font-weight:600">' . esc_html__( 'Review the changes', 'invoiceninja' ) . '</a></p>'
+		);
+	}
+
+	/**
 	 * An order is stuck: email the admins (setting "Orders that need attention").
 	 *
 	 * @param array<string, mixed> $order Order.

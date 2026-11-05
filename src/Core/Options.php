@@ -226,7 +226,7 @@ final class Options {
 			return 0;
 		}
 		try {
-			return (int) mysqli_insert_id( $dbh );
+			return (int) mysqli_insert_id( $dbh ); // phpcs:ignore WordPress.DB.RestrictedFunctions.mysql_mysqli_insert_id -- the reply of the UPDATE wpdb just ran, on wpdb's own connection.
 		} catch ( \Throwable $e ) {
 			return 0;
 		}

@@ -300,9 +300,21 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
     option('in_mock_many', '12')
     try:
         sync(b)  # adds the extra products (new products don't trip the breaker on a small catalog)
+        # Every product sold some: Invoice Ninja changed only the stock, which shoppers don't see as a change
+        option('in_mock_stock_all', '1')
+        reset_mock_log()
+        r = sync(b)
+        check(r['result']['status'] == 'synced' and r['result']['updated'] >= 12 and not r['paused'], 'stock changes on every product do not pause the sync', r)
+        check(meta(product_ids()['Extra 3'][0], 'in_stock_quantity') == '1', 'the stock is stored', meta(product_ids()['Extra 3'][0], 'in_stock_quantity'))
         option('in_mock_price_bump', '7')
         r = sync(b)
         check(r['result']['status'] == 'paused', 'mass price change paused', r)
+        paused_mails = [m for m in mails('admin@example.com') if 'paused' in m['subject']]
+        check(len(paused_mails) == 1, 'admins get one email', mails())
+        r = sync(b)
+        check(r['result']['status'] == 'paused' and len([m for m in mails('admin@example.com') if 'paused' in m['subject']]) == 1, '...not one per run', mails())
+        _, _, html = Browser().login('admin', 'admin').get('/wp-admin/')
+        check('Product sync is paused' in html, 'and a notice on the Dashboard', html[:300])
         check(r['paused']['changes'] >= 12 and r['paused']['sample'], 'review details stored', r['paused'])
         check(meta(product_ids()['Widget'][0], 'price') != '17', 'nothing changed before review')
         _, d = b.api('GET', '/diagnostics')
@@ -312,6 +324,7 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
         check(meta(product_ids()['Widget'][0], 'price') == '17', 'price applied')
     finally:
         wp('option', 'delete', 'in_mock_price_bump')
+        wp('option', 'delete', 'in_mock_stock_all', check_ok=False)
         wp('option', 'delete', 'in_mock_many')
         sync(b, force=True)
         # Remove the extra test products so later runs start from the two base products
@@ -333,6 +346,34 @@ def upgraded_catalog_syncs_without_tripping_the_breaker():
         r = sync(b)
         check(r['result']['updated'] == 0, 'then everything is unchanged', r)
     finally:
+        wp('option', 'delete', 'in_mock_many')
+        wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
+                " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"
+                " wp_delete_post($p->ID, true); $wpdb->delete($wpdb->prefix . 'invoiceninja_map', array('in_type' => 'product', 'in_id' => $id)); } }")
+
+
+@test
+def large_catalogs_sync_in_steps():
+    b = admin()
+    option('in_mock_many', '12')
+    try:
+        # One run writes 5 products (a filter makes the batch small); the rest continue in queued runs
+        out = wp_eval("add_filter('invoiceninja_product_sync_batch', function () { return 5; }); $p = InvoiceNinja\\Plugin::instance();"
+                      " foreach (array('P3', 'P4', 'P5', 'P6', 'P7', 'P8', 'P9', 'P10', 'P11', 'P12') as $id) { $m = $p->mapping->find('product', $id); if ($m) { wp_delete_post($m['wp_id'], true); } }"
+                      " global $wpdb; $wpdb->query(\"DELETE FROM {$wpdb->prefix}invoiceninja_map WHERE in_type = 'product' AND in_id NOT IN ('P1', 'P2')\");"
+                      " $first = $p->products->run(true); $busy = $p->products->run();"
+                      " $queued = as_has_scheduled_action('invoiceninja_sync_products', array(array('payload' => array('full' => true, 'continue' => true), 'attempt' => 1)), 'invoiceninja');"
+                      " $runs = array(); do { $r = $p->products->run(true, false, true); $runs[] = $r; } while ($r['remaining'] > 0 && count($runs) < 5);"
+                      " echo wp_json_encode(array('first' => $first, 'busy' => $busy, 'queued' => $queued, 'runs' => $runs, 'count' => $p->mapping->count('product'), 'continue' => get_option('invoiceninja_sync_continue')));")
+        r = json_loads(out)
+        check(r['first']['created'] == 5 and r['first']['remaining'] == 5, 'the first run writes one batch', r['first'])
+        check(r['queued'], 'and queues the next step', r)
+        check(r['busy']['status'] == 'busy', 'the hourly run waits for the steps', r['busy'])
+        check(r['count'] == 12 and r['runs'][-1]['remaining'] == 0 and not r['continue'], 'the steps finish the catalog without pausing', r)
+        _, _, html = Browser().login('admin', 'admin').get('/wp-admin/')
+        check('Product sync is paused' not in html, 'no false alarm', html[:300])
+    finally:
+        wp_eval("as_unschedule_all_actions('invoiceninja_sync_products', array(), 'invoiceninja'); delete_option('invoiceninja_sync_continue');")
         wp('option', 'delete', 'in_mock_many')
         wp_eval("global $wpdb; foreach (get_posts(array('post_type' => 'invoiceninja_product', 'post_status' => 'any', 'numberposts' => -1)) as $p) {"
                 " $id = get_post_meta($p->ID, 'product_id', true); if (!in_array($id, array('P1', 'P2'), true)) {"

@@ -245,7 +245,7 @@ final class Checkout {
 		if ( in_array( $country, self::POSTCODE_REQUIRED, true ) ) {
 			if ( '' === $postcode ) {
 				$errors['postal_code'] = __( 'Enter your ZIP code. We need it to work out the tax.', 'invoiceninja' );
-			} elseif ( '840' === $country && ! preg_match( '/^[0-9]{5}(-[0-9]{4})?$/', $postcode ) ) {
+			} elseif ( ! preg_match( '/^[0-9]{5}(-[0-9]{4})?$/', $postcode ) ) { // A US ZIP code.
 				$errors['postal_code'] = __( 'Check your ZIP code.', 'invoiceninja' );
 			}
 		} elseif ( '' !== $postcode && ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9 -]{0,15}$/', $postcode ) ) {
