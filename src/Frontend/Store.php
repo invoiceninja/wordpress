@@ -275,7 +275,7 @@ final class Store {
 				'status'   => $this->pageUrl( 'status' ),
 			),
 			'money'        => $this->plugin->statics->forScript(),
-			'unavailable'  => $this->plugin->checkout->unavailable(),
+			// Whether ordering is available isn't here: the page may be cached, so checkout asks with the cart.
 			'i18n'         => Strings::all(),
 		);
 	}
@@ -508,7 +508,8 @@ final class Store {
 			'price' => array( 'meta_value_num', 'ASC' ),
 			'date'  => array( 'date', 'DESC' ),
 		)[ (string) $a['orderBy'] ] ?? array( 'title', 'ASC' );
-		$paged = max( 1, (int) get_query_var( 'paged' ) );
+		// A static front page pages with "page", not "paged".
+		$paged = max( 1, (int) get_query_var( 'paged' ), (int) get_query_var( 'page' ) );
 		$query = new \WP_Query(
 			array(
 				'post_type'      => ProductSync::POST_TYPE,

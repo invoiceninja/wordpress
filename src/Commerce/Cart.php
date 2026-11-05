@@ -107,7 +107,7 @@ final class Cart {
 	 * @param string $product  Invoice Ninja product id.
 	 * @param int    $quantity Quantity.
 	 * @param bool   $only     Make this the only product in the cart (Buy Now).
-	 * @return array{ok: bool, quantity: int, message: string}
+	 * @return array{ok: bool, quantity: int, message: string, limited?: bool, max?: int} quantity is what the cart now holds; limited when that's less than asked for.
 	 */
 	public function set( string $id, string $product, int $quantity, bool $only = false ): array {
 		$product = ProductSync::cleanId( $product );
@@ -120,6 +120,7 @@ final class Cart {
 				'message'  => __( "That product isn't available.", 'invoiceninja' ),
 			);
 		}
+		$limited  = $quantity > $info['max'];
 		$quantity = max( 0, min( $quantity, $info['max'] ) );
 		$message  = '';
 		if ( $only ) {
@@ -139,6 +140,8 @@ final class Cart {
 			'ok'       => true,
 			'quantity' => $quantity,
 			'message'  => $message,
+			'limited'  => $limited,
+			'max'      => max( 0, $info['max'] ),
 		);
 	}
 
@@ -289,10 +292,12 @@ final class Cart {
 		if ( $this->tracksStock() ) {
 			$max = min( $max, max( 0, (int) get_post_meta( $post_id, 'in_stock_quantity', true ) ) );
 		}
+		// Plain text: a title saved through the content filters is HTML-encoded ("Fish &amp; Chips").
+		$title = html_entity_decode( (string) get_post_field( 'post_title', $post_id, 'raw' ), ENT_QUOTES | ENT_HTML5, 'UTF-8' );
 		return array(
 			'post_id'     => $post_id,
-			'title'       => (string) get_post_field( 'post_title', $post_id, 'raw' ),
-			'product_key' => (string) ( get_post_meta( $post_id, 'product_key', true ) ?: get_post_field( 'post_title', $post_id, 'raw' ) ),
+			'title'       => $title,
+			'product_key' => (string) ( get_post_meta( $post_id, 'product_key', true ) ?: $title ),
 			'notes'       => wp_strip_all_tags( (string) get_post_field( 'post_content', $post_id ) ),
 			'price'       => (float) get_post_meta( $post_id, 'price', true ),
 			'max'         => $max,

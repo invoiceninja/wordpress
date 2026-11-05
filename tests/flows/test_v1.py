@@ -5,7 +5,7 @@ working (or be deliberately replaced) after migrating.
 """
 
 from lib import (Browser, IN_BASE, api_calls, check, cart_nonce, describe, form_nonce, in_container,
-                 mock_log, option, reset_mock_log, selected_quantities, wp, wp_eval)
+                 mock_log, option, reset_mock_log, selected_quantities, wp, wp_eval, wp_ok)
 
 TESTS = []
 INVITE_LINKS = ['https://in.test/client/invoice/INVITE%d' % n for n in range(1, 200)]
@@ -205,6 +205,53 @@ def multi_item_checkout_creates_one_invoice():
     check(location in INVITE_LINKS, 'checkout should redirect to the invoice', '%s %s' % (status, location))
     invoices = [c for c in calls if c['url'].startswith(IN_BASE + 'invoices')]
     check(len(invoices) == 1 and '"quantity":2' in invoices[0]['body'], 'exactly one invoice with quantity 2', describe(calls))
+
+
+@test
+def cart_forms_redirect_back_so_a_refresh_does_not_post_again():
+    set_mode('multiple')
+    browser = Browser()
+    _, _, html = browser.get('/shop/')
+    status, location, body = browser.post('/shop/', {'invoiceninja_purchase': '1', 'product_id': 'P1',
+                                                     'invoiceninja_nonce': form_nonce(html, 'invoiceninja_purchase')})
+    check(status == 302 and (location or '').endswith('/shop/'), 'add to cart redirects back to the page (post/redirect/get)', '%s %s' % (status, location))
+    check('<html' not in body, 'before the theme sends anything', body[:300])
+    _, _, html = browser.get('/shop/')
+    status, location, _ = browser.post('/shop/', {'cart_action': 'update', 'product_id': 'P1', 'quantity': '2', 'invoiceninja_nonce': cart_nonce(html)})
+    check(status == 302 and (location or '').endswith('/shop/'), 'a quantity change redirects back too', '%s %s' % (status, location))
+    _, _, html = browser.get('/shop/')
+    check(selected_quantities(html) == ['2'], 'and the change is kept', selected_quantities(html))
+
+
+@test
+def classic_themes_reach_payment_and_redirect_back():
+    """1.x redirects ran inside the shortcode, after a classic theme had sent its header."""
+    active = wp('theme', 'list', '--status=active', '--field=name')
+    if not wp_ok('theme', 'is-installed', 'twentytwentyone'):
+        wp('theme', 'install', 'twentytwentyone', check_ok=False)
+    if not wp_ok('theme', 'is-installed', 'twentytwentyone'):
+        return  # No classic theme available offline; the block theme flows above cover the rest.
+    wp('theme', 'activate', 'twentytwentyone')
+    try:
+        set_mode('multiple')
+        browser = Browser()
+        _, _, html = browser.get('/shop/')
+        status, location, _ = browser.post('/shop/', {'invoiceninja_purchase': '1', 'product_id': 'P1',
+                                                      'invoiceninja_nonce': form_nonce(html, 'invoiceninja_purchase')})
+        check(status == 302 and (location or '').endswith('/shop/'), 'add to cart redirects back on a classic theme', '%s %s' % (status, location))
+        status, location, calls = buy_now('member')
+        check(status == 302 and location in INVITE_LINKS, 'Buy Now reaches the payment page on a classic theme', '%s %s' % (status, location))
+        check(len([c for c in calls if c['method'] == 'POST' and c['url'].startswith(IN_BASE + 'invoices')]) == 1, 'with one invoice', describe(calls))
+        set_mode('multiple')
+        verify('member')
+        browser = Browser().login('member', 'pass')
+        _, _, html = browser.get('/shop/')
+        browser.post('/shop/', {'invoiceninja_purchase': '1', 'product_id': 'P1', 'invoiceninja_nonce': form_nonce(html, 'invoiceninja_purchase')})
+        _, _, html = browser.get('/shop/')
+        status, location, _ = browser.post('/shop/', {'cart_action': 'checkout', 'invoiceninja_nonce': form_nonce(html, 'value="checkout"')})
+        check(status == 302 and location in INVITE_LINKS, 'cart checkout reaches the payment page on a classic theme', '%s %s' % (status, location))
+    finally:
+        wp('theme', 'activate', active)
 
 
 @test

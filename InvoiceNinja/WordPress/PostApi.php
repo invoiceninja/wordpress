@@ -14,6 +14,20 @@ class PostApi {
 
 	public $post_types = [];
 
+	/**
+	 * Whether this request's 1.x form post was handled (once, before the theme's output).
+	 *
+	 * @var bool
+	 */
+	private static $handled = false;
+
+	/**
+	 * A notice from handling the post, for the shortcode that shows it: [ shortcode, product id, html ].
+	 *
+	 * @var array|null
+	 */
+	private static $notice = null;
+
 	public function register() {
 		// 2.0 in blocks display: the new store replaces the 1.x products page and cart.
 		$legacy = ! \InvoiceNinja\Plugin::booted() || \InvoiceNinja\Plugin::instance()->store->legacy();
@@ -30,6 +44,116 @@ class PostApi {
 		}
 
 		add_filter( 'the_content', [ $this, 'addDynamicContent' ] );
+
+		// The 1.x forms post back to their page. Handle them before the theme sends any output,
+		// so their redirects work on classic themes too, and a refresh doesn't post again.
+		add_action( 'template_redirect', [ $this, 'handlePost' ] );
+	}
+
+	/**
+	 * Whether 2.0's blocks display runs the store (the 1.x cart isn't shown).
+	 */
+	private static function blocksDisplay() {
+		return \InvoiceNinja\Plugin::booted() && ! \InvoiceNinja\Plugin::instance()->store->legacy();
+	}
+
+	/**
+	 * Handle a 1.x purchase or cart form post, once per request: on template_redirect, or
+	 * from the shortcode if that never ran.
+	 */
+	public function handlePost() {
+		if ( self::$handled || ! isset( $_SERVER['REQUEST_METHOD'] ) || 'POST' !== $_SERVER['REQUEST_METHOD'] ) {
+			return;
+		}
+
+		if ( isset( $_POST['invoiceninja_purchase'] ) ) {
+			self::$handled = true;
+			$this->handlePurchase();
+		} elseif ( isset( $_POST['cart_action'] ) ) {
+			self::$handled = true;
+			$this->handleCart();
+		}
+	}
+
+	/**
+	 * Buy Now, or Add to Cart.
+	 */
+	private function handlePurchase() {
+		$product_id = isset( $_POST['product_id'] ) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : '';
+		if ( '' === $product_id || ! isset( $_POST['invoiceninja_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_purchase_' . esc_attr( $product_id ) ) ) {
+			return;
+		}
+
+		$max = $this->getMaxQuantity( $product_id );
+		if ( $max ) {
+			if ( get_option( 'invoiceninja_online_purchases' ) == 'single' ) {
+				if ( ! is_user_logged_in() ) {
+					$this->redirectToLogin();
+				} else {
+					$notice = $this->purchase( [ $product_id => 1 ] );
+					if ( '' !== $notice ) {
+						self::$notice = [ 'purchase', $product_id, $notice ];
+						return;
+					}
+				}
+			} else {
+				if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
+					$_SESSION['invoiceninja_cart'] = [];
+				}
+
+				$quantity = isset( $_SESSION['invoiceninja_cart'][ $product_id ] ) ? (int) $_SESSION['invoiceninja_cart'][ $product_id ] : 0;
+
+				$_SESSION['invoiceninja_cart'][ $product_id ] = min( $max, $quantity + 1 );
+			}
+		}
+
+		$this->redirectBack();
+	}
+
+	/**
+	 * The cart's quantity changes and Checkout.
+	 */
+	private function handleCart() {
+		if ( ! isset( $_POST['invoiceninja_nonce'] ) || ! wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_checkout' ) ) {
+			return;
+		}
+
+		$action = sanitize_text_field( wp_unslash( $_POST['cart_action'] ) );
+		if ( $action == 'update' ) {
+			$product_id = isset( $_POST['product_id'] ) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : false;
+			$quantity   = isset( $_POST['quantity'] ) ? intval( wp_unslash( $_POST['quantity'] ) ) : 0;
+			$max        = $product_id ? $this->getMaxQuantity( $product_id ) : null;
+
+			if ( $quantity <= 0 || ! $max ) {
+				unset( $_SESSION['invoiceninja_cart'][ $product_id ] );
+			} else {
+				$_SESSION['invoiceninja_cart'][ $product_id ] = min( $max, $quantity );
+			}
+
+			$this->redirectBack();
+		} elseif ( $action == 'checkout' ) {
+			if ( ! is_user_logged_in() ) {
+				$this->redirectToLogin();
+			} elseif ( isset( $_SESSION['invoiceninja_cart'] ) ) {
+				$notice = $this->purchase( $_SESSION['invoiceninja_cart'], true );
+				if ( '' !== $notice ) {
+					self::$notice = [ 'checkout', '', $notice ];
+				}
+			}
+		}
+	}
+
+	/**
+	 * Back to the same page with a GET, so a refresh doesn't post the form again.
+	 */
+	private function redirectBack() {
+		if ( headers_sent() || ! isset( $_SERVER['HTTP_HOST'] ) || ! isset( $_SERVER['REQUEST_URI'] ) ) {
+			return;
+		}
+
+		$current_url = ( is_ssl() ? 'https' : 'http' ) . '://' . sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) . sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
+		wp_safe_redirect( $current_url );
+		exit;
 	}
 
 	public function init() {
@@ -280,43 +404,20 @@ class PostApi {
 			'invoiceninja_purchase'
 		);
 
+		// Blocks display: the 1.x cart isn't shown, so a hand-placed button adds to 2.0's cart.
+		if ( self::blocksDisplay() ) {
+			return \InvoiceNinja\Plugin::instance()->store->addToCart( [ 'productId' => (string) $atts['product_id'] ] );
+		}
+
 		$in_stock = true;
 
 		if ( ! empty( $profile->track_inventory ) ) {
 			$in_stock = (int) $this->getMaxQuantity( $atts['product_id'] ) > 0;
 		}
 
-		if ( isset( $_SERVER['REQUEST_METHOD'] ) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['invoiceninja_purchase'] ) ) {
-			if ( isset( $_POST['invoiceninja_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_purchase_' . esc_attr( $atts['product_id'] ) ) ) {
-				$product_id = isset( $_POST['product_id'] ) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : false;
-				$max        = $product_id ? $this->getMaxQuantity( $product_id ) : null;
-
-				if ( $max ) {
-					if ( $is_single ) {
-						if ( ! is_user_logged_in() ) {
-							$this->redirectToLogin();
-						} else {
-							$notice = $this->purchase( [ $product_id => 1 ] );
-							if ( '' !== $notice ) {
-								return $notice;
-							}
-						}
-					} else {
-						if ( ! isset( $_SESSION['invoiceninja_cart'] ) ) {
-							$_SESSION['invoiceninja_cart'] = [];
-						}
-
-						$quantity = isset( $_SESSION['invoiceninja_cart'][ $product_id ] ) ? (int) $_SESSION['invoiceninja_cart'][ $product_id ] : 0;
-
-						$_SESSION['invoiceninja_cart'][ $product_id ] = min( $max, $quantity + 1 );
-					}
-				}
-
-				if ( isset( $_SERVER['HTTP_HOST'] ) && isset( $_SERVER['REQUEST_URI'] ) ) {
-					$current_url = ( isset( $_SERVER['HTTPS'] ) ? 'https' : 'http' ) . '://' . sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) . sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
-					wp_safe_redirect( $current_url );
-				}
-			}
+		$this->handlePost();
+		if ( null !== self::$notice && 'purchase' === self::$notice[0] && (string) $atts['product_id'] === self::$notice[1] ) {
+			return self::$notice[2];
 		}
 
 		ob_start();
@@ -345,35 +446,19 @@ class PostApi {
 	}
 
 	public function checkoutShortcode() {
-		if ( isset( $_SERVER['REQUEST_METHOD'] ) && $_SERVER['REQUEST_METHOD'] == 'POST' && isset( $_POST['cart_action'] ) ) {
-			if ( isset( $_POST['invoiceninja_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['invoiceninja_nonce'] ) ), 'invoiceninja_checkout' ) ) {
-				$action = sanitize_text_field( wp_unslash( $_POST['cart_action'] ) );
-				if ( $action == 'update' ) {
-					$product_id = isset( $_POST['product_id'] ) ? sanitize_text_field( wp_unslash( $_POST['product_id'] ) ) : false;
-					$quantity   = isset( $_POST['quantity'] ) ? intval( wp_unslash( $_POST['quantity'] ) ) : 0;
-					$max        = $product_id ? $this->getMaxQuantity( $product_id ) : null;
-
-					if ( $quantity <= 0 || ! $max ) {
-						unset( $_SESSION['invoiceninja_cart'][ $product_id ] );
-					} else {
-						$_SESSION['invoiceninja_cart'][ $product_id ] = min( $max, $quantity );
-					}
-
-					if ( isset( $_SERVER['HTTP_HOST'] ) && isset( $_SERVER['REQUEST_URI'] ) ) {
-						$current_url = ( isset( $_SERVER['HTTPS'] ) ? 'https' : 'http' ) . '://' . sanitize_text_field( wp_unslash( $_SERVER['HTTP_HOST'] ) ) . sanitize_text_field( wp_unslash( $_SERVER['REQUEST_URI'] ) );
-						wp_safe_redirect( $current_url );
-					}
-				} elseif ( $action == 'checkout' ) {
-					if ( ! is_user_logged_in() ) {
-						$this->redirectToLogin();
-					} elseif ( isset( $_SESSION['invoiceninja_cart'] ) ) {
-						$notice = $this->purchase( $_SESSION['invoiceninja_cart'], true );
-						if ( '' !== $notice ) {
-							return $notice;
-						}
-					}
-				}
+		// Blocks display: a link to 2.0's checkout, which holds the cart.
+		if ( self::blocksDisplay() ) {
+			$plugin = \InvoiceNinja\Plugin::instance();
+			$url    = $plugin->store->pageUrl( 'checkout' );
+			if ( '' === $url || 'off' === $plugin->options->setting( 'store.mode' ) || ! \InvoiceNinja\Frontend\Store::enabled() ) {
+				return '';
 			}
+			return '<a class="wp-element-button" href="' . esc_url( $url ) . '">' . esc_html__( 'Checkout', 'invoiceninja' ) . '</a>';
+		}
+
+		$this->handlePost();
+		if ( null !== self::$notice && 'checkout' === self::$notice[0] ) {
+			return self::$notice[2];
 		}
 
 		ob_start();

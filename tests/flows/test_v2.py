@@ -1140,6 +1140,11 @@ def store_pages_blocks_and_shortcodes_render():
         check('data-invoiceninja-checkout' in checkout, 'Checkout page renders the checkout block')
         out = wp_eval("echo do_shortcode('[invoiceninja_product product_id=\"P1\" show=\"price\"]');")
         check('invoiceninja-price' in out, 'shortcodes match the blocks', out)
+        # Hand-placed 1.x buttons use the 2.0 cart (the 1.x cart isn't shown in blocks display)
+        out = wp_eval("echo do_shortcode('[invoiceninja_purchase product_id=\"P1\"]');")
+        check('data-invoiceninja-add="P1"' in out and 'invoiceninja_nonce' not in out, 'the 1.x Buy button adds to the 2.0 cart', out)
+        out = wp_eval("echo do_shortcode('[invoiceninja_checkout]');")
+        check(pages['checkout']['url'] in out and 'cart_action' not in out, 'the 1.x Checkout button opens the 2.0 checkout', out)
         status, products = b.api('GET', '/admin/products')
         check(status == 200 and any(p['id'] == 'P1' for p in products), 'product picker list for the editor', products)
         status, _ = Browser().api('GET', '/admin/products')
@@ -1193,6 +1198,103 @@ def status_links_last_order_change_and_find():
         st, loc, _ = Browser().get('/?invoiceninja_order=' + r['number'])
         check(st in (301, 302) and 'order-status' in (loc or ''), 'old status links redirect to the Order Status page', (st, loc))
     finally:
+        b.api('POST', '/store/display', {'action': 'legacy'})
+
+
+@test
+def cached_pages_ask_the_server():
+    """What a cached page can't know comes from REST: availability, the account email, plain titles, stock."""
+    b, pages = blocks_store()
+    post_id = wp_eval("echo InvoiceNinja\\Plugin::instance()->cart->product('P1')['post_id'];")
+    title = wp_eval("echo get_post_field('post_title', %s, 'raw');" % post_id)
+    try:
+        # Ordering paused or resumed after the page was cached: the cart says which
+        _, _, html = Browser().get(pages['checkout']['url'].split('8089', 1)[-1])
+        check('"unavailable":null' not in html and '"unavailable":"Online ordering is temporarily unavailable.' not in html,
+              'the cacheable checkout page has no availability flag', html[html.find('invoiceNinjaStore'):][:300])
+        s = shopper()
+        _, r = s.api('GET', '/cart?checkout=1')
+        check(r['unavailable'] is False and 'account_email' not in r, 'available, and no account email for a guest', r)
+        wp('invoiceninja', 'environment', 'pause')
+        try:
+            _, r = s.api('GET', '/cart?checkout=1')
+            check(r['unavailable'] is True and r['lines'], 'unavailable while paused, with the cart kept', r)
+        finally:
+            wp('invoiceninja', 'environment', 'confirm')
+        # A synced title stored HTML-encoded is sent as plain text
+        wp_eval("global $wpdb; $wpdb->update($wpdb->posts, array('post_title' => 'Fish &amp; Chips'), array('ID' => %s)); clean_post_cache(%s);" % (post_id, post_id))
+        _, r = s.api('GET', '/cart')
+        check(r['lines'][0]['title'] == 'Fish & Chips', 'cart titles are plain text', r['lines'])
+        _, r = s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+        check(r['cart']['lines'][0]['title'] == 'Fish & Chips', 'and in the add reply', r['cart'])
+        _, order = checkout(s, 'plain.title@example.com')
+        check(order['items'][0]['title'] == 'Fish & Chips', 'and in the order', order)
+        _, last = s.api('GET', '/orders/last')
+        check(last['items'][0]['title'] == 'Fish & Chips', 'and the latest order', last)
+        # Asking for more than there is says how many the cart holds
+        s = Browser()
+        _, r = s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 5})
+        check(r['quantity'] == 5 and r['limited'] is False and r['max'] == 5, 'within the limit', r)
+        _, r = s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 6})
+        check(r['ok'] and r['quantity'] == 5 and r['limited'] is True and r['max'] == 5, 'past the limit: still 5, and limited', r)
+        # With login required, orders use the account's email and the reply says so
+        b.api('POST', '/settings', {'store': {'require_login': True}})
+        member = Browser().login('admin', 'admin')
+        member.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
+        account = wp_eval("echo get_user_by('login', 'admin')->user_email;")
+        _, r = member.api('GET', '/cart?checkout=1')
+        check(r.get('account_email') == account, 'the cart tells checkout the account email', r)
+        status, r = member.api('POST', '/checkout/start', {'email': 'typed.other@example.com', 'first_name': 'A', 'last_name': 'B'})
+        check(status == 200 and r.get('email') == account, 'the start reply names the email the code went to', (status, r))
+    finally:
+        b.api('POST', '/settings', {'store': {'require_login': False}})
+        wp_eval("global $wpdb; $wpdb->update($wpdb->posts, array('post_title' => '%s'), array('ID' => %s)); clean_post_cache(%s);" % (title.replace("'", "\\'"), post_id, post_id))
+        b.api('POST', '/store/display', {'action': 'legacy'})
+
+
+@test
+def account_reads_work_without_a_referrer_but_writes_need_this_site():
+    import urllib.request
+    import urllib.error
+    from lib import BASE
+    member = Browser().login('member', 'pass')
+
+    def call(method, path, headers):
+        req = urllib.request.Request(BASE + '/wp-json/invoiceninja/v1' + path, data=b'{}' if method == 'POST' else None,
+                                     headers=dict({'Content-Type': 'application/json'}, **headers), method=method)
+        try:
+            return member.opener.open(req, timeout=60).status
+        except urllib.error.HTTPError as e:
+            return e.code
+
+    check(call('GET', '/account', {}) == 200, 'a logged-in GET with neither Origin nor Referer (no-referrer policy) is allowed')
+    check(call('GET', '/account', {'Referer': BASE + '/account/'}) == 200, 'and with this site as the Referer')
+    check(call('GET', '/account', {'Origin': 'https://evil.example'}) in (401, 403), 'a foreign Origin is refused')
+    check(call('GET', '/account', {'Referer': 'https://evil.example/page'}) in (401, 403), 'a foreign Referer is refused')
+    check(call('POST', '/account/verify/start', {}) in (401, 403), 'writes still need this site as the Origin or Referer')
+    status, _ = Browser().api('GET', '/account')
+    check(status in (401, 403), 'logged-out visitors are still refused', status)
+
+
+@test
+def products_grid_pages_on_a_static_front_page():
+    b, pages = blocks_store()
+    shop = str(pages['shop']['id'])
+    before = {k: wp('option', 'get', k, check_ok=False) for k in ('show_on_front', 'page_on_front')}
+    content = wp_eval("echo get_post_field('post_content', %s);" % shop)
+    try:
+        wp_eval("wp_update_post(array('ID' => %s, 'post_content' => '<!-- wp:invoiceninja/products {\"perPage\":1} /-->'));" % shop)
+        option('show_on_front', 'page')
+        option('page_on_front', shop)
+        status, location, html = Browser().get('/page/2/')
+        if status in (301, 302) and location:
+            status, _, html = Browser().get(location.split('8089', 1)[-1])
+        import re
+        check(status == 200 and re.search(r'aria-current="page"[^>]*>2<', html), 'page 2 of the products grid on the front page', html[html.find('invoiceninja-products__pages'):][:400])
+    finally:
+        for k, v in before.items():
+            option(k, v or ('posts' if k == 'show_on_front' else '0'))
+        wp_eval("wp_update_post(array('ID' => %s, 'post_content' => '%s'));" % (shop, content.replace("'", "\\'")))
         b.api('POST', '/store/display', {'action': 'legacy'})
 
 

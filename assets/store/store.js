@@ -16,7 +16,7 @@
 
 	// Whether checkout asks for the tax address. The page may be cached from before taxes were
 	// turned on or off, so the server's answer (with the cart, or a tax_address error) wins.
-	const tax = { fields: !! cfg.taxFields, countries: cfg.countries || [], country: cfg.country || '' };
+	const tax = { fields: !! cfg.taxFields, countries: cfg.countries || [], country: cfg.country || '', postcodeRequired: [] };
 	function applyTax( data ) {
 		if ( ! data || typeof data.fields !== 'boolean' ) {
 			return;
@@ -24,6 +24,8 @@
 		tax.fields = data.fields;
 		tax.countries = Array.isArray( data.countries ) ? data.countries : [];
 		tax.country = data.country || '';
+		// Countries whose tax can't be worked out without the postcode.
+		tax.postcodeRequired = Array.isArray( data.postcode_required ) ? data.postcode_required.map( String ) : [];
 	}
 
 	// ---------- Helpers ----------
@@ -140,12 +142,18 @@
 	}
 
 	async function api( method, path, body, headers ) {
-		const response = await fetch( cfg.rest + path, {
-			method,
-			credentials: 'same-origin',
-			headers: Object.assign( body ? { 'Content-Type': 'application/json' } : {}, headers || {} ),
-			body: body ? JSON.stringify( body ) : undefined,
-		} );
+		let response;
+		try {
+			response = await fetch( cfg.rest + path, {
+				method,
+				credentials: 'same-origin',
+				headers: Object.assign( body ? { 'Content-Type': 'application/json' } : {}, headers || {} ),
+				body: body ? JSON.stringify( body ) : undefined,
+			} );
+		} catch ( e ) {
+			// Offline, or the site didn't answer: every caller shows this and lets the shopper try again.
+			return { ok: false, code: 'network', message: t.offline, httpStatus: 0 };
+		}
 		let data = {};
 		try {
 			data = await response.json();
@@ -177,9 +185,14 @@
 	const cart = {
 		data: null,
 		listeners: [],
+		// The cart, or (without lines) the error: the cart shown so far is kept.
 		async load( forCheckout ) {
 			// The REST root may already have a query (plain permalinks: ?rest_route=).
-			this.data = await api( 'GET', '/cart' + ( forCheckout ? ( cfg.rest.indexOf( '?' ) < 0 ? '?' : '&' ) + 'checkout=1' : '' ) );
+			const data = await api( 'GET', '/cart' + ( forCheckout ? ( cfg.rest.indexOf( '?' ) < 0 ? '?' : '&' ) + 'checkout=1' : '' ) );
+			if ( ! Array.isArray( data.lines ) ) {
+				return Object.assign( {}, data, { ok: false, message: data.message || t.error } );
+			}
+			this.data = data;
 			if ( this.data.tax_address ) {
 				applyTax( this.data.tax_address );
 				delete this.data.tax_address;
@@ -226,20 +239,24 @@
 				try {
 					if ( cfg.mode === 'buy_now' ) {
 						const result = await cart.set( product, qty );
-						if ( result.ok && cfg.pages.checkout ) {
+						// Sold out since the page was cached: say so here, not on an empty checkout.
+						if ( result.ok && result.quantity > 0 && cfg.pages.checkout ) {
 							window.location.href = cfg.pages.checkout;
 							return;
 						}
-						showAddResult( form, result, title );
+						showAddResult( form, result, title, 0 );
 					} else {
-						if ( ! cart.data ) {
-							await cart.load();
+						const loaded = cart.data ? cart.data : await cart.load();
+						if ( ! Array.isArray( loaded.lines ) ) {
+							// Without the cart, the quantity sent would replace what's in it.
+							showAddResult( form, loaded, title, 0 );
+						} else {
+							const before = cart.quantity( product );
+							showAddResult( form, await cart.set( product, before + qty ), title, before );
 						}
-						const result = await cart.set( product, cart.quantity( product ) + qty );
-						showAddResult( form, result, title );
 					}
 				} catch ( e ) {
-					showAddResult( form, { ok: false, message: t.error }, title );
+					showAddResult( form, { ok: false, message: t.error }, title, 0 );
 				}
 				submit.disabled = false;
 				submit.removeAttribute( 'aria-busy' );
@@ -247,18 +264,27 @@
 		} );
 	}
 
-	function showAddResult( form, result, title ) {
+	// The cart holds `before` of the product; the server says how many it holds now and
+	// whether that's fewer than asked for (stock or the product's limit).
+	function showAddResult( form, result, title, before ) {
 		const old = form.parentNode.querySelector( '.invoiceninja-toast' );
 		if ( old ) {
 			old.remove();
 		}
+		const now = typeof result.quantity === 'number' ? result.quantity : before + 1;
+		const limit = result.limited ? ( result.max > 0 ? fmt( t.onlyAvailable, result.max ) : t.soldOut ) : '';
 		let box;
-		if ( result.ok ) {
+		if ( result.ok && now > before ) {
 			const text = fmt( t.added, title );
+			const note = [ limit, result.message && result.message !== limit ? result.message : '' ].filter( Boolean ).join( ' ' );
 			box = el( 'p', { class: 'invoiceninja-toast' }, text, ' ',
 				cfg.pages.checkout ? el( 'a', { href: cfg.pages.checkout, text: t.viewCart } ) : null,
-				result.message ? el( 'span', { class: 'invoiceninja-toast__note', text: ' ' + result.message } ) : null );
-			announce( text + '. ' + t.viewCart + '.' );
+				note ? el( 'span', { class: 'invoiceninja-toast__note', text: ' ' + note } ) : null );
+			announce( text + '. ' + ( note ? note + ' ' : '' ) + t.viewCart + '.' );
+		} else if ( result.ok ) {
+			// Nothing was added: sold out, or the cart already holds all there is.
+			box = el( 'p', { class: 'invoiceninja-toast is-error', role: 'alert' }, limit || result.message || t.soldOut,
+				now > 0 && cfg.pages.checkout ? ' ' : null, now > 0 && cfg.pages.checkout ? el( 'a', { href: cfg.pages.checkout, text: t.viewCart } ) : null );
 		} else {
 			box = el( 'p', { class: 'invoiceninja-toast is-error', role: 'alert', text: result.message || t.error } );
 		}
@@ -289,15 +315,16 @@
 				panel.hidden = true;
 				toggle.setAttribute( 'aria-expanded', 'false' );
 			};
+			const head = () => el( 'div', { class: 'invoiceninja-minicart__head' },
+				el( 'strong', { text: t.yourCart } ),
+				el( 'button', { type: 'button', class: 'invoiceninja-iconbutton', 'aria-label': t.closeCart, onClick: () => {
+					close();
+					toggle.focus();
+				} }, '×' ) );
 			const fill = () => {
 				panel.textContent = '';
 				const data = cart.data || { lines: [] };
-				panel.appendChild( el( 'div', { class: 'invoiceninja-minicart__head' },
-					el( 'strong', { text: t.yourCart } ),
-					el( 'button', { type: 'button', class: 'invoiceninja-iconbutton', 'aria-label': t.closeCart, onClick: () => {
-						close();
-						toggle.focus();
-					} }, '×' ) ) );
+				panel.appendChild( head() );
 				if ( ! data.lines || ! data.lines.length ) {
 					panel.appendChild( el( 'p', { text: t.cartEmpty } ) );
 					return;
@@ -309,21 +336,38 @@
 					panel.appendChild( linkButton( t.checkout, cfg.pages.checkout ) );
 				}
 			};
-			toggle.addEventListener( 'click', async () => {
-				if ( ! panel.hidden ) {
-					close();
-					return;
-				}
+			const open = async () => {
 				panel.hidden = false;
 				toggle.setAttribute( 'aria-expanded', 'true' );
 				panel.textContent = '';
 				panel.appendChild( el( 'p', { class: 'invoiceninja-loading', text: '…' } ) );
-				await cart.load();
-				fill();
+				const result = await cart.load();
+				if ( panel.hidden ) {
+					return; // Closed while loading.
+				}
+				if ( Array.isArray( result.lines ) ) {
+					fill();
+				} else {
+					// Not the (possibly old) cart: what went wrong, and a way to try again.
+					panel.textContent = '';
+					panel.appendChild( head() );
+					panel.appendChild( el( 'p', { class: 'invoiceninja-toast is-error', role: 'alert', text: result.message } ) );
+					panel.appendChild( button( t.tryAgain, ( e ) => {
+						e.stopPropagation(); // The button is replaced, so the page's click-outside check would close the panel.
+						open();
+					} ) );
+				}
 				const first = panel.querySelector( 'a, button' );
 				if ( first ) {
 					first.focus();
 				}
+			};
+			toggle.addEventListener( 'click', () => {
+				if ( ! panel.hidden ) {
+					close();
+					return;
+				}
+				open();
 			} );
 			root.addEventListener( 'keydown', ( event ) => {
 				if ( event.key === 'Escape' && ! panel.hidden ) {
@@ -351,6 +395,9 @@
 			order: null,
 			retryAfter: 0,
 			trap: '',
+			// With login required, orders use the account's email (the server says which).
+			account: '',
+			failed: '',
 		};
 		let timer = null;
 
@@ -364,18 +411,18 @@
 				el( 'input', Object.assign( { id, name, value: state.details[ name ] || '', onInput: ( e ) => {
 					state.details[ name ] = e.target.value;
 				} }, attrs && attrs.input ? attrs.input : {} ) ),
-				help ? el( 'span', { class: 'invoiceninja-help', text: help } ) : null );
+				help ? el( 'span', { id: id + '-help', class: 'invoiceninja-help', text: help } ) : null );
 		};
 
 		const summary = ( data, editable ) => {
 			const rows = ( data.lines || [] ).map( ( line ) => {
 				const qty = editable ? el( 'span', { class: 'invoiceninja-stepper' },
-					el( 'button', { type: 'button', class: 'invoiceninja-iconbutton', 'aria-label': fmt( t.oneFewer, line.title ), onClick: () => change( line, line.quantity - 1 ) }, '−' ),
+					el( 'button', { type: 'button', class: 'invoiceninja-iconbutton', 'data-action': 'fewer', 'aria-label': fmt( t.oneFewer, line.title ), onClick: () => change( line, line.quantity - 1, 'fewer' ) }, '−' ),
 					el( 'span', { class: 'invoiceninja-stepper__value' }, hidden( t.quantity + ' ' ), String( line.quantity ) ),
-					el( 'button', { type: 'button', class: 'invoiceninja-iconbutton', 'aria-label': fmt( t.oneMore, line.title ), disabled: line.quantity >= line.max, onClick: () => change( line, line.quantity + 1 ) }, '+' ),
+					el( 'button', { type: 'button', class: 'invoiceninja-iconbutton', 'data-action': 'more', 'aria-label': fmt( t.oneMore, line.title ), disabled: line.quantity >= line.max, onClick: () => change( line, line.quantity + 1, 'more' ) }, '+' ),
 					line.quantity >= line.max ? el( 'span', { class: 'invoiceninja-muted', text: fmt( t.max, line.max ) } ) : null,
-					el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', onClick: () => change( line, 0 ) }, t.remove, hidden( ' ' + line.title ) ) ) : el( 'span', { class: 'invoiceninja-muted', text: '× ' + line.quantity } );
-				return el( 'li', { class: 'invoiceninja-line' },
+					el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', 'data-action': 'remove', onClick: () => change( line, 0, 'remove' ) }, t.remove, hidden( ' ' + line.title ) ) ) : el( 'span', { class: 'invoiceninja-muted', text: '× ' + line.quantity } );
+				return el( 'li', { class: 'invoiceninja-line', 'data-product': line.product },
 					el( 'span', { class: 'invoiceninja-line__title' }, el( 'strong', { text: line.title } ), el( 'span', { class: 'invoiceninja-muted', text: fmt( t.each, money( line.price ) ) } ) ),
 					qty,
 					el( 'span', { class: 'invoiceninja-line__total', text: money( line.line_total ) } ) );
@@ -394,22 +441,56 @@
 				state.details.country_id = tax.countries.some( ( c ) => c[ 0 ] === tax.country ) ? tax.country : '';
 				state.details.postal_code = '';
 			}
+			// The postcode is optional (many countries have none), except where the server says
+			// the tax can't be worked out without it.
+			const postcode = field( 'postal_code', t.postcode, { optional: true, input: { autocomplete: 'postal-code', maxlength: '16' } } );
+			const syncPostcode = () => {
+				const required = tax.postcodeRequired.indexOf( String( state.details.country_id ) ) >= 0;
+				const optional = postcode.querySelector( 'label .invoiceninja-muted' );
+				postcode.querySelector( 'input' ).required = required;
+				if ( optional ) {
+					optional.hidden = required;
+				}
+			};
+			syncPostcode();
 			const select = el( 'select', { id: 'invoiceninja-country_id', name: 'country_id', required: true, autocomplete: 'country', 'aria-describedby': 'invoiceninja-tax-help', onChange: ( e ) => {
 				state.details.country_id = e.target.value;
+				syncPostcode();
 			} }, el( 'option', { value: '', text: t.chooseCountry } ), tax.countries.map( ( c ) => el( 'option', { value: c[ 0 ], text: c[ 1 ], selected: c[ 0 ] === state.details.country_id } ) ) );
-			// The postcode is optional: many countries have none.
 			return [
 				el( 'div', { class: 'invoiceninja-row' },
 					el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-country_id', text: t.country } ), select ),
-					field( 'postal_code', t.postcode, { optional: true, input: { autocomplete: 'postal-code', maxlength: '16' } } ) ),
+					postcode ),
 				el( 'p', { id: 'invoiceninja-tax-help', class: 'invoiceninja-help', text: t.taxHelp } ),
 			];
 		};
 
-		const change = async ( line, quantity ) => {
-			await cart.set( line.product, Math.max( 0, quantity ) );
-			announce( line.title + ': ' + Math.max( 0, quantity ) );
+		// Back on the control that was used (re-rendering would drop focus to the page): the same
+		// button on the same line, another of its buttons when that one is now disabled, or the
+		// cart heading when the line is gone.
+		const refocus = ( product, action ) => {
+			const row = Array.prototype.find.call( root.querySelectorAll( '[data-product]' ), ( node ) => node.getAttribute( 'data-product' ) === product );
+			const same = row ? row.querySelector( '[data-action="' + action + '"]' ) : null;
+			const target = same && ! same.disabled ? same : ( row ? row.querySelector( '[data-action]:not([disabled])' ) : null );
+			const fallback = root.querySelector( '.invoiceninja-heading' );
+			( target || fallback || root ).focus();
+		};
+
+		const change = async ( line, quantity, action ) => {
+			const result = await cart.set( line.product, Math.max( 0, quantity ) );
+			if ( result.ok ) {
+				if ( state.message && state.message.type === 'error' ) {
+					state.message = null; // An earlier failed change.
+				}
+				const now = typeof result.quantity === 'number' ? result.quantity : Math.max( 0, quantity );
+				announce( line.title + ': ' + now + ( result.limited && result.max > 0 ? '. ' + fmt( t.onlyAvailable, result.max ) : '' ) );
+			} else {
+				state.message = { type: 'error', text: result.message || t.error };
+			}
 			render();
+			if ( state.step === 'cart' ) {
+				refocus( line.product, action );
+			}
 		};
 
 		const handle = ( result ) => {
@@ -453,6 +534,9 @@
 				render();
 				return;
 			}
+			if ( result.email ) {
+				state.details.email = result.email; // The address the server used (the account's, with login required).
+			}
 			if ( result.next === 'confirm' ) {
 				state.step = 'remembered';
 			} else {
@@ -464,12 +548,16 @@
 		};
 
 		const confirm = async () => {
+			const from = state.step;
 			state.step = 'placing';
 			state.message = null;
 			render();
 			const result = await api( 'POST', '/checkout/confirm', Object.assign( {}, state.details, checks(), { code: state.code, remember: state.remember } ) );
 			if ( ! handle( result ) ) {
-				if ( result.code && result.code.indexOf( 'code_' ) === 0 ) {
+				if ( result.code === 'network' ) {
+					// Back where the shopper was, code kept: sending again can't place the order twice.
+					state.step = from === 'remembered' ? 'remembered' : 'code';
+				} else if ( result.code && result.code.indexOf( 'code_' ) === 0 ) {
 					state.step = 'code';
 					state.code = '';
 				} else if ( state.step === 'placing' ) {
@@ -509,6 +597,16 @@
 			unavailable() {
 				return [ heading( t.checkout ), notice( 'info', t.unavailable, t.unavailableText ) ];
 			},
+			loading() {
+				return [ el( 'p', { class: 'invoiceninja-loading', role: 'status', text: t.loadingCart } ) ];
+			},
+			failed() {
+				return [ heading( t.checkout ), notice( 'error', null, state.failed ), el( 'p', { class: 'invoiceninja-actions' }, button( t.tryAgain, () => {
+					state.step = 'loading';
+					render();
+					boot();
+				} ) ) ];
+			},
 			details( data ) {
 				const form = el( 'form', { class: 'invoiceninja-details', onSubmit: ( e ) => {
 					e.preventDefault();
@@ -517,7 +615,9 @@
 					start();
 				} },
 					cfg.loggedIn ? null : el( 'p', { class: 'invoiceninja-muted' }, t.haveAccount + ' ', el( 'a', { href: cfg.loginUrl, text: t.logIn } ) ),
-					field( 'email', t.email, { input: { type: 'email', autocomplete: 'email', required: true } } ),
+					state.account
+						? field( 'email', t.email, { input: { type: 'email', autocomplete: 'email', required: true, readonly: true, 'aria-describedby': 'invoiceninja-email-help' } }, t.accountEmail )
+						: field( 'email', t.email, { input: { type: 'email', autocomplete: 'email', required: true } } ),
 					el( 'div', { class: 'invoiceninja-row' },
 						field( 'first_name', t.firstName, { input: { autocomplete: 'given-name', required: true } } ),
 						field( 'last_name', t.lastName, { input: { autocomplete: 'family-name', required: true } } ) ),
@@ -582,8 +682,14 @@
 					el( 'p', { text: fmt( t.remembered, state.details.email ) } ),
 					el( 'p', { class: 'invoiceninja-actions' }, button( t.placeOrder, confirm ), el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', onClick: async () => {
 						// "Not you?": this device stops skipping the code for that email.
-						await api( 'POST', '/checkout/forget', {} );
-						state.details.email = '';
+						const result = await api( 'POST', '/checkout/forget', {} );
+						if ( ! result.ok ) {
+							state.message = { type: 'error', text: result.message || t.error };
+							render();
+							return;
+						}
+						state.message = null;
+						state.details.email = state.account;
 						state.step = 'details';
 						render();
 					} }, t.useAnother ) ),
@@ -622,13 +728,26 @@
 			render.lastStep = state.step;
 		};
 
-		( async () => {
-			if ( cfg.unavailable ) {
+		// The page may be cached, so whether ordering is available (and the account's email) comes
+		// from the server with the cart, never from the page.
+		const boot = async () => {
+			const data = await cart.load( true );
+			if ( ! Array.isArray( data.lines ) ) {
+				state.failed = data.message || t.error;
+				state.step = 'failed';
+				render();
+				return;
+			}
+			if ( data.unavailable ) {
 				state.step = 'unavailable';
 				render();
 				return;
 			}
-			const data = await cart.load( true );
+			state.step = 'cart';
+			if ( data.account_email ) {
+				state.account = data.account_email;
+				state.details.email = data.account_email;
+			}
 			if ( ( ! data.lines || ! data.lines.length ) && cookie( 'invoiceninja_order_flag' ) ) {
 				const last = await api( 'GET', '/orders/last' );
 				if ( last.ok && last.status === 'awaiting_payment' && last.pay_link ) {
@@ -640,7 +759,8 @@
 				}
 			}
 			render();
-		} )();
+		};
+		boot();
 	}
 
 	function waitingView( order, onChanged ) {
@@ -730,13 +850,21 @@
 			nodes.forEach( ( n ) => n && root.appendChild( n ) );
 		};
 		const find = () => {
+			const problem = el( 'div' );
 			const form = el( 'form', { class: 'invoiceninja-find', onSubmit: async ( e ) => {
 				e.preventDefault();
 				const data = new FormData( form );
-				await api( 'POST', '/orders/find', { number: data.get( 'number' ), email: data.get( 'email' ) } );
+				problem.textContent = '';
+				const result = await api( 'POST', '/orders/find', { number: data.get( 'number' ), email: data.get( 'email' ) } );
+				if ( result.code === 'network' || result.httpStatus >= 500 ) {
+					// Nothing was sent: say so, and keep what was typed for another try.
+					problem.appendChild( notice( 'error', null, result.message || t.error ) );
+					return;
+				}
 				paint( [ el( 'h2', { class: 'invoiceninja-heading', tabindex: '-1', text: t.linkOnWay } ), el( 'p', { role: 'status', text: t.findSent } ), cfg.pages.shop ? el( 'p', null, el( 'a', { href: cfg.pages.shop, text: t.backToShop } ) ) : null ] );
 				root.querySelector( '.invoiceninja-heading' ).focus();
 			} },
+				problem,
 				el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-find-number', text: t.orderNumber } ), el( 'input', { id: 'invoiceninja-find-number', name: 'number', value: number, required: true, 'aria-describedby': 'invoiceninja-find-hint' } ), el( 'span', { id: 'invoiceninja-find-hint', class: 'invoiceninja-help', text: t.orderNumberHint } ) ),
 				el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-find-email', text: t.email } ), el( 'input', { id: 'invoiceninja-find-email', name: 'email', type: 'email', autocomplete: 'email', required: true } ) ),
 				el( 'p', { class: 'invoiceninja-actions' }, el( 'button', { type: 'submit', class: 'wp-element-button' }, t.emailLink ) ) );
@@ -745,6 +873,14 @@
 		const load = async () => {
 			// The key goes in a header, never the address, so it stays out of server logs.
 			const order = await api( 'GET', '/orders/' + encodeURIComponent( number ), null, { 'X-Order-Key': key } );
+			if ( order.code === 'network' ) {
+				// Not "we couldn't find that order": the site didn't answer.
+				paint( [ notice( 'error', null, order.message ), el( 'p', null, button( t.tryAgain, () => {
+					paint( [ el( 'p', { role: 'status', class: 'invoiceninja-loading', text: t.checking } ) ] );
+					load();
+				} ) ) ] );
+				return;
+			}
 			if ( order.httpStatus !== 200 || ! order.number ) {
 				find();
 				return;

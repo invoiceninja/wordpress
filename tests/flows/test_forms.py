@@ -60,7 +60,7 @@ def token(age=60, **attributes):
 
 
 def submit(s, form, **fields):
-    data = {'form': form, 'elapsed': 12, 'website': '', 'first_name': 'Quinn', 'last_name': 'Quote',
+    data = {'form': form, 'elapsed': 12, 'in_leave_empty': '', 'first_name': 'Quinn', 'last_name': 'Quote',
             'email': 'quinn.new@example.com', 'phone': '+1 555 0100', 'product': 'P1',
             'message': 'Please quote 20 widgets, delivered.'}
     data.update(fields)
@@ -104,8 +104,9 @@ def quote_form_renders_and_refuses_instant_submits():
     status, _, html = Browser().get('/' + slug + '/')
     check(status == 200 and 'data-invoiceninja-quote-form' in html, 'the form renders', html[:1500])
     for needle in ('name="first_name"', 'name="email"', 'name="message"', 'Not sure yet', '>Widget<', '>Gadget<',
-                   'name="privacy"', 'Privacy Policy', 'name="website"', 'assets/forms/forms.js', "within 2 days"):
+                   'name="privacy"', 'Privacy Policy', 'name="in_leave_empty"', 'data-1p-ignore', 'assets/forms/forms.js', "within 2 days"):
         check(needle in html.replace('&#039;', "'"), 'form has %s' % needle)
+    check('name="website"' not in html, 'the spam trap is not named "website" (autofill fills that in)')
     check(re.search(r'name="phone"[^>]*required', html), 'phone is required when the block says so')
     form = re.search(r'name="form" value="([^"]+)"', html).group(1)
     status, r = submit(Browser(), form, privacy=True)
@@ -235,9 +236,16 @@ def invoice_ninja_down_queues_the_lead_and_the_retry_creates_it_once():
 @test
 def honeypot_and_rate_limits_stop_spam():
     forms_ready()
-    status, r = submit(Browser(), token(), email='bot@example.com', website='http://spam.example')
+    status, r = submit(Browser(), token(), email='bot@example.com', in_leave_empty='http://spam.example')
     check(status == 200 and r['ok'], 'bots get the normal reply', r)
     check(not leads('bot@example.com'), 'but nothing is saved')
+    # A "website" field filled in by autofill (an old cached page), or no trap at all, is a person.
+    status, r = submit(Browser(), token(), email='autofill.lead@example.com', website='https://buyer.example')
+    check(status == 200 and r['ok'] and len(leads('autofill.lead@example.com')) == 1, 'an autofilled "website" field keeps the lead', r)
+    data = {'form': token(), 'elapsed': 12, 'first_name': 'No', 'last_name': 'Trap', 'email': 'notrap.lead@example.com',
+            'phone': '+1 555 0100', 'product': 'P1', 'message': 'Sent without the trap field.'}
+    status, r = Browser().api('POST', '/quote-requests', data)
+    check(status == 200 and r['ok'] and len(leads('notrap.lead@example.com')) == 1, 'a request without the trap counts as empty', r)
     form = token()
     for i in range(3):
         status, r = submit(Browser(), form, email='busy@example.com', message='Request %d' % i)

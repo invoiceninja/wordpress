@@ -134,6 +134,12 @@ final class Strings {
 			'bannerPaid'       => __( 'Thanks! Order #%s is paid.', 'invoiceninja' ),
 			'hide'             => __( 'Hide this message', 'invoiceninja' ),
 			'error'            => __( 'Something went wrong. Please try again.', 'invoiceninja' ),
+			'offline'          => __( "We couldn't reach the site. Check your connection and try again.", 'invoiceninja' ),
+			'loadingCart'      => __( 'Loading your cart…', 'invoiceninja' ),
+			/* translators: %d: how many can be bought */
+			'onlyAvailable'    => __( 'Only %d available.', 'invoiceninja' ),
+			'accountEmail'     => __( 'Orders use the email on your account.', 'invoiceninja' ),
+			'codeRecent'       => __( 'We sent you a code a moment ago. Check your email, including spam, or wait to ask for a new one.', 'invoiceninja' ),
 			'tryAgain'         => __( 'Try again', 'invoiceninja' ),
 			'unavailable'      => __( 'Online ordering is temporarily unavailable', 'invoiceninja' ),
 			'unavailableText'  => __( 'Your cart is saved. Please try again later, or contact us to order.', 'invoiceninja' ),

@@ -6,8 +6,48 @@ use Brain\Monkey\Functions;
 use InvoiceNinja\Rest\Routes;
 use InvoiceNinja\Tests\TestCase;
 
+require_once __DIR__ . '/Support/RestStandIns.php';
+
 class RoutesTest extends TestCase
 {
+    private function request( string $method, array $headers ): \WP_REST_Request
+    {
+        $request = new \WP_REST_Request( $method );
+        foreach ( $headers as $name => $value ) {
+            $request->set_header( $name, $value );
+        }
+        return $request;
+    }
+
+    public function testLoggedInReadsMayComeWithoutAReferrerButNeverFromAnotherSite()
+    {
+        Functions\when( 'site_url' )->justReturn( $this->home_url );
+        $plugin = ( new \ReflectionClass( \InvoiceNinja\Plugin::class ) )->newInstanceWithoutConstructor();
+        $routes = new Routes( $plugin );
+
+        $this->assertTrue( $routes->ownPage( $this->request( 'GET', [] ) ), 'a GET with neither Origin nor Referer (no-referrer policy)' );
+        $this->assertTrue( $routes->ownPage( $this->request( 'GET', [ 'Referer' => $this->home_url . '/account/' ] ) ) );
+        $this->assertTrue( $routes->ownPage( $this->request( 'POST', [ 'Origin' => $this->home_url ] ) ) );
+        $this->assertFalse( $routes->ownPage( $this->request( 'GET', [ 'Origin' => 'https://evil.example' ] ) ), 'a foreign Origin' );
+        $this->assertFalse( $routes->ownPage( $this->request( 'GET', [ 'Referer' => 'https://evil.example/x' ] ) ), 'a foreign Referer' );
+        $this->assertFalse( $routes->ownPage( $this->request( 'POST', [] ) ), 'writes always need this site' );
+    }
+
+    public function testTitlesAreSentAsPlainText()
+    {
+        $reply = Routes::plainTitles(
+            [
+                'ok'    => true,
+                'items' => [ [ 'title' => 'Fish &amp; Chips', 'quantity' => 1 ] ],
+                'cart'  => [ 'lines' => [ [ 'title' => 'Tom&#8217;s &quot;Best&quot;' ] ], 'total' => 5 ],
+            ]
+        );
+        $this->assertSame( 'Fish & Chips', $reply['items'][0]['title'] );
+        $this->assertSame( "Tom\u{2019}s \"Best\"", $reply['cart']['lines'][0]['title'] );
+        $this->assertSame( 5, $reply['cart']['total'] );
+        $this->assertSame( [ 'code' => 'x' ], Routes::plainTitles( [ 'code' => 'x' ] ) );
+    }
+
     public function testOnlyAllowlistedRoutesArePublic()
     {
         $registered = [];
