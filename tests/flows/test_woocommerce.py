@@ -52,6 +52,8 @@ def woo_ready(hpos=None):
         _state['was_active'] = wp_ok('plugin', 'is-active', 'woocommerce')
     if not wp_ok('plugin', 'is-active', 'woocommerce'):
         wp('plugin', 'activate', 'woocommerce')
+    # A first activation (a fresh site, as on CI) sends the next admin page to WooCommerce's setup wizard.
+    php("delete_transient('_wc_activation_redirect');")
     if 'hpos_was' not in _state:
         _state['hpos_was'] = php("echo Automattic\\WooCommerce\\Utilities\\OrderUtil::custom_orders_table_usage_is_enabled() ? 'on' : 'off';") == 'on'
     b = admin()
