@@ -314,6 +314,8 @@ def circuit_breaker_stops_mass_changes_until_reviewed():
         check(len(paused_mails) == 1, 'admins get one email', mails())
         r = sync(b)
         check(r['result']['status'] == 'paused' and len([m for m in mails('admin@example.com') if 'paused' in m['subject']]) == 1, '...not one per run', mails())
+        # An upgrade flow may have left the one-time Welcome redirect pending.
+        wp('option', 'delete', 'invoiceninja_welcome_pending', check_ok=False)
         _, _, html = Browser().login('admin', 'admin').get('/wp-admin/')
         check('Product sync is paused' in html, 'and a notice on the Dashboard', html[:300])
         check(r['paused']['changes'] >= 12 and r['paused']['sample'], 'review details stored', r['paused'])
@@ -806,6 +808,8 @@ def stock_is_checked_live_before_the_code():
     b.api('POST', '/connection/refresh', {})
     # Start from Invoice Ninja's numbers even if an earlier run left a live value behind
     wp_eval("$p = InvoiceNinja\\Plugin::instance(); $m = $p->mapping->find('product', 'P1'); $p->mapping->save('product', 'P1', 'post', $m['wp_id'], '');")
+    # Each product is asked about at most once a minute; an earlier checkout may have just asked.
+    wp_eval("delete_transient('invoiceninja_stock_seen_' . md5('P1'));")
     sync(b)
     try:
         s = Browser()
