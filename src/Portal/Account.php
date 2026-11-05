@@ -114,7 +114,7 @@ final class Account {
 		wp_enqueue_script( 'invoiceninja-portal' );
 		// The signed time and the spam trap are moved into the form by portal.js.
 		return '<div class="invoiceninja-payinvoice" data-invoiceninja-payinvoice data-invoiceninja-store data-form="' . esc_attr( self::formToken( time(), $this->plugin->secrets->get( 'secret' ) ) ) . '">'
-			. '<p class="invoiceninja-sr" aria-hidden="true"><label for="invoiceninja-pay-website">' . esc_html__( 'Leave this empty', 'invoiceninja' ) . '</label><input type="text" id="invoiceninja-pay-website" name="website" tabindex="-1" autocomplete="off"></p>'
+			. '<p class="invoiceninja-sr" aria-hidden="true"><label for="invoiceninja-pay-trap">' . esc_html__( 'Leave this empty', 'invoiceninja' ) . '</label><input type="text" id="invoiceninja-pay-trap" name="' . esc_attr( Routes::TRAP ) . '" tabindex="-1" autocomplete="off" data-1p-ignore data-lpignore="true" data-bwignore></p>'
 			. '</div>';
 	}
 
@@ -410,9 +410,9 @@ final class Account {
 		$email  = strtolower( sanitize_email( (string) $request->get_param( 'email' ) ) );
 		$hour   = (int) floor( time() / HOUR_IN_SECONDS );
 		$reply  = new \WP_REST_Response( array( 'ok' => true ) );
-		$trap   = $request->get_param( 'website' );
+		$trap   = $request->get_param( Routes::TRAP );
 		// Bots that fill the hidden field get the same reply as people, and nothing is sent.
-		if ( ! is_scalar( $trap ) || '' !== trim( (string) $trap ) ) {
+		if ( Checkout::trapped( array( 'trap' => null === $trap ? '' : $trap ) ) ) {
 			return $reply;
 		}
 		$started = self::formTime( (string) ( is_scalar( $request->get_param( 'form' ) ) ? $request->get_param( 'form' ) : '' ), $this->plugin->secrets->get( 'secret' ) );
@@ -430,8 +430,17 @@ final class Account {
 		if ( time() - $started < $min || (int) ( is_numeric( $elapsed ) ? $elapsed : 0 ) < $min ) {
 			return Routes::fail( 'too_fast', __( 'That was quick! Please check your details, then send again.', 'invoiceninja' ), 422 );
 		}
-		/** This filter is documented in src/Forms/QuoteForm.php */
-		if ( ! apply_filters( 'invoiceninja_captcha', true, (array) $request->get_params(), 'pay_invoice' ) ) {
+		/**
+		 * Whether the visitor passed a CAPTCHA on Pay Invoice. There is none by default; a
+		 * CAPTCHA plugin returns false to refuse the request. Pay Invoice sends no CAPTCHA
+		 * token of its own, so hook this only with a CAPTCHA that adds one. (The Quote
+		 * Request Form uses invoiceninja_captcha.)
+		 *
+		 * @since 2.0.1
+		 * @param bool                 $passed Passed.
+		 * @param array<string, mixed> $input  Submitted values.
+		 */
+		if ( ! apply_filters( 'invoiceninja_pay_invoice_captcha', true, (array) $request->get_params() ) ) {
 			return Routes::fail( 'captcha', __( 'Please complete the check to show you are not a robot.', 'invoiceninja' ), 422 );
 		}
 		if ( '' === $number || ! is_email( $email )

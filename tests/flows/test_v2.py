@@ -891,14 +891,17 @@ def final_review_regressions():
 def checkout_abuse_protection():
     store_ready()
     # Orders from earlier runs of this flow would count against its caps.
-    wp_eval("global $wpdb; $wpdb->query('DELETE FROM ' . InvoiceNinja\\Commerce\\Orders::table() . \" WHERE email IN ('price.watch@example.com', 'trap.bot@example.com', 'too.fast@example.com', 'robot@example.com')\");")
+    wp_eval("global $wpdb; $wpdb->query('DELETE FROM ' . InvoiceNinja\\Commerce\\Orders::table() . \" WHERE email IN ('price.watch@example.com', 'trap.bot@example.com', 'too.fast@example.com', 'robot@example.com', 'autofill@example.com', 'quote.captcha@example.com')\");")
     # The spam trap: the reply people get, but no code is sent
     s = shopper()
-    status, r = s.api('POST', '/checkout/start', {'email': 'trap.bot@example.com', 'website': 'http://spam.example'})
+    status, r = s.api('POST', '/checkout/start', {'email': 'trap.bot@example.com', 'in_leave_empty': 'http://spam.example'})
     check(status == 200 and r['next'] == 'code', 'a filled spam trap gets the usual reply', r)
     check(not mails('trap.bot@example.com'), 'but no code is sent')
-    status, r = s.api('POST', '/checkout/confirm', {'email': 'trap.bot@example.com', 'code': '123456', 'website': 'x'})
+    status, r = s.api('POST', '/checkout/confirm', {'email': 'trap.bot@example.com', 'code': '123456', 'in_leave_empty': 'x'})
     check(status == 422 and not order_count('trap.bot@example.com'), 'and nothing is ordered', r)
+    # A "website" field filled in by the browser's autofill is not the trap
+    status, r = shopper().api('POST', '/checkout/start', {'email': 'autofill@example.com', 'website': 'https://buyer.example'})
+    check(status == 200 and r['next'] == 'code' and mails('autofill@example.com'), 'an autofilled "website" field still gets a code', r)
     # Minimum time from the first add to checkout
     option('in_mock_checkout_min_seconds', '30')
     try:
@@ -908,11 +911,18 @@ def checkout_abuse_protection():
         check(not mails('too.fast@example.com'), 'no code sent')
     finally:
         option('in_mock_checkout_min_seconds', '0')
-    # A CAPTCHA plugin can refuse the code (the mock's invoiceninja_captcha filter)
-    option('in_mock_captcha_fail', '1')
+    # A CAPTCHA plugin can refuse the code (the mock's invoiceninja_checkout_captcha filter)
+    option('in_mock_checkout_captcha_fail', '1')
     try:
         status, r = shopper().api('POST', '/checkout/start', {'email': 'robot@example.com'})
         check(status == 422 and r['code'] == 'captcha' and not mails('robot@example.com'), 'a failed CAPTCHA sends no code', r)
+    finally:
+        wp('option', 'delete', 'in_mock_checkout_captcha_fail', check_ok=False)
+    # A CAPTCHA hooked to the quote form (invoiceninja_captcha, ignoring its context) never blocks checkout
+    option('in_mock_captcha_fail', '1')
+    try:
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'quote.captcha@example.com'})
+        check(status == 200 and r['next'] == 'code', "the quote form's CAPTCHA doesn't run at checkout", r)
     finally:
         wp('option', 'delete', 'in_mock_captcha_fail', check_ok=False)
     # The total the shopper saw: a price change since is shown before the code
@@ -926,8 +936,8 @@ def checkout_abuse_protection():
     check(status == 422 and r['code'] == 'cart_changed', 'a price change between the code and the order is flagged too', r)
     status, r = s.api('POST', '/checkout/confirm', {'email': 'price.watch@example.com', 'code': code, 'total': 20.0, 'remember': True})
     check(status == 200 and r['ok'], 'and the same code works once the new total was seen', r)
-    # Unpaid orders per email are capped, even on a remembered device
-    for _ in range(2):
+    # Unpaid orders per email are capped (default 5), even on a remembered device
+    for _ in range(4):
         s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
         status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com'})
         check(status == 200 and r['next'] == 'confirm', 'remembered device', r)
@@ -935,9 +945,16 @@ def checkout_abuse_protection():
         check(status == 200 and r['ok'], 'another unpaid order', r)
     s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
     status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com'})
-    check(status == 422 and r['code'] == 'too_many_orders', 'a fourth unpaid order from the last day is refused', r)
+    check(status == 422 and r['code'] == 'too_many_orders', 'a sixth unpaid order from the last day is refused', r)
     status, r = s.api('POST', '/checkout/confirm', {'email': 'price.watch@example.com'})
-    check(status == 422 and r['code'] == 'too_many_orders' and order_count('price.watch@example.com') == 3, 'confirm refuses it too', r)
+    check(status == 422 and r['code'] == 'too_many_orders' and order_count('price.watch@example.com') == 5, 'confirm refuses it too', r)
+    # Orders held up on the shop's side (needing attention) and cancelled ones don't count against the buyer
+    wp_eval("global $wpdb; $t = InvoiceNinja\\Commerce\\Orders::table(); $ids = $wpdb->get_col(\"SELECT id FROM $t WHERE email = 'price.watch@example.com' ORDER BY id LIMIT 2\"); $wpdb->query(\"UPDATE $t SET status = 'attention' WHERE id = \" . (int) $ids[0]); $wpdb->query(\"UPDATE $t SET status = 'cancelled' WHERE id = \" . (int) $ids[1]);")
+    status, r = s.api('POST', '/checkout/start', {'email': 'price.watch@example.com'})
+    check(status == 200 and r['next'] == 'confirm', 'with two of them held up or cancelled, the buyer can order again', r)
+    status, r = s.api('POST', '/checkout/confirm', {'email': 'price.watch@example.com'})
+    check(status == 200 and r['ok'] and order_count('price.watch@example.com') == 6, 'and the order is placed', r)
+    s.api('POST', '/cart/items', {'product': 'P1', 'quantity': 1})
     # "Not you?" clears the remembered device
     status, r = s.api('POST', '/checkout/forget', {})
     check(status == 200 and 'invoiceninja_device' not in [c.name for c in s.jar], 'the device cookie is cleared', [c.name for c in s.jar])
@@ -947,6 +964,17 @@ def checkout_abuse_protection():
 
 def order_count(email):
     return int(wp_eval("global $wpdb; echo (int) $wpdb->get_var($wpdb->prepare('SELECT COUNT(*) FROM ' . InvoiceNinja\\Commerce\\Orders::table() . ' WHERE email = %%s', '%s'));" % email))
+
+
+@test
+def an_add_on_route_outside_the_allowlist_is_skipped_not_fatal():
+    store_ready()
+    out = wp_eval("add_filter('doing_it_wrong_trigger_error', '__return_false'); add_action('invoiceninja_rest_routes', function ($r) { $r->add('/addon/open', 'GET', '__return_true', 'public'); });"
+                  " $ping = rest_do_request(new WP_REST_Request('GET', '/invoiceninja/v1/ping')); $addon = rest_do_request(new WP_REST_Request('GET', '/invoiceninja/v1/addon/open'));"
+                  " echo $ping->get_status(), ',', $addon->get_status();")
+    check(out.strip().endswith('200,404'), "the REST API keeps working and the open route isn't added", out)
+    logged = wp_eval("global $wpdb; echo (int) $wpdb->get_var(\"SELECT COUNT(*) FROM \" . InvoiceNinja\\Core\\Logger::table() . \" WHERE message LIKE '%/addon/open%'\");")
+    check(int(logged) >= 1, 'and the mistake is in the log', logged)
 
 
 @test
@@ -977,11 +1005,23 @@ def new_clients_get_currency_language_and_tax_address():
         data = json_loads(wp_eval("echo wp_json_encode(InvoiceNinja\\Plugin::instance()->store->scriptData());"))
         check(data['taxFields'] and ['276', 'Germany'] in data['countries'] and data['country'] == '840', "checkout asks for the country, from Invoice Ninja's list", data)
         s = shopper()
+        # A page cached before taxes were turned on still learns about the fields: from the cart...
+        status, cart = s.api('GET', '/cart?checkout=1')
+        check(status == 200 and cart['tax']['fields'] and ['276', 'Germany'] in cart['tax']['countries'] and cart['tax']['country'] == '840', 'the checkout cart says the tax address is needed', cart)
+        _, plain = s.api('GET', '/cart')
+        check('tax' not in plain, 'other cart requests stay small', plain)
         email = 'tax.buyer@example.com'
         details = {'email': email, 'first_name': 'Tax', 'last_name': 'Payer'}
         status, r = s.api('POST', '/checkout/start', details)
-        check(status == 422 and r['code'] == 'tax_address' and set(r['fields']) == {'country_id', 'postal_code'}, 'country and postcode are needed before the code', r)
+        check(status == 422 and r['code'] == 'tax_address' and set(r['fields']) == {'country_id'}, 'the country is needed before the code', r)
+        check(r['tax']['fields'] and ['276', 'Germany'] in r['tax']['countries'], '...and from the error, with the countries to show', r)
         check(not mails(email), 'no code yet')
+        details.update(country_id='276', postal_code='12#45')
+        status, r = s.api('POST', '/checkout/start', details)
+        check(status == 422 and list(r['fields']) == ['postal_code'], 'a postcode that is given must look like one', r)
+        # The postcode is optional: many countries (UAE, Hong Kong, Qatar…) have none
+        status, r = shopper().api('POST', '/checkout/start', {'email': 'no.postcode@example.com', 'first_name': 'No', 'last_name': 'Postcode', 'country_id': '276'})
+        check(status == 200 and r['next'] == 'code', 'no postcode goes on to the code', r)
         details.update(country_id='999', postal_code='10115')
         status, r = s.api('POST', '/checkout/start', details)
         check(status == 422 and list(r['fields']) == ['country_id'], 'an unknown country is refused', r)

@@ -270,16 +270,16 @@ namespace InvoiceNinja\Tests\V2 {
         {
             $this->payable();
 
-            $trap = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'website' => 'spam', 'form' => $this->form(), 'elapsed' => 10 ] );
+            $trap = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'in_leave_empty' => 'spam', 'form' => $this->form(), 'elapsed' => 10 ] );
             $this->assertSame( [ 'ok' => true ], $trap->get_data(), 'the spam trap gets the usual reply' );
 
-            $missing = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'website' => '', 'elapsed' => 10 ] );
+            $missing = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'in_leave_empty' => '', 'elapsed' => 10 ] );
             $this->assertSame( 400, $missing->get_status() );
 
-            $fast = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'website' => '', 'form' => $this->form(), 'elapsed' => 1 ] );
+            $fast = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'in_leave_empty' => '', 'form' => $this->form(), 'elapsed' => 1 ] );
             $this->assertSame( 422, $fast->get_status() );
 
-            $fresh = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'website' => '', 'form' => $this->form( 0 ), 'elapsed' => 10 ] );
+            $fresh = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'in_leave_empty' => '', 'form' => $this->form( 0 ), 'elapsed' => 10 ] );
             $this->assertSame( 422, $fresh->get_status(), 'a form rendered a moment ago' );
 
             $this->assertSame( [], $this->requests, 'nothing is looked up' );
@@ -290,7 +290,7 @@ namespace InvoiceNinja\Tests\V2 {
         {
             $this->payable();
 
-            $reply = $this->payInvoice( [ 'number' => '0042', 'email' => 'Jane@x.com', 'website' => '', 'form' => $this->form(), 'elapsed' => 10 ] );
+            $reply = $this->payInvoice( [ 'number' => '0042', 'email' => 'Jane@x.com', 'in_leave_empty' => '', 'form' => $this->form(), 'elapsed' => 10 ] );
 
             $this->assertSame( [ 'ok' => true ], $reply->get_data() );
             $this->assertStringContainsString( 'number=0042', $this->requestedUrls()[0] );
@@ -300,15 +300,40 @@ namespace InvoiceNinja\Tests\V2 {
             $this->assertStringNotContainsString( 'invoice/OTHER', $this->mails[0]['body'] );
         }
 
+        public function testAnAutofilledWebsiteFieldDoesntDropAPayer()
+        {
+            $this->payable();
+
+            // An old cached page's "website" field, filled in by the browser, and no trap sent at all.
+            $reply = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'website' => 'https://jane.example', 'form' => $this->form(), 'elapsed' => 10 ] );
+
+            $this->assertSame( [ 'ok' => true ], $reply->get_data() );
+            $this->assertCount( 1, $this->mails, 'the payment link is sent' );
+        }
+
+        public function testPayInvoiceHasItsOwnCaptchaFilter()
+        {
+            $this->payable();
+            // A CAPTCHA hooked to the quote form never sees Pay Invoice.
+            Filters\expectApplied( 'invoiceninja_captcha' )->never();
+            Filters\expectApplied( 'invoiceninja_pay_invoice_captcha' )->once()->andReturn( false );
+
+            $reply = $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'in_leave_empty' => '', 'form' => $this->form(), 'elapsed' => 10 ] );
+
+            $this->assertSame( 422, $reply->get_status() );
+            $this->assertSame( 'captcha', $reply->get_data()['code'] );
+            $this->assertSame( [], $this->mails );
+        }
+
         public function testWrongGuessesDontUseUpTheCustomersEmails()
         {
             $this->payable();
             for ( $i = 0; $i < 5; $i++ ) {
-                $this->payInvoice( [ 'number' => '9999', 'email' => 'jane@x.com', 'website' => '', 'form' => $this->form(), 'elapsed' => 10 ] );
+                $this->payInvoice( [ 'number' => '9999', 'email' => 'jane@x.com', 'in_leave_empty' => '', 'form' => $this->form(), 'elapsed' => 10 ] );
             }
             $this->assertSame( [], $this->mails );
 
-            $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'website' => '', 'form' => $this->form(), 'elapsed' => 10 ] );
+            $this->payInvoice( [ 'number' => '0042', 'email' => 'jane@x.com', 'in_leave_empty' => '', 'form' => $this->form(), 'elapsed' => 10 ] );
             $this->assertCount( 1, $this->mails, 'the real customer still gets their link' );
         }
 

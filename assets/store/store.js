@@ -14,6 +14,18 @@
 	}
 	const t = cfg.i18n;
 
+	// Whether checkout asks for the tax address. The page may be cached from before taxes were
+	// turned on or off, so the server's answer (with the cart, or a tax_address error) wins.
+	const tax = { fields: !! cfg.taxFields, countries: cfg.countries || [], country: cfg.country || '' };
+	function applyTax( data ) {
+		if ( ! data || typeof data.fields !== 'boolean' ) {
+			return;
+		}
+		tax.fields = data.fields;
+		tax.countries = Array.isArray( data.countries ) ? data.countries : [];
+		tax.country = data.country || '';
+	}
+
 	// ---------- Helpers ----------
 
 	function fmt( text ) {
@@ -42,7 +54,7 @@
 		if ( inclusive === undefined ? cfg.taxIncluded : inclusive ) {
 			return t.taxIncluded;
 		}
-		return cfg.taxFields ? t.taxAddress : t.taxLater;
+		return tax.fields ? t.taxAddress : t.taxLater;
 	}
 
 	function el( tag, attrs ) {
@@ -165,8 +177,13 @@
 	const cart = {
 		data: null,
 		listeners: [],
-		async load() {
-			this.data = await api( 'GET', '/cart' );
+		async load( forCheckout ) {
+			// The REST root may already have a query (plain permalinks: ?rest_route=).
+			this.data = await api( 'GET', '/cart' + ( forCheckout ? ( cfg.rest.indexOf( '?' ) < 0 ? '?' : '&' ) + 'checkout=1' : '' ) );
+			if ( this.data.tax ) {
+				applyTax( this.data.tax );
+				delete this.data.tax;
+			}
 			this.emit();
 			return this.data;
 		},
@@ -325,7 +342,6 @@
 	// ---------- Checkout ----------
 
 	function initCheckout( root ) {
-		const countries = cfg.countries || [];
 		const state = {
 			step: 'cart',
 			details: { email: '', first_name: '', last_name: '', phone: '' },
@@ -336,14 +352,10 @@
 			retryAfter: 0,
 			trap: '',
 		};
-		if ( cfg.taxFields ) {
-			state.details.country_id = countries.some( ( c ) => c[ 0 ] === cfg.country ) ? cfg.country : '';
-			state.details.postal_code = '';
-		}
 		let timer = null;
 
 		// What the server checks besides the details: the spam trap and the total the shopper saw.
-		const checks = () => ( { website: state.trap, total: cart.data ? cart.data.total : undefined } );
+		const checks = () => ( { in_leave_empty: state.trap, total: cart.data ? cart.data.total : undefined } );
 
 		const field = ( name, label, attrs, help ) => {
 			const id = 'invoiceninja-' + name;
@@ -375,16 +387,21 @@
 		};
 
 		const taxFields = () => {
-			if ( ! cfg.taxFields ) {
+			if ( ! tax.fields ) {
 				return null;
+			}
+			if ( state.details.country_id === undefined ) {
+				state.details.country_id = tax.countries.some( ( c ) => c[ 0 ] === tax.country ) ? tax.country : '';
+				state.details.postal_code = '';
 			}
 			const select = el( 'select', { id: 'invoiceninja-country_id', name: 'country_id', required: true, autocomplete: 'country', 'aria-describedby': 'invoiceninja-tax-help', onChange: ( e ) => {
 				state.details.country_id = e.target.value;
-			} }, el( 'option', { value: '', text: t.chooseCountry } ), countries.map( ( c ) => el( 'option', { value: c[ 0 ], text: c[ 1 ], selected: c[ 0 ] === state.details.country_id } ) ) );
+			} }, el( 'option', { value: '', text: t.chooseCountry } ), tax.countries.map( ( c ) => el( 'option', { value: c[ 0 ], text: c[ 1 ], selected: c[ 0 ] === state.details.country_id } ) ) );
+			// The postcode is optional: many countries have none.
 			return [
 				el( 'div', { class: 'invoiceninja-row' },
 					el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-country_id', text: t.country } ), select ),
-					field( 'postal_code', t.postcode, { input: { autocomplete: 'postal-code', required: true, maxlength: '16' } } ) ),
+					field( 'postal_code', t.postcode, { optional: true, input: { autocomplete: 'postal-code', maxlength: '16' } } ) ),
 				el( 'p', { id: 'invoiceninja-tax-help', class: 'invoiceninja-help', text: t.taxHelp } ),
 			];
 		};
@@ -416,6 +433,8 @@
 				state.step = 'cart';
 				state.message = null;
 			} else if ( result.code === 'tax_address' ) {
+				// The server needs the tax address even if this (cached) page didn't know.
+				applyTax( result.tax );
 				state.step = 'details';
 			}
 			return false;
@@ -493,7 +512,7 @@
 			details( data ) {
 				const form = el( 'form', { class: 'invoiceninja-details', onSubmit: ( e ) => {
 					e.preventDefault();
-					const trap = form.querySelector( '[name="website"]' );
+					const trap = form.querySelector( '[name="in_leave_empty"]' );
 					state.trap = trap ? trap.value : '';
 					start();
 				} },
@@ -504,8 +523,8 @@
 						field( 'last_name', t.lastName, { input: { autocomplete: 'family-name', required: true } } ) ),
 					field( 'phone', t.phone, { optional: true, input: { type: 'tel', autocomplete: 'tel' } } ),
 					taxFields(),
-					// Spam trap: people never see or fill it.
-					el( 'p', { class: 'invoiceninja-sr', 'aria-hidden': 'true' }, el( 'input', { name: 'website', tabindex: '-1', autocomplete: 'off', value: state.trap, onInput: ( e ) => {
+					// Spam trap: people never see or fill it, and its name is one autofill leaves alone.
+					el( 'p', { class: 'invoiceninja-sr', 'aria-hidden': 'true' }, el( 'input', { type: 'text', name: 'in_leave_empty', tabindex: '-1', autocomplete: 'off', 'data-1p-ignore': true, 'data-lpignore': 'true', 'data-bwignore': true, value: state.trap, onInput: ( e ) => {
 						state.trap = e.target.value;
 					} } ) ),
 					el( 'p', { class: 'invoiceninja-actions' }, el( 'button', { type: 'submit', class: 'wp-element-button' }, t.continue ) ),
@@ -609,7 +628,7 @@
 				render();
 				return;
 			}
-			const data = await cart.load();
+			const data = await cart.load( true );
 			if ( ( ! data.lines || ! data.lines.length ) && cookie( 'invoiceninja_order_flag' ) ) {
 				const last = await api( 'GET', '/orders/last' );
 				if ( last.ok && last.status === 'awaiting_payment' && last.pay_link ) {

@@ -20,14 +20,14 @@ use InvoiceNinja\Verification\EmailCode;
  *    then create the invoice. If Invoice Ninja is down the order is kept and sent later.
  * No Invoice Ninja record is created before the code is confirmed.
  * Abuse protection: a honeypot, a minimum time from the first add to checkout, rate
- * limits, the invoiceninja_captcha filter, and a cap on unpaid orders per email.
+ * limits, the invoiceninja_checkout_captcha filter, and a cap on unpaid orders per email.
  */
 final class Checkout {
 
 	/**
 	 * Unpaid orders one email may have open from the last day (filter: invoiceninja_max_open_orders).
 	 */
-	public const MAX_OPEN_ORDERS = 3;
+	public const MAX_OPEN_ORDERS = 5;
 
 	/**
 	 * Seconds from the first add to checkout, at least (filter: invoiceninja_checkout_min_seconds).
@@ -163,11 +163,30 @@ final class Checkout {
 	}
 
 	/**
-	 * Whether checkout asks for the country and postcode: Invoice Ninja works out the tax
+	 * Whether checkout asks for the country (and postcode): Invoice Ninja works out the tax
 	 * from the client's address (the company's "calculate taxes").
 	 */
 	public function taxFields(): bool {
 		return ! empty( $this->plugin->state->get()['company']['calculate_taxes'] ) && (bool) $this->plugin->statics->countries();
+	}
+
+	/**
+	 * What the checkout form needs for the tax address. Sent with the cart and with a
+	 * tax_address error, since a cached page may predate taxes being turned on or off.
+	 *
+	 * @return array{fields: bool, countries: list<array{0: string, 1: string}>, country: string}
+	 */
+	public function taxConfig(): array {
+		$fields    = $this->taxFields();
+		$countries = array();
+		foreach ( $fields ? $this->plugin->statics->countries() : array() as $id => $name ) {
+			$countries[] = array( (string) $id, (string) $name );
+		}
+		return array(
+			'fields'    => $fields,
+			'countries' => $countries,
+			'country'   => (string) ( $this->plugin->state->get()['company']['country_id'] ?? '' ),
+		);
 	}
 
 	/**
@@ -187,13 +206,17 @@ final class Checkout {
 		return array(
 			'ok'      => false,
 			'code'    => 'tax_address',
-			'message' => __( 'Enter your country and postcode. We need them to work out the tax.', 'invoiceninja' ),
+			'message' => isset( $errors['country_id'] )
+				? __( 'Choose your country. We need it to work out the tax.', 'invoiceninja' )
+				: __( 'Check your postcode.', 'invoiceninja' ),
 			'fields'  => $errors,
+			'tax'     => $this->taxConfig(),
 		);
 	}
 
 	/**
-	 * Field errors for a tax address.
+	 * Field errors for a tax address. The country is required; the postcode is optional
+	 * (many countries have none), so only its format is checked, and only when it's given.
 	 *
 	 * @param string            $country   Invoice Ninja country id.
 	 * @param string            $postcode  Postcode.
@@ -201,23 +224,45 @@ final class Checkout {
 	 * @return array<string, string> Errors by field.
 	 */
 	public static function taxAddressErrors( string $country, string $postcode, array $countries ): array {
-		$errors = array();
+		$errors   = array();
+		$postcode = trim( $postcode );
 		if ( '' === $country || ! in_array( $country, array_map( 'strval', $countries ), true ) ) {
 			$errors['country_id'] = __( 'Choose your country.', 'invoiceninja' );
 		}
-		if ( ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9 -]{0,15}$/', trim( $postcode ) ) ) {
-			$errors['postal_code'] = __( 'Enter your postcode.', 'invoiceninja' );
+		if ( '' !== $postcode && ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9 -]{0,15}$/', $postcode ) ) {
+			$errors['postal_code'] = __( 'Check your postcode.', 'invoiceninja' );
 		}
 		return $errors;
 	}
 
 	/**
-	 * The spam trap: a field people never see or fill.
+	 * The spam trap: a field people never see or fill. It isn't called "website" or anything
+	 * else autofill or a password manager would fill in for a real shopper.
 	 *
-	 * @param array<string, mixed> $form Form checks.
+	 * @param array<string, mixed> $form Form checks (trap: the field's value).
 	 */
-	private static function trapped( array $form ): bool {
-		return '' !== trim( (string) ( is_scalar( $form['website'] ?? '' ) ? ( $form['website'] ?? '' ) : 'x' ) );
+	public static function trapped( array $form ): bool {
+		$trap = $form['trap'] ?? '';
+		return ! is_scalar( $trap ) || '' !== trim( (string) $trap );
+	}
+
+	/**
+	 * Whether the shopper passed a CAPTCHA at checkout. There is none by default.
+	 *
+	 * @param array<string, mixed> $input Everything sent.
+	 */
+	public static function captchaPassed( array $input ): bool {
+		/**
+		 * Whether the shopper passed a CAPTCHA at checkout, before the email code is sent.
+		 * There is none by default; a CAPTCHA plugin returns false to refuse the request.
+		 * The checkout sends no CAPTCHA token of its own, so hook this only with a CAPTCHA
+		 * that adds one. (The Quote Request Form uses invoiceninja_captcha.)
+		 *
+		 * @since 2.0.1
+		 * @param bool                 $passed Passed.
+		 * @param array<string, mixed> $input  Submitted values.
+		 */
+		return (bool) apply_filters( 'invoiceninja_checkout_captcha', true, $input );
 	}
 
 	/**
@@ -248,7 +293,8 @@ final class Checkout {
 	private function openOrdersError( string $email ): ?array {
 		/**
 		 * Unpaid orders one email may have from the last day before checkout refuses more.
-		 * 0 turns the cap off.
+		 * Only orders waiting for the buyer's payment count (being placed, or awaiting
+		 * payment), not ones held up on the shop's side. 0 turns the cap off.
 		 *
 		 * @since 2.0.0
 		 * @param int    $max   Maximum.
@@ -296,7 +342,7 @@ final class Checkout {
 	 *
 	 * @param array<string, string> $details email, first_name, last_name, phone, country_id, postal_code.
 	 * @param string                $ip      Shopper IP.
-	 * @param array<string, mixed>  $form    website (spam trap), total (as shown), input (everything sent, for a CAPTCHA).
+	 * @param array<string, mixed>  $form    trap (spam trap), total (as shown), input (everything sent, for a CAPTCHA).
 	 * @return array<string, mixed>
 	 */
 	public function start( array $details, string $ip, array $form = array() ): array {
@@ -347,16 +393,7 @@ final class Checkout {
 				'message'     => __( 'That was quick! Please check your details, then continue.', 'invoiceninja' ),
 			);
 		}
-		/**
-		 * Whether the visitor passed a CAPTCHA. There is none by default; a CAPTCHA plugin
-		 * returns false to refuse the request.
-		 *
-		 * @since 2.0.0
-		 * @param bool                 $passed  Passed.
-		 * @param array<string, mixed> $input   Submitted values.
-		 * @param string               $context checkout (before the email code is sent).
-		 */
-		if ( ! apply_filters( 'invoiceninja_captcha', true, (array) ( $form['input'] ?? array() ), 'checkout' ) ) {
+		if ( ! self::captchaPassed( (array) ( $form['input'] ?? array() ) ) ) {
 			return array(
 				'ok'      => false,
 				'code'    => 'captcha',
@@ -426,7 +463,7 @@ final class Checkout {
 	 * @param string                $code     Code (empty when the device is remembered).
 	 * @param bool                  $remember Remember this device.
 	 * @param string                $ip       Shopper IP.
-	 * @param array<string, mixed>  $form     website (spam trap), total (as shown).
+	 * @param array<string, mixed>  $form     trap (spam trap), total (as shown).
 	 * @return array<string, mixed>
 	 */
 	public function confirm( array $details, string $code, bool $remember, string $ip = '', array $form = array() ): array {

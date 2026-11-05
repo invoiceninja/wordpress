@@ -22,7 +22,7 @@ def pay_form(ago=10):
 
 
 def pay_invoice(number, email, **extra):
-    data = {'number': number, 'email': email, 'website': '', 'form': pay_form(), 'elapsed': 10}
+    data = {'number': number, 'email': email, 'in_leave_empty': '', 'form': pay_form(), 'elapsed': 10}
     data.update(extra)
     return Browser().api('POST', '/pay-invoice', data)
 
@@ -180,10 +180,36 @@ def pay_invoice_drops_bots_and_rushed_submits():
     _, order = checkout(shopper(), 'a+b@x.com')
     number = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_number'];" % order['number'])
     reset_mock_log()
-    _, r = pay_invoice(number, 'a+b@x.com', website='http://spam.example')
+    _, r = pay_invoice(number, 'a+b@x.com', in_leave_empty='http://spam.example')
     check(r == {'ok': True}, 'the spam trap gets the usual reply', r)
     status, r = pay_invoice(number, 'a+b@x.com', elapsed=1)
     check(status == 422 and r['code'] == 'too_fast', 'too fast to be a person', (status, r))
     status, r = pay_invoice(number, 'a+b@x.com', form='1.forged')
     check(status == 400, 'a forged form token is refused', (status, r))
+    # Pay Invoice has its own CAPTCHA filter
+    wp('option', 'update', 'in_mock_pay_invoice_captcha_fail', '1')
+    try:
+        status, r = pay_invoice(number, 'a+b@x.com')
+        check(status == 422 and r['code'] == 'captcha', 'invoiceninja_pay_invoice_captcha can refuse a request', (status, r))
+    finally:
+        wp('option', 'delete', 'in_mock_pay_invoice_captcha_fail', check_ok=False)
     check(not api_calls() and not mails('a+b@x.com'), 'nothing looked up or sent', describe(api_calls()))
+
+
+@test
+def pay_invoice_ignores_autofill_and_quote_form_captchas():
+    store_ready()
+    _, order = checkout(shopper(), 'a+b@x.com')
+    number = wp_eval("echo InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s')['invoice_number'];" % order['number'])
+    html = wp_eval("echo do_blocks('<!-- wp:invoiceninja/pay-invoice /-->');")
+    check('name="in_leave_empty"' in html and 'name="website"' not in html and 'autocomplete="off"' in html and 'tabindex="-1"' in html and 'aria-hidden="true"' in html,
+          'the spam trap has a name autofill leaves alone', html)
+    reset_mock_log()
+    # A CAPTCHA hooked to the quote form (ignoring its context) and an autofilled "website" field
+    wp('option', 'update', 'in_mock_captcha_fail', '1')
+    try:
+        _, r = pay_invoice(number, 'a+b@x.com', website='https://buyer.example')
+        check(r == {'ok': True}, 'the usual reply', r)
+    finally:
+        wp('option', 'delete', 'in_mock_captcha_fail', check_ok=False)
+    check(len(mails('a+b@x.com')) == 1, 'and the payment link is sent', describe(api_calls()))

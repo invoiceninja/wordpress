@@ -2,6 +2,7 @@
 
 namespace InvoiceNinja\Tests\V2;
 
+use Brain\Monkey\Filters;
 use Brain\Monkey\Functions;
 use InvoiceNinja\Catalog\Statics;
 use InvoiceNinja\Commerce\Cart;
@@ -55,10 +56,63 @@ class CheckoutRulesTest extends TestCase
         $countries = [ '840', '276' ];
         $this->assertSame( [], Checkout::taxAddressErrors( '276', '10115', $countries ) );
         $this->assertSame( [], Checkout::taxAddressErrors( '840', 'SW1A 1AA', $countries ) );
-        $this->assertSame( [ 'country_id', 'postal_code' ], array_keys( Checkout::taxAddressErrors( '', '', $countries ) ) );
+        $this->assertSame( [ 'country_id' ], array_keys( Checkout::taxAddressErrors( '', '', $countries ) ), 'the country is required' );
         $this->assertSame( [ 'country_id' ], array_keys( Checkout::taxAddressErrors( '999', '10115', $countries ) ) );
         $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '276', '<script>', $countries ) ) );
         $this->assertSame( [ 'postal_code' ], array_keys( Checkout::taxAddressErrors( '276', str_repeat( '1', 30 ), $countries ) ) );
+    }
+
+    public function testThePostcodeIsOptionalForCountriesWithoutOne()
+    {
+        $countries = [ '784', '344', '634' ]; // United Arab Emirates, Hong Kong, Qatar
+        $this->assertSame( [], Checkout::taxAddressErrors( '784', '', $countries ) );
+        $this->assertSame( [], Checkout::taxAddressErrors( '344', '   ', $countries ), 'blank is no postcode' );
+        $this->assertSame( [], Checkout::taxAddressErrors( '634', '00000', $countries ), 'one given is still accepted' );
+    }
+
+    public function testTheSpamTrapOnlyCatchesAFilledField()
+    {
+        $this->assertFalse( Checkout::trapped( [] ) );
+        $this->assertFalse( Checkout::trapped( [ 'trap' => '' ] ) );
+        $this->assertFalse( Checkout::trapped( [ 'trap' => '  ' ] ) );
+        $this->assertFalse( Checkout::trapped( [ 'website' => 'https://jane.example' ] ), 'an autofilled "website" field no longer drops a shopper' );
+        $this->assertTrue( Checkout::trapped( [ 'trap' => 'http://spam.example' ] ) );
+        $this->assertTrue( Checkout::trapped( [ 'trap' => [ 'x' ] ] ) );
+    }
+
+    public function testCheckoutHasItsOwnCaptchaFilter()
+    {
+        // A CAPTCHA hooked to the quote form (invoiceninja_captcha) never sees checkout.
+        Filters\expectApplied( 'invoiceninja_captcha' )->never();
+        Filters\expectApplied( 'invoiceninja_checkout_captcha' )->twice()->andReturnUsing( fn( $passed, $input ) => $input ? false : $passed );
+        $this->assertFalse( Checkout::captchaPassed( [ 'email' => 'a@b.c' ] ) );
+        $this->assertTrue( Checkout::captchaPassed( [] ), 'none by default' );
+    }
+
+    public function testOnlyOrdersWaitingForTheBuyerCountAgainstTheCap()
+    {
+        global $wpdb;
+        $wpdb = new class {
+            public $prefix = 'wp_';
+            public $sql = '';
+            public $args = [];
+            public function prepare( $query, ...$args ) {
+                $this->args = is_array( $args[0] ?? null ) ? $args[0] : $args;
+                return $query;
+            }
+            public function get_var( $sql ) {
+                $this->sql = $sql;
+                return '2';
+            }
+        };
+        $this->assertSame( 2, ( new \InvoiceNinja\Commerce\Orders() )->openFor( 'Jane@X.com' ) );
+        $this->assertSame( 'jane@x.com', $wpdb->args[0] );
+        $statuses = array_slice( $wpdb->args, 1, -1 );
+        $this->assertSame( [ 'queued', 'placing', 'awaiting_payment' ], $statuses );
+        $this->assertNotContains( 'attention', $wpdb->args, "orders held up on the shop's side don't count" );
+        $this->assertNotContains( 'cancelled', $wpdb->args );
+        $this->assertSame( substr_count( $wpdb->sql, '%s' ), count( $wpdb->args ), 'one placeholder per value' );
+        $this->assertSame( 5, Checkout::MAX_OPEN_ORDERS );
     }
 
     public function testStaticsKeepCountriesAndLanguagesForNewClients()
