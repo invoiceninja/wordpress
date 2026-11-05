@@ -31,7 +31,7 @@ The hook API follows semantic versioning: names and payload shapes don't change 
 | `invoiceninja_track_inventory` | `bool $track` | Whether stock limits apply |
 | `invoiceninja_inclusive_taxes` | `bool $inclusive` | Whether product prices include tax (default: the company's setting; the invoice follows it) |
 | `invoiceninja_checkout_min_seconds` | `int $seconds` | Minimum time from the first add to checkout (default 3) |
-| `invoiceninja_max_open_orders` | `int $max, string $email` | Unpaid orders one email may have from the last day (default 3; 0 turns the cap off) |
+| `invoiceninja_max_open_orders` | `int $max, string $email` | Orders from the last day one email may have waiting for payment (queued, being placed or awaiting payment; not ones that need your attention) before checkout refuses more (default 5; 0 turns the cap off) |
 | `invoiceninja_is_verified` | `bool $verified, int $user_id` | Whether a user's email is verified (used by every module) |
 | `invoiceninja_user_email_verified` | `bool $verified, int $user_id` | Mark users verified by your own means, e.g. a membership plugin |
 | `invoiceninja_account_subscriptions` | `array $rows, string $client_id, int $user_id` | Rows for the Account's Subscriptions tab |
@@ -53,7 +53,9 @@ The hook API follows semantic versioning: names and payload shapes don't change 
 | `invoiceninja_subscription_eligible` | filter | `bool\|string $eligible, string $subscription_id, array $buyer` | Answer Invoice Ninja's `is_eligible` callback; return true or a refusal message (fails open) |
 | `invoiceninja_relay_allow_private` | filter | `bool $allow, string $url` | Let the provisioning relay post to a private address |
 | `invoiceninja_lead_received` / `invoiceninja_lead_quoted` | action | `array $lead` / `array $lead, array $quote` | A quote request was saved, or became a quote |
-| `invoiceninja_captcha` | filter | `bool $ok, array $input, string $form` | Add a CAPTCHA to the Quote Request Form (`quote_form`), Pay Invoice (`pay_invoice`) and checkout (`checkout`, before the email code is sent) |
+| `invoiceninja_captcha` | filter | `bool $ok, array $input, string $form` | Add a CAPTCHA to the Quote Request Form (`$form` is `quote_form`) |
+| `invoiceninja_checkout_captcha` | filter | `bool $ok, array $input` | Add a CAPTCHA to checkout, checked before the email code is sent. Checkout sends no CAPTCHA token itself, so your CAPTCHA must add its own field to the request (since 2.0.1; 2.0.0 used `invoiceninja_captcha` with `checkout`) |
+| `invoiceninja_pay_invoice_captcha` | filter | `bool $ok, array $input` | Add a CAPTCHA to Pay Invoice, the same way (since 2.0.1; 2.0.0 used `invoiceninja_captcha` with `pay_invoice`) |
 | `invoiceninja_quote_request_spam` | filter | `bool $spam, array $fields` | Your own spam check |
 | `invoiceninja_quote_form_min_seconds` | filter | `int $seconds` | Minimum time to fill the form |
 | `invoiceninja_pay_invoice_min_seconds` | filter | `int $seconds` | Minimum time to fill the Pay Invoice form |
@@ -67,7 +69,7 @@ The hook API follows semantic versioning: names and payload shapes don't change 
 
 Everything is under `/wp-json/invoiceninja/v1`.
 - **Admin routes** need the `view_invoiceninja` or `manage_invoiceninja` capability (connection routes need `manage_options`) and the usual `X-WP-Nonce`.
-- **Public store routes** are an allowlist (`Routes::PUBLIC_ROUTES`): `/cart`, `/cart/items`, `/checkout/start`, `/checkout/confirm`, `/checkout/forget`, `/orders/{number}` (key in the `X-Order-Key` header), `/orders/find`, `/orders/last`, `/orders/last/change`, `/pay-invoice`, and the module callbacks. `Routes::add()` refuses a `public`, `same_site` or `logged_in` route that isn't on it.
+- **Public store routes** are an allowlist (`Routes::PUBLIC_ROUTES`): `/cart`, `/cart/items`, `/checkout/start`, `/checkout/confirm`, `/checkout/forget`, `/orders/{number}` (key in the `X-Order-Key` header), `/orders/find`, `/orders/last`, `/orders/last/change`, `/pay-invoice`, and the module callbacks. `Routes::add()` skips a `public`, `same_site` or `logged_in` route that isn't on it, with a `_doing_it_wrong` notice and an error in the plugin's log. An add-on that needs an open route registers it itself with `register_rest_route()`.
   - Writes must come from your own site's pages, checked by Origin or Referer, instead of a nonce, so pages stay cacheable.
   - They're rate-limited per IP; IPv6 is limited per /64.
 

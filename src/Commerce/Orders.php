@@ -223,16 +223,23 @@ final class Orders {
 	}
 
 	/**
-	 * Unpaid orders for an email in the last day (queued, being placed, awaiting payment
-	 * or needing attention).
+	 * Statuses that count against the buyer's open-orders cap: orders waiting for their
+	 * payment (or still being placed). Not attention: those are held up on the shop's side
+	 * (Invoice Ninja was down, a currency mismatch), which isn't the buyer's doing.
+	 */
+	public const OPEN_STATUSES = array( 'queued', 'placing', 'awaiting_payment' );
+
+	/**
+	 * Unpaid orders for an email in the last day that wait for the buyer (OPEN_STATUSES).
 	 *
 	 * @param string $email Email.
 	 */
 	public function openFor( string $email ): int {
 		global $wpdb;
 		$table = self::table();
-		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery
-		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE email = %s AND status IN ('queued', 'placing', 'awaiting_payment', 'attention') AND created_at > %s", strtolower( $email ), gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ) ) );
+		$in    = implode( ', ', array_fill( 0, count( self::OPEN_STATUSES ), '%s' ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare, WordPress.DB.PreparedSQLPlaceholders.ReplacementsWrongNumber, WordPress.DB.DirectDatabaseQuery
+		return (int) $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(*) FROM {$table} WHERE email = %s AND status IN ({$in}) AND created_at > %s", array_merge( array( strtolower( $email ) ), self::OPEN_STATUSES, array( gmdate( 'Y-m-d H:i:s', time() - DAY_IN_SECONDS ) ) ) ) );
 	}
 
 	/**

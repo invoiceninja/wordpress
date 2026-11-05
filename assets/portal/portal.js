@@ -231,7 +231,8 @@
 			const result = await api( 'POST', '/pay-invoice', {
 				number: data.get( 'number' ),
 				email: data.get( 'email' ),
-				website: data.get( 'website' ) || '',
+				// The spam trap (an old cached page's "website" field is ignored: autofill fills it).
+				in_leave_empty: data.get( 'in_leave_empty' ) || '',
 				form: root.getAttribute( 'data-form' ) || '',
 				elapsed: Math.floor( ( Date.now() - started ) / 1000 ),
 			} );

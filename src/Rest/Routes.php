@@ -21,6 +21,12 @@ final class Routes {
 
 	public const NS = 'invoiceninja/v1';
 
+	/**
+	 * The spam trap's field name on checkout and Pay Invoice: hidden from people, and named
+	 * so autofill and password managers leave it alone (they fill "website", "url", …).
+	 */
+	public const TRAP = 'in_leave_empty';
+
 	public const PUBLIC_ROUTES = array(
 		'/ping',
 		'/cart',
@@ -120,11 +126,15 @@ final class Routes {
 	 * @param callable $callback Handler.
 	 * @param string   $access   view, manage, manage_site, logged_in, same_site (public writes from this site's pages) or public (reads, and server-to-server calls that check their own signature).
 	 *                           The last three need the path in PUBLIC_ROUTES.
-	 * @throws \LogicException On an unknown access level, or an open one on a path not in the allowlist.
+	 *
+	 * An unknown access level, or an open one on a path not in the allowlist, is skipped (and
+	 * logged) rather than thrown: this runs on rest_api_init, so an add-on's mistake must not
+	 * break every REST request.
 	 */
 	public function add( string $path, string $method, callable $callback, string $access ): void {
 		if ( in_array( $access, array( 'logged_in', 'same_site', 'public' ), true ) && ! in_array( $path, self::PUBLIC_ROUTES, true ) ) {
-			throw new \LogicException( 'Route ' . esc_html( $path ) . ' is not in the public allowlist' );
+			$this->refuse( $path, 'Route ' . $path . ' was not added: only the routes in Routes::PUBLIC_ROUTES can be ' . $access . '. Use view, manage or manage_site, or register it yourself with register_rest_route().' );
+			return;
 		}
 		$permissions = array(
 			'view'        => static fn(): bool => current_user_can( Capabilities::VIEW ),
@@ -137,7 +147,8 @@ final class Routes {
 			'public'      => '__return_true',
 		);
 		if ( ! isset( $permissions[ $access ] ) ) {
-			throw new \LogicException( 'Unknown access ' . esc_html( $access ) );
+			$this->refuse( $path, 'Route ' . $path . ' was not added: unknown access "' . $access . '".' );
+			return;
 		}
 		register_rest_route(
 			self::NS,
@@ -148,6 +159,19 @@ final class Routes {
 				'permission_callback' => $permissions[ $access ],
 			)
 		);
+	}
+
+	/**
+	 * Tell the developer (and the plugin's log) why an add-on's route was skipped.
+	 *
+	 * @param string $path    Path.
+	 * @param string $message Message.
+	 */
+	private function refuse( string $path, string $message ): void {
+		_doing_it_wrong( esc_html( self::class . '::add' ), esc_html( $message ), '2.0.1' );
+		if ( isset( $this->plugin->logger ) ) {
+			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Error, 'rest', $message, array( 'path' => $path ) );
+		}
 	}
 
 	/**
@@ -224,12 +248,19 @@ final class Routes {
 	}
 
 	/**
-	 * GET /cart.
+	 * GET /cart (?checkout=1 adds what the checkout form needs for the tax address: the page
+	 * may be cached from before taxes were turned on or off).
+	 *
+	 * @param \WP_REST_Request $request Request.
 	 */
-	public function getCart(): \WP_REST_Response {
+	public function getCart( \WP_REST_Request $request ): \WP_REST_Response {
 		nocache_headers();
-		$cart = $this->plugin->cart;
-		return new \WP_REST_Response( $cart->summary( $cart->items( $cart->currentId() ) ) );
+		$cart    = $this->plugin->cart;
+		$summary = $cart->summary( $cart->items( $cart->currentId() ) );
+		if ( $request->get_param( 'checkout' ) ) {
+			$summary['tax'] = $this->plugin->checkout->taxConfig();
+		}
+		return new \WP_REST_Response( $summary );
 	}
 
 	/**
@@ -417,12 +448,12 @@ final class Routes {
 	private function form( \WP_REST_Request $request ): array {
 		$input = $request->get_json_params();
 		$input = is_array( $input ) && $input ? $input : $request->get_body_params();
-		$trap  = $request->get_param( 'website' );
+		$trap  = $request->get_param( self::TRAP );
 		$total = $request->get_param( 'total' );
 		return array(
-			'website' => is_scalar( $trap ) ? (string) $trap : ( null === $trap ? '' : 'x' ),
-			'total'   => is_numeric( $total ) ? (float) $total : null,
-			'input'   => is_array( $input ) ? $input : array(),
+			'trap'  => is_scalar( $trap ) ? (string) $trap : ( null === $trap ? '' : 'x' ),
+			'total' => is_numeric( $total ) ? (float) $total : null,
+			'input' => is_array( $input ) ? $input : array(),
 		);
 	}
 

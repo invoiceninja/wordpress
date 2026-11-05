@@ -39,14 +39,45 @@ class RoutesTest extends TestCase
         $routes->add( '/webhook', 'POST', '__return_true', 'public' );
         $routes->add( '/admin/anything', 'GET', '__return_true', 'manage' );
         $this->assertSame( [ '/webhook', '/admin/anything' ], $registered );
-        foreach ( [ 'public', 'same_site', 'logged_in' ] as $access ) {
-            try {
-                $routes->add( '/admin/secret', 'POST', '__return_true', $access );
-                $this->fail( "an open ($access) route outside the allowlist must be refused" );
-            } catch ( \LogicException $e ) {
-                $this->assertStringContainsString( 'allowlist', $e->getMessage() );
-            }
+
+        // An add-on's mistake is skipped and reported, never thrown: this runs on rest_api_init,
+        // so an exception would break every REST request (the block editor too).
+        $wrong = [];
+        Functions\when( '_doing_it_wrong' )->alias( function ( $function, $message ) use ( &$wrong ) {
+            $wrong[] = $message;
+        } );
+        Functions\when( 'esc_html' )->returnArg();
+        foreach ( [ 'public', 'same_site', 'logged_in', 'nobody' ] as $access ) {
+            $routes->add( '/admin/secret', 'POST', '__return_true', $access );
         }
+        $this->assertSame( [ '/webhook', '/admin/anything' ], $registered, 'and never registered' );
+        $this->assertCount( 4, $wrong );
+        $this->assertStringContainsString( 'PUBLIC_ROUTES', $wrong[0] );
+    }
+
+    public function testASkippedRouteIsLogged()
+    {
+        Functions\when( 'register_rest_route' )->justReturn( true );
+        Functions\when( '_doing_it_wrong' )->justReturn( null );
+        Functions\when( 'esc_html' )->returnArg();
+        Functions\when( 'sanitize_key' )->returnArg();
+        global $wpdb;
+        $wpdb = new class {
+            public $prefix = 'wp_';
+            public $rows = [];
+            public function insert( $table, $row ) {
+                $this->rows[] = $row;
+                return 1;
+            }
+        };
+        $plugin = ( new \ReflectionClass( \InvoiceNinja\Plugin::class ) )->newInstanceWithoutConstructor();
+        ( function () {
+            $this->logger = new \InvoiceNinja\Core\Logger( new \InvoiceNinja\Core\Options() );
+        } )->call( $plugin );
+        ( new Routes( $plugin ) )->add( '/addon/open', 'POST', '__return_true', 'public' );
+        $this->assertCount( 1, $wpdb->rows );
+        $this->assertSame( 'error', $wpdb->rows[0]['level'] );
+        $this->assertStringContainsString( '/addon/open', $wpdb->rows[0]['message'] );
     }
 
     /**

@@ -260,8 +260,10 @@ final class QuoteForm {
 			return $response;
 		}
 		/**
-		 * Whether the visitor passed a CAPTCHA. There is none by default; a CAPTCHA plugin
-		 * returns false to refuse the request.
+		 * Whether the visitor passed a CAPTCHA on the Quote Request Form. There is none by
+		 * default; a CAPTCHA plugin returns false to refuse the request. Checkout and Pay
+		 * Invoice have their own filters (invoiceninja_checkout_captcha and
+		 * invoiceninja_pay_invoice_captcha).
 		 *
 		 * @since 2.0.0
 		 * @param bool                 $passed  Passed.

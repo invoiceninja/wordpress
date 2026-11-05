@@ -11,7 +11,9 @@
  *   in_mock_calculate_taxes 1: the company calculates taxes from the client's address
  *   in_mock_inclusive_taxes 1: the company's prices include tax
  *   in_mock_checkout_min_seconds  seconds from the first add to checkout (the flows set 0)
- *   in_mock_captcha_fail    1: the invoiceninja_captcha filter refuses everyone
+ *   in_mock_captcha_fail    1: a quote-form CAPTCHA (invoiceninja_captcha, ignoring its context) refuses everyone
+ *   in_mock_checkout_captcha_fail     1: invoiceninja_checkout_captcha refuses everyone
+ *   in_mock_pay_invoice_captcha_fail  1: invoiceninja_pay_invoice_captcha refuses everyone
  *
  * Known clients: a+b@x.com and member@x.com (the company's currency), euro@x.com (EUR).
  * Never load this on a real site: it is only mounted by dev/docker-compose.yml.
@@ -63,9 +65,16 @@ function in_mock_client_settings( $id ) {
     return $id === 'CLIENT_EURO' ? [ 'currency_id' => '3' ] : new stdClass();
 }
 
-// A CAPTCHA plugin that refuses everyone (in_mock_captcha_fail)
+// A quote-form CAPTCHA plugin that refuses everyone and ignores the context (in_mock_captcha_fail)
 add_filter( 'invoiceninja_captcha', function ( $passed ) {
     return get_option( 'in_mock_captcha_fail' ) ? false : $passed;
+} );
+// CAPTCHA plugins hooked to checkout and Pay Invoice
+add_filter( 'invoiceninja_checkout_captcha', function ( $passed ) {
+    return get_option( 'in_mock_checkout_captcha_fail' ) ? false : $passed;
+} );
+add_filter( 'invoiceninja_pay_invoice_captcha', function ( $passed ) {
+    return get_option( 'in_mock_pay_invoice_captcha_fail' ) ? false : $passed;
 } );
 
 // The checkout's minimum time from the first add (the flow tests turn it off except where they test it)
