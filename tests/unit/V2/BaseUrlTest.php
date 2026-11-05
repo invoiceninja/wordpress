@@ -30,6 +30,9 @@ class BaseUrlTest extends TestCase
             'spaces inside'            => [ 'billing example.com', null ],
             'credentials in url'       => [ 'https://user:pass@example.com', null ],
             'not a host'               => [ 'https://-bad-.example', null ],
+            'docker service name'      => [ 'http://invoice_ninja:8000', 'http://invoice_ninja:8000' ],
+            'underscore in a label'    => [ 'http://in_app.lan/', 'http://in_app.lan' ],
+            'single label host'        => [ 'http://invoiceninja', 'http://invoiceninja' ],
         ];
     }
 
