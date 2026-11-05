@@ -141,8 +141,9 @@ final class Routes {
 			'manage'      => static fn(): bool => current_user_can( Capabilities::MANAGE ),
 			'manage_site' => static fn(): bool => current_user_can( 'manage_options' ),
 			// Logged in by cookie without a REST nonce (pages stay cacheable), so the request must
-			// also come from this site's own pages, like the public store writes.
-			'logged_in'   => fn( \WP_REST_Request $request ): bool => \InvoiceNinja\Commerce\Checkout::userId() > 0 && $this->sameSite( $request ),
+			// also come from this site's own pages, like the public store writes. Reads may also
+			// come with neither Origin nor Referer (a no-referrer policy).
+			'logged_in'   => fn( \WP_REST_Request $request ): bool => \InvoiceNinja\Commerce\Checkout::userId() > 0 && $this->ownPage( $request ),
 			'same_site'   => array( $this, 'sameSite' ),
 			'public'      => '__return_true',
 		);
@@ -248,8 +249,27 @@ final class Routes {
 	}
 
 	/**
-	 * GET /cart (?checkout=1 adds what the checkout form needs for the tax address: the page
-	 * may be cached from before taxes were turned on or off).
+	 * A logged-in visitor's request from this site's own pages. A read (GET) may also come
+	 * with neither Origin nor Referer: browsers leave both out of same-origin GETs under a
+	 * no-referrer policy, and another site can't read the reply (no CORS header is sent for
+	 * a request without an Origin). A foreign Origin or Referer is always refused, and
+	 * writes always need one from this site.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function ownPage( \WP_REST_Request $request ): bool {
+		if ( $this->sameSite( $request ) ) {
+			return true;
+		}
+		return 'GET' === strtoupper( (string) $request->get_method() )
+			&& '' === (string) ( $request->get_header( 'origin' ) ?? '' )
+			&& '' === (string) ( $request->get_header( 'referer' ) ?? '' );
+	}
+
+	/**
+	 * GET /cart. ?checkout=1 adds what the checkout form needs, since its page may be cached:
+	 * the tax address fields, whether ordering is available now, and the account email that
+	 * orders use when the store requires login.
 	 *
 	 * @param \WP_REST_Request $request Request.
 	 */
@@ -259,8 +279,51 @@ final class Routes {
 		$summary = $cart->summary( $cart->items( $cart->currentId() ) );
 		if ( $request->get_param( 'checkout' ) ) {
 			$summary['tax_address'] = $this->plugin->checkout->taxConfig(); // 'tax' is the cart's tax amount.
+			$summary['unavailable'] = null !== $this->plugin->checkout->unavailable()
+				|| 'off' === $this->plugin->options->setting( 'store.mode' )
+				|| ! \InvoiceNinja\Frontend\Store::enabled();
+			$account                = $this->accountEmail();
+			if ( '' !== $account ) {
+				$summary['account_email'] = $account;
+			}
 		}
-		return new \WP_REST_Response( $summary );
+		return new \WP_REST_Response( self::plainTitles( $summary ) );
+	}
+
+	/**
+	 * The email orders use when the store requires login: the account's own, whatever was
+	 * typed (Checkout replaces it). Empty otherwise.
+	 */
+	private function accountEmail(): string {
+		if ( ! $this->plugin->options->setting( 'store.require_login' ) ) {
+			return '';
+		}
+		$user = get_userdata( \InvoiceNinja\Commerce\Checkout::userId() );
+		return $user ? (string) $user->user_email : '';
+	}
+
+	/**
+	 * Product titles as plain text for the scripts, which show them with textContent: synced
+	 * titles can be stored HTML-encoded ("Fish &amp; Chips").
+	 *
+	 * @param array<string, mixed> $data A cart summary, an order, or a reply holding one (cart).
+	 * @return array<string, mixed>
+	 */
+	public static function plainTitles( array $data ): array {
+		foreach ( array( 'lines', 'items' ) as $list ) {
+			if ( ! isset( $data[ $list ] ) || ! is_array( $data[ $list ] ) ) {
+				continue;
+			}
+			foreach ( $data[ $list ] as $i => $line ) {
+				if ( is_array( $line ) && isset( $line['title'] ) && is_string( $line['title'] ) ) {
+					$data[ $list ][ $i ]['title'] = html_entity_decode( $line['title'], ENT_QUOTES | ENT_HTML5, 'UTF-8' );
+				}
+			}
+		}
+		if ( isset( $data['cart'] ) && is_array( $data['cart'] ) ) {
+			$data['cart'] = self::plainTitles( $data['cart'] );
+		}
+		return $data;
 	}
 
 	/**
@@ -281,7 +344,7 @@ final class Routes {
 		}
 		// Buy Now: the cart only ever holds the product just chosen.
 		$result = $cart->set( $id, (string) $request->get_param( 'product' ), (int) $request->get_param( 'quantity' ), 'buy_now' === $mode );
-		return new \WP_REST_Response( $result + array( 'cart' => $cart->summary( $cart->items( $id ) ) ) );
+		return new \WP_REST_Response( self::plainTitles( $result + array( 'cart' => $cart->summary( $cart->items( $id ) ) ) ) );
 	}
 
 	/**
@@ -290,8 +353,12 @@ final class Routes {
 	 * @param \WP_REST_Request $request Request.
 	 */
 	public function checkoutStart( \WP_REST_Request $request ): \WP_REST_Response {
-		$result = $this->plugin->checkout->start( $this->buyer( $request ), self::ip(), $this->form( $request ) );
-		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
+		$result  = $this->plugin->checkout->start( $this->buyer( $request ), self::ip(), $this->form( $request ) );
+		$account = $this->accountEmail();
+		if ( $result['ok'] && '' !== $account ) {
+			$result['email'] = $account; // Where the code went: the account's email, not what was typed.
+		}
+		return new \WP_REST_Response( self::plainTitles( $result ), $result['ok'] ? 200 : 422 );
 	}
 
 	/**
@@ -301,7 +368,7 @@ final class Routes {
 	 */
 	public function checkoutConfirm( \WP_REST_Request $request ): \WP_REST_Response {
 		$result = $this->plugin->checkout->confirm( $this->buyer( $request ), (string) $request->get_param( 'code' ), (bool) $request->get_param( 'remember' ), self::ip(), $this->form( $request ) );
-		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 422 );
+		return new \WP_REST_Response( self::plainTitles( $result ), $result['ok'] ? 200 : 422 );
 	}
 
 	/**
@@ -332,7 +399,7 @@ final class Routes {
 		if ( null === $order ) {
 			return new \WP_REST_Response( array( 'ok' => false ), 200 );
 		}
-		return new \WP_REST_Response( array( 'ok' => true ) + $this->plugin->checkout->publicView( $order, true ) );
+		return new \WP_REST_Response( self::plainTitles( array( 'ok' => true ) + $this->plugin->checkout->publicView( $order, true ) ) );
 	}
 
 	/**
@@ -340,7 +407,7 @@ final class Routes {
 	 */
 	public function changeLastOrder(): \WP_REST_Response {
 		$result = $this->plugin->checkout->changeLastOrder();
-		return new \WP_REST_Response( $result, $result['ok'] ? 200 : 409 );
+		return new \WP_REST_Response( self::plainTitles( $result ), $result['ok'] ? 200 : 409 );
 	}
 
 	/**
@@ -362,7 +429,7 @@ final class Routes {
 					array_map(
 						static fn( \WP_Post $p ): array => array(
 							'id'    => (string) get_post_meta( $p->ID, 'product_id', true ),
-							'title' => wp_strip_all_tags( get_the_title( $p ) ),
+							'title' => html_entity_decode( wp_strip_all_tags( get_the_title( $p ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
 						),
 						$posts
 					),
@@ -416,7 +483,7 @@ final class Routes {
 		$order = $this->plugin->checkout->status( (string) $request->get_param( 'number' ), $key );
 		return null === $order
 			? $this->error( 'not_found', __( "We couldn't find that order. Check the link in your email.", 'invoiceninja' ), 404 )
-			: new \WP_REST_Response( $order );
+			: new \WP_REST_Response( self::plainTitles( $order ) );
 	}
 
 	/**
@@ -816,7 +883,7 @@ final class Routes {
 			'status_url'     => current_user_can( Capabilities::MANAGE ) ? $this->plugin->checkout->statusUrl( $order ) : '',
 			'items'          => array_map(
 				static fn( array $i ): array => array(
-					'title'    => (string) $i['title'],
+					'title'    => html_entity_decode( (string) $i['title'], ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
 					'quantity' => (int) $i['quantity'],
 				),
 				(array) $order['items']

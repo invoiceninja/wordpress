@@ -50,12 +50,18 @@
 	}
 
 	async function api( method, path, body ) {
-		const response = await fetch( cfg.rest + path, {
-			method,
-			credentials: 'same-origin',
-			headers: body ? { 'Content-Type': 'application/json' } : {},
-			body: body ? JSON.stringify( body ) : undefined,
-		} );
+		let response;
+		try {
+			response = await fetch( cfg.rest + path, {
+				method,
+				credentials: 'same-origin',
+				headers: body ? { 'Content-Type': 'application/json' } : {},
+				body: body ? JSON.stringify( body ) : undefined,
+			} );
+		} catch ( e ) {
+			// Offline, or the site didn't answer: callers show this with a way to try again.
+			return { ok: false, code: 'network', message: t.offline, httpStatus: 0 };
+		}
 		let data = {};
 		try {
 			data = await response.json();
@@ -68,6 +74,10 @@
 
 	function notice( type, text ) {
 		return el( 'div', { class: 'invoiceninja-notice invoiceninja-notice--' + type, role: type === 'error' ? 'alert' : 'status' }, text );
+	}
+
+	function retry( onClick ) {
+		return el( 'p', null, el( 'button', { type: 'button', class: 'wp-element-button', onClick }, t.tryAgain ) );
 	}
 
 	// ---------- Account ----------
@@ -84,7 +94,12 @@
 
 		const verifyBox = ( me ) => {
 			const box = el( 'section', { class: 'invoiceninja-panel', 'aria-labelledby': 'invoiceninja-verify-title' } );
+			let current = 'start';
+			let retryAfter = 0;
+			let timer = null;
 			const draw = ( step, message ) => {
+				current = step;
+				window.clearInterval( timer );
 				box.textContent = '';
 				box.appendChild( el( 'h2', { id: 'invoiceninja-verify-title', class: 'invoiceninja-heading', tabindex: '-1', text: t.confirmTitle } ) );
 				if ( message ) {
@@ -103,12 +118,32 @@
 				} } );
 				box.appendChild( el( 'p', { text: fmt( t.codeSent, me.email ) } ) );
 				box.appendChild( el( 'p', { class: 'invoiceninja-field' }, el( 'label', { for: 'invoiceninja-account-code', text: t.code } ), input, el( 'span', { id: 'invoiceninja-account-code-help', class: 'invoiceninja-help', text: t.codeHelp } ) ) );
-				box.appendChild( el( 'p', null, el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', onClick: send }, t.resend ) ) );
+				// Resend only once the server will send another code, with a countdown until then.
+				const resend = el( 'p', { class: 'invoiceninja-muted' } );
+				const paintResend = () => {
+					const left = Math.max( 0, Math.ceil( ( retryAfter - Date.now() ) / 1000 ) );
+					resend.textContent = '';
+					if ( left > 0 && box.isConnected ) {
+						resend.appendChild( document.createTextNode( fmt( t.resendIn, Math.floor( left / 60 ) + ':' + String( left % 60 ).padStart( 2, '0' ) ) ) );
+						return;
+					}
+					window.clearInterval( timer );
+					resend.appendChild( el( 'button', { type: 'button', class: 'invoiceninja-linkbutton', onClick: send }, t.resend ) );
+				};
+				timer = window.setInterval( paintResend, 1000 );
+				paintResend();
+				box.appendChild( resend );
 				window.setTimeout( () => input.focus(), 0 );
 			};
 			const send = async () => {
 				const r = await api( 'POST', '/account/verify/start', {} );
-				draw( r.ok ? 'code' : 'start', r.ok ? null : { type: 'error', text: r.message || t.error } );
+				if ( ! r.ok ) {
+					draw( current, { type: 'error', text: r.message || t.error } );
+					return;
+				}
+				retryAfter = Date.now() + ( ( r.retry_after || 60 ) * 1000 );
+				// "wait": the code sent moments ago still works, and no new one was sent.
+				draw( 'code', r.sent === false ? { type: 'info', text: t.codeRecent } : null );
 			};
 			const confirm = async ( code ) => {
 				const r = await api( 'POST', '/account/verify/confirm', { code } );
@@ -173,7 +208,9 @@
 				next.focus();
 				next.click();
 			} );
+			let latest = 0;
 			const open = async ( tab ) => {
+				const mine = ++latest;
 				buttons.forEach( ( b ) => {
 					const on = b.id === 'invoiceninja-tab-' + tab;
 					b.setAttribute( 'aria-selected', on ? 'true' : 'false' );
@@ -184,9 +221,15 @@
 				panel.textContent = '';
 				panel.appendChild( el( 'p', { class: 'invoiceninja-loading', text: '…' } ) );
 				const r = await api( 'GET', '/account/' + tab );
+				if ( mine !== latest ) {
+					return; // Another tab was chosen while this one loaded.
+				}
 				panel.textContent = '';
 				panel.removeAttribute( 'aria-busy' );
 				panel.appendChild( r.rows ? table( tab, r.rows ) : notice( 'error', r.message || t.portalDown ) );
+				if ( r.code === 'network' ) {
+					panel.appendChild( retry( () => open( tab ) ) );
+				}
 			};
 			if ( wanted.length ) {
 				open( wanted[ 0 ] );
@@ -203,6 +246,14 @@
 			const me = await api( 'GET', '/account' );
 			if ( me.httpStatus === 401 || me.httpStatus === 403 ) {
 				paint( [ el( 'p', { text: t.accountLogin } ), el( 'p', null, el( 'a', { class: 'wp-element-button', href: cfg.loginUrl, text: t.logIn } ) ) ] );
+				return;
+			}
+			if ( me.httpStatus !== 200 ) {
+				// Not "confirm your email": the site didn't answer, or failed.
+				paint( [ notice( 'error', me.message || t.error ), retry( () => {
+					paint( [ el( 'p', { class: 'invoiceninja-loading', text: '…' } ) ] );
+					load( message );
+				} ) ] );
 				return;
 			}
 			const top = [];
@@ -248,7 +299,7 @@
 				form: root.getAttribute( 'data-form' ) || '',
 				elapsed: Math.floor( ( Date.now() - started ) / 1000 ),
 			} );
-			if ( result.httpStatus >= 400 ) {
+			if ( ! result.ok ) {
 				problem.appendChild( notice( 'error', result.message || t.error ) );
 				return;
 			}

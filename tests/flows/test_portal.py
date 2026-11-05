@@ -43,6 +43,9 @@ def account_verifies_the_email_inline_then_shows_invoices():
     check(status in (401, 403), 'logged-out visitors get nothing', status)
     status, r = m.api('POST', '/account/verify/start', {})
     check(status == 200 and r['ok'], 'code sent to the account email', r)
+    status, again = m.api('POST', '/account/verify/start', {})
+    check(status == 200 and again['ok'] and (r['sent'] is False or again['sent'] is False) and again['retry_after'] > 0,
+          'Resend within the minute says no new code was sent, and when one can be', (r, again))
     status, r = m.api('POST', '/account/verify/confirm', {'code': last_code('a+b@x.com')})
     check(status == 200 and r['ok'], 'code confirmed', r)
     _, me = m.api('GET', '/account')

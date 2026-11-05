@@ -374,6 +374,8 @@ final class Account {
 		return new \WP_REST_Response(
 			array(
 				'ok'          => true,
+				// False when a code was sent moments ago: no new one until retry_after.
+				'sent'        => 'sent' === $sent['status'],
 				'retry_after' => (int) $sent['retry_after'],
 			)
 		);
