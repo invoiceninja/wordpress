@@ -125,4 +125,18 @@ class ConnectionServiceTest extends TestCase
 
         $this->assertTrue( $service->connect( 'in.test', 'tok-other', false, true )['saved'] );
     }
+
+    /**
+     * @runInSeparateProcess
+     * @preserveGlobalState disabled
+     */
+    public function testATokenInWpConfigAloneLocksTheConnection()
+    {
+        // Otherwise an address typed in Settings is paired with the token from wp-config.php
+        define( 'INVOICENINJA_API_TOKEN', 'token-from-wp-config' );
+        $options = new Options();
+        $this->assertTrue( ( new Credentials( $options, new Secrets( $options ) ) )->locked() );
+        $this->assertFalse( $this->service()->connect( 'https://evil.example', 'typed-token-1234' )['saved'] );
+        $this->assertArrayNotHasKey( 'invoiceninja_api_url', $this->options );
+    }
 }

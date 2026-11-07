@@ -193,6 +193,8 @@ final class Diagnostics {
 				sprintf( __( 'Stopped: %1$d of %2$d products would change. Waiting for your review.', 'invoiceninja' ), (int) $paused['changes'], (int) $paused['total'] ),
 				'review_sync'
 			);
+		} elseif ( $p->products->offByLegacy() ) {
+			$add( 'product_sync', __( 'Product sync', 'invoiceninja' ), 'warn', __( 'Turned off on the legacy settings page, so prices and archived products are no longer updated. Fix problems turns it back on.', 'invoiceninja' ), 'repair' );
 		} elseif ( ! $p->products->enabled() ) {
 			$add( 'product_sync', __( 'Product sync', 'invoiceninja' ), 'skip', __( 'Skipped: product sync is turned off.', 'invoiceninja' ) );
 		} elseif ( is_array( $sync ) && 'failed' === ( $sync['status'] ?? '' ) ) {
@@ -285,6 +287,9 @@ final class Diagnostics {
 		}
 		if ( $this->plugin->credentials->encryptLegacyToken() ) {
 			$done[] = __( 'Encrypted the saved token', 'invoiceninja' );
+		}
+		if ( $this->plugin->products->clearLegacySwitch() ) {
+			$done[] = __( 'Turned product sync back on', 'invoiceninja' );
 		}
 		/**
 		 * Fires when an admin asks to repair problems; modules add their own repairs.

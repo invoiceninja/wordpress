@@ -26,6 +26,12 @@ final class CatalogBridge {
 
 	public const META_PRODUCT = '_invoiceninja_product_id';
 
+	/**
+	 * Invoice Ninja product ids this site created in WooCommerce: one the shop has since
+	 * trashed or deleted is never created again.
+	 */
+	public const PUSHED = 'woo_pushed_products';
+
 	/** Products read per page. */
 	private const BATCH = 200;
 
@@ -182,6 +188,10 @@ final class CatalogBridge {
 		);
 		$existing = (int) wc_get_product_id_by_sku( $key );
 		if ( $existing <= 0 ) {
+			if ( $this->removedByShop( $item['id'] ) ) {
+				++$result['skipped']; // Trashed or deleted in WooCommerce: the shop stopped selling it.
+				return;
+			}
 			$result['create'][] = $key;
 			if ( ! $dry_run && ! $this->create( $item ) ) {
 				++$result['failed'];
@@ -210,6 +220,33 @@ final class CatalogBridge {
 	}
 
 	/**
+	 * Whether this site created a product for an Invoice Ninja product before, which the
+	 * shop has since trashed, deleted or renamed.
+	 *
+	 * @param string $id Invoice Ninja product id.
+	 */
+	private function removedByShop( string $id ): bool {
+		if ( '' === $id ) {
+			return false;
+		}
+		if ( in_array( $id, array_map( 'strval', (array) $this->plugin->options->get( self::PUSHED, array() ) ), true ) ) {
+			return true;
+		}
+		// Created before the list was kept: still in the trash, or under another SKU.
+		return (bool) get_posts(
+			array(
+				'post_type'      => 'product',
+				'post_status'    => array( 'publish', 'draft', 'pending', 'private', 'future', 'trash' ),
+				'meta_key'       => self::META_PRODUCT, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key -- only for products missing by SKU.
+				'meta_value'     => $id, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value -- only for products missing by SKU.
+				'posts_per_page' => 1,
+				'fields'         => 'ids',
+				'no_found_rows'  => true,
+			)
+		);
+	}
+
+	/**
 	 * Create one simple product.
 	 *
 	 * @param array{id: string, key: string, price: string, notes: string, image: int} $item Product.
@@ -226,7 +263,15 @@ final class CatalogBridge {
 				$product->set_image_id( $item['image'] );
 			}
 			$product->update_meta_data( self::META_PRODUCT, $item['id'] );
-			return $product->save() > 0;
+			if ( $product->save() <= 0 ) {
+				return false;
+			}
+			if ( '' !== $item['id'] ) {
+				$pushed   = (array) $this->plugin->options->get( self::PUSHED, array() );
+				$pushed[] = $item['id'];
+				$this->plugin->options->set( self::PUSHED, array_values( array_unique( array_map( 'strval', $pushed ) ) ), false );
+			}
+			return true;
 		} catch ( \Throwable $e ) {
 			$this->plugin->logger->warning( 'woocommerce', sprintf( "Product %s couldn't be created in WooCommerce: %s", $item['key'], $e->getMessage() ) );
 			return false;

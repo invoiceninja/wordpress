@@ -230,7 +230,7 @@ final class SubscriptionsModule implements Module {
 		// The old company's callbacks are now ignored (still answered "Success", so its buyers aren't blocked).
 		$this->plugin->options->delete( 'callback_secret' );
 		$this->relay->clear();
-		foreach ( array( SubscriptionSync::OPTION, Configurator::OPTION, State::OPTION, Callback::RECENT ) as $option ) {
+		foreach ( array( SubscriptionSync::OPTION, SubscriptionSync::HIDDEN, Configurator::OPTION, State::OPTION, Callback::RECENT ) as $option ) {
 			$this->plugin->options->delete( $option );
 		}
 	}
@@ -267,6 +267,7 @@ final class SubscriptionsModule implements Module {
 	public function adminList(): \WP_REST_Response {
 		$cache  = $this->sync->cache();
 		$config = $this->configurator->all();
+		$hidden = $this->sync->hidden();
 		$items  = array();
 		foreach ( $cache['items'] as $id => $sub ) {
 			if ( $sub['archived'] && empty( $config[ $id ]['connected'] ) ) {
@@ -290,6 +291,7 @@ final class SubscriptionsModule implements Module {
 				'relay_url'          => $row['relay_url'],
 				'restore_error'      => $row['restore_error'],
 				'archived'           => (bool) $sub['archived'],
+				'hidden'             => isset( $hidden[ $id ] ),
 				'shortcode'          => '[invoiceninja_subscribe id="' . $id . '"]',
 			);
 		}
@@ -332,7 +334,7 @@ final class SubscriptionsModule implements Module {
 	}
 
 	/**
-	 * POST /admin/subscriptions/<id> {connected?, relay_url?}.
+	 * POST /admin/subscriptions/<id> {connected?, relay_url?, hidden?}.
 	 *
 	 * @param \WP_REST_Request $request Request.
 	 */
@@ -342,6 +344,13 @@ final class SubscriptionsModule implements Module {
 			return Routes::fail( 'unknown_subscription', __( 'Unknown subscription. Sync and try again.', 'invoiceninja' ), 404 );
 		}
 		$message = '';
+		if ( null !== $request->get_param( 'hidden' ) ) {
+			$hide = (bool) filter_var( $request->get_param( 'hidden' ), FILTER_VALIDATE_BOOLEAN );
+			$this->sync->setHidden( $id, $hide );
+			$message = $hide
+				? __( 'Hidden from this site: blocks leave it out and its Subscribe link stops working. Customers who have it still see it in their account.', 'invoiceninja' )
+				: __( 'Shown on this site again.', 'invoiceninja' );
+		}
 		if ( null !== $request->get_param( 'relay_url' ) ) {
 			$result = $this->configurator->setRelay( $id, (string) $request->get_param( 'relay_url' ) );
 			if ( ! $result['ok'] ) {

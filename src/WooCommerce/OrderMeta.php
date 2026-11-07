@@ -22,6 +22,10 @@ final class OrderMeta {
 	public const ERROR      = '_invoiceninja_error';
 	public const CLIENT_ID  = '_invoiceninja_client_id';
 	public const CONTACT_ID = '_invoiceninja_contact_id';
+	/** The billing email the client was found for; the invoice link only goes to that address. */
+	public const CLIENT_EMAIL = '_invoiceninja_client_email';
+	/** Set once an admin changed the billing email after the order was invoiced (noted on the order). */
+	public const EMAIL_CHANGED = '_invoiceninja_email_changed';
 	/** The buyer's own invitation link (only ever put in emails to the buyer). */
 	public const LINK = '_invoiceninja_invoice_link';
 	public const HASH = '_invoiceninja_lines_hash';
@@ -55,6 +59,8 @@ final class OrderMeta {
 		self::ERROR,
 		self::CLIENT_ID,
 		self::CONTACT_ID,
+		self::CLIENT_EMAIL,
+		self::EMAIL_CHANGED,
 		self::LINK,
 		self::HASH,
 		self::MISMATCH,
@@ -129,6 +135,17 @@ final class OrderMeta {
 	public static function text( \WC_Order $order, string $key ): string {
 		$value = $order->get_meta( $key, true, 'edit' );
 		return is_scalar( $value ) ? (string) $value : '';
+	}
+
+	/**
+	 * Whether the order's billing email is still the one its Invoice Ninja client was found
+	 * for. Orders invoiced before 2.1.0 didn't keep it and count as unchanged.
+	 *
+	 * @param \WC_Order $order Order.
+	 */
+	public static function sameBuyer( \WC_Order $order ): bool {
+		$then = self::text( $order, self::CLIENT_EMAIL );
+		return '' === $then || strtolower( trim( (string) $order->get_billing_email() ) ) === $then;
 	}
 
 	/**

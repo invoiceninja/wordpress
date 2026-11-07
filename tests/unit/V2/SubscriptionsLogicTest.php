@@ -7,6 +7,7 @@ use InvoiceNinja\Subscriptions\Callback;
 use InvoiceNinja\Subscriptions\Configurator;
 use InvoiceNinja\Subscriptions\Lifecycle;
 use InvoiceNinja\Subscriptions\Redirects;
+use InvoiceNinja\Subscriptions\Payload;
 use InvoiceNinja\Tests\TestCase;
 
 class SubscriptionsLogicTest extends TestCase
@@ -111,5 +112,24 @@ class SubscriptionsLogicTest extends TestCase
         $this->assertTrue( Configurator::urlRefused( $refused ) );
         $this->assertFalse( Configurator::urlRefused( new \InvoiceNinja\Api\ApiException( \InvoiceNinja\Api\ErrorKind::Validation, '422', 422, [ 'steps' => [ 'required' ] ] ) ) );
         $this->assertFalse( Configurator::urlRefused( new \InvoiceNinja\Api\ApiException( \InvoiceNinja\Api\ErrorKind::Server, '500' ) ) );
+    }
+
+    public function testAForgivenInvoiceLiftsASuspensionLikeAPaidOne()
+    {
+        $this->assertTrue( Lifecycle::settled( [ 'status_id' => 4, 'balance' => 0 ] ), 'paid' );
+        $this->assertTrue( Lifecycle::settled( [ 'status_id' => 5, 'balance' => 100 ] ), 'cancelled' );
+        $this->assertTrue( Lifecycle::settled( [ 'status_id' => 6, 'balance' => 100 ] ), 'reversed' );
+        $this->assertTrue( Lifecycle::settled( [ 'status_id' => 2, 'balance' => 100, 'is_deleted' => true ] ), 'deleted' );
+        $this->assertFalse( Lifecycle::settled( [ 'status_id' => 2, 'balance' => 100 ] ), 'still owed' );
+        $this->assertFalse( Lifecycle::settled( [ 'status_id' => 3, 'balance' => 40 ] ), 'partly paid' );
+    }
+
+    public function testASecondSuspensionForTheSameInvoiceGetsItsOwnEventId()
+    {
+        $first = Payload::id( 'suspended', 'S1', 'C1', 'R1', 'I1', 'overdue_poll' );
+        $this->assertSame( $first, Payload::id( 'suspended', 'S1', 'C1', 'R1', 'I1', 'overdue_poll', 1 ), 'the first keeps the id it always had' );
+        $again = Payload::id( 'suspended', 'S1', 'C1', 'R1', 'I1', 'overdue_poll', 2 );
+        $this->assertNotSame( $first, $again, 'receivers must not drop it as a repeat' );
+        $this->assertSame( $again, Payload::id( 'suspended', 'S1', 'C1', 'R1', 'I1', 'overdue_poll', 2 ), 'stable for retries' );
     }
 }

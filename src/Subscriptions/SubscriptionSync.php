@@ -25,6 +25,11 @@ final class SubscriptionSync {
 	public const HOOK = 'invoiceninja_subscriptions_sync';
 
 	/**
+	 * Ids of subscriptions an admin hid from this site.
+	 */
+	public const HIDDEN = 'subscriptions_hidden';
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Plugin $plugin Plugin.
@@ -50,6 +55,53 @@ final class SubscriptionSync {
 	public function find( string $id ): ?array {
 		$items = $this->all();
 		return $items[ $id ] ?? null;
+	}
+
+	/**
+	 * Subscriptions this site offers: known, not archived and not hidden. Blocks and the
+	 * subscribe link use these; customers' own subscriptions (Account, callbacks) don't care.
+	 *
+	 * @return array<string, array<string, mixed>>
+	 */
+	public function shown(): array {
+		return array_diff_key( $this->all(), $this->hidden() );
+	}
+
+	/**
+	 * One subscription this site offers, if any.
+	 *
+	 * @param string $id Id.
+	 * @return array<string, mixed>|null
+	 */
+	public function findShown( string $id ): ?array {
+		return $this->shown()[ $id ] ?? null;
+	}
+
+	/**
+	 * Subscriptions hidden from this site.
+	 *
+	 * @return array<string, true>
+	 */
+	public function hidden(): array {
+		$ids = $this->plugin->options->get( self::HIDDEN, array() );
+		$ids = array_filter( array_map( array( Events::class, 'cleanId' ), is_array( $ids ) ? $ids : array() ) );
+		return array_fill_keys( $ids, true );
+	}
+
+	/**
+	 * Hide a subscription from this site, or show it again.
+	 *
+	 * @param string $id     Id.
+	 * @param bool   $hidden Hidden.
+	 */
+	public function setHidden( string $id, bool $hidden ): void {
+		$ids = $this->hidden();
+		if ( $hidden ) {
+			$ids[ $id ] = true;
+		} else {
+			unset( $ids[ $id ] );
+		}
+		$this->plugin->options->set( self::HIDDEN, array_keys( $ids ) );
 	}
 
 	/**

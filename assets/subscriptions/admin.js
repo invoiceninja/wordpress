@@ -1,6 +1,6 @@
 /**
- * Settings → Subscriptions: which subscriptions report purchases to this site, their
- * provisioning relay, and when unpaid subscriptions are suspended.
+ * Settings → Subscriptions: which subscriptions this site shows, which report purchases to
+ * it, their provisioning relay, and when unpaid subscriptions are suspended.
  *
  * Plain JavaScript on WordPress's React (wp.element) through window.invoiceNinjaAdminUI.
  */
@@ -12,7 +12,7 @@
 	}
 	const { h, Fragment, useState, useEffect, __, sprintf, api, errorText, saveSettings, Button, Notice, Pill, boot } = ui;
 
-	function SubscriptionRow( { item, onChange, canAct } ) {
+	function SubscriptionRow( { item, onChange, onNote, canAct } ) {
 		const [ relay, setRelay ] = useState( item.relay_url || '' );
 		const [ busy, setBusy ] = useState( '' );
 		const [ message, setMessage ] = useState( '' );
@@ -22,7 +22,12 @@
 			try {
 				const r = await api( '/admin/subscriptions/' + encodeURIComponent( item.id ), { method: 'POST', data } );
 				onChange( r );
-				setMessage( r.message || '' );
+				if ( what === 'hidden' ) {
+					// The row moves out of (or into) the list, so the tab says what happened.
+					onNote( sprintf( item.hidden ? /* translators: %s: plan name */ __( '“%s” is shown on this site again.', 'invoiceninja' ) : /* translators: %s: plan name */ __( '“%s” is hidden from this site. Blocks leave it out and its Subscribe link stops working; customers who have it still see it in their account.', 'invoiceninja' ), item.name ) );
+				} else {
+					setMessage( r.message || '' );
+				}
 			} catch ( e ) {
 				setMessage( errorText( e ) );
 			}
@@ -40,7 +45,9 @@
 		return h( 'tr', null,
 			h( 'td', null, h( 'strong', null, item.name ),
 				h( 'div', { className: 'in-muted' }, [ item.price + ( item.per ? ' ' + item.per : '' ), item.trial_days ? sprintf( /* translators: %d: days */ __( '%d-day trial', 'invoiceninja' ), item.trial_days ) : '' ].filter( Boolean ).join( ' · ' ) ),
-				h( 'code', null, item.shortcode ) ),
+				h( 'code', null, item.shortcode ),
+				item.hidden ? h( 'div', null, h( Pill, { tone: 'neutral' }, __( 'Hidden from this site', 'invoiceninja' ) ) ) : null,
+				canAct ? h( 'p', null, h( Button, { busy: busy === 'hidden', onClick: () => run( 'hidden', { hidden: ! item.hidden } ) }, item.hidden ? __( 'Show on this site', 'invoiceninja' ) : __( 'Hide from this site', 'invoiceninja' ) ) ) : null ),
 			h( 'td', null,
 				where ? h( 'div', null, where ) : null,
 				item.connected && item.callback !== 'here' ? h( Notice, { type: 'warning' }, __( 'Changed in Invoice Ninja since it was connected.', 'invoiceninja' ) ) : null,
@@ -62,6 +69,8 @@
 		const [ busy, setBusy ] = useState( '' );
 		const [ days, setDays ] = useState( ( ( boot.settings || {} ).subscriptions || {} ).suspend_days ?? 7 );
 		const [ saved, setSaved ] = useState( '' );
+		const [ note, setNote ] = useState( '' );
+		const [ showHidden, setShowHidden ] = useState( false );
 		const load = () => api( '/admin/subscriptions' ).then( setData ).catch( ( e ) => setError( errorText( e ) ) );
 		useEffect( () => {
 			load();
@@ -95,6 +104,9 @@
 		}
 		const canAct = boot.can.manage;
 		const failed = data.items.filter( ( i ) => i.restore_error );
+		const hiddenCount = data.items.filter( ( i ) => i.hidden ).length;
+		// Hidden ones go last, and only show when asked.
+		const rows = data.items.filter( ( i ) => showHidden || ! i.hidden ).sort( ( a, b ) => ( a.hidden ? 1 : 0 ) - ( b.hidden ? 1 : 0 ) );
 		return h( Fragment, null,
 			h( 'h2', null, __( 'Subscriptions', 'invoiceninja' ) ),
 			h( 'p', { className: 'in-muted' }, __( 'Sell your Invoice Ninja subscriptions with the Pricing Table and Subscribe Button blocks. Send a subscription’s purchases to this site to get lifecycle events (purchased, trial, plan changed, paid, cancelled, suspended, resumed) and, optionally, signed updates for your provisioning system.', 'invoiceninja' ) ),
@@ -109,13 +121,18 @@
 				canAct ? h( Button, { busy: busy === 'sync', disabled: ! data.connected, onClick: () => act( 'sync', '/admin/subscriptions/sync' ) }, __( 'Sync now', 'invoiceninja' ) ) : null,
 				h( 'span', { className: 'in-muted' }, data.synced_at ? sprintf( /* translators: %s: date and time */ __( 'Last synced %s', 'invoiceninja' ), new Date( data.synced_at * 1000 ).toLocaleString() ) : __( 'Not synced yet.', 'invoiceninja' ) ),
 				data.error ? h( 'span', { className: 'in-muted' }, data.error ) : null ),
-			data.items.length ? h( 'table', { className: 'widefat striped' },
+			data.items.length ? h( 'p', { className: 'in-muted' }, __( 'Every subscription in Invoice Ninja is listed here. Hide the ones this site shouldn’t offer: they stay in Invoice Ninja, and blocks and the block editor leave them out.', 'invoiceninja' ) ) : null,
+			hiddenCount ? h( 'p', null, h( 'label', { className: 'in-check' },
+				h( 'input', { type: 'checkbox', checked: showHidden, onChange: ( e ) => setShowHidden( e.target.checked ) } ),
+				h( 'span', null, sprintf( /* translators: %d: number of subscriptions */ __( 'Show hidden subscriptions (%d)', 'invoiceninja' ), hiddenCount ) ) ) ) : null,
+			note ? h( Notice, { type: 'success' }, note ) : null,
+			rows.length ? h( 'table', { className: 'widefat striped' },
 				h( 'thead', null, h( 'tr', null,
 					h( 'th', { scope: 'col' }, __( 'Subscription', 'invoiceninja' ) ),
 					h( 'th', { scope: 'col' }, __( 'Purchases', 'invoiceninja' ) ),
 					h( 'th', { scope: 'col' }, __( 'Provisioning URL (optional)', 'invoiceninja' ) ) ) ),
-				h( 'tbody', null, data.items.map( ( item ) => h( SubscriptionRow, { key: item.id, item, canAct, onChange: setData } ) ) ) )
-				: h( 'p', null, __( 'No subscriptions in Invoice Ninja yet. Create one under Settings → Subscriptions there, then sync.', 'invoiceninja' ) ),
+				h( 'tbody', null, rows.map( ( item ) => h( SubscriptionRow, { key: item.id, item, canAct, onChange: setData, onNote: setNote } ) ) ) )
+				: h( 'p', null, data.items.length ? __( 'Every subscription is hidden from this site.', 'invoiceninja' ) : __( 'No subscriptions in Invoice Ninja yet. Create one under Settings → Subscriptions there, then sync.', 'invoiceninja' ) ),
 			h( 'p', { className: 'description' }, __( 'Buttons link to the standard purchase page, where eligibility rules apply. Invoice Ninja’s newer “v3” purchase links skip them.', 'invoiceninja' ) ),
 
 			h( 'h2', null, __( 'Unpaid subscriptions', 'invoiceninja' ) ),

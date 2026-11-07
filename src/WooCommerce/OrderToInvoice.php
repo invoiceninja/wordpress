@@ -511,6 +511,20 @@ final class OrderToInvoice {
 			$this->forget( $order, 'invoice_gone' );
 			return null;
 		}
+		if ( ! OrderMeta::sameBuyer( $order ) && '' === OrderMeta::text( $order, OrderMeta::EMAIL_CHANGED ) ) {
+			// The invoice stays with the client it was made for; its link (which logs into that
+			// client's portal) is no longer put in this order's emails.
+			$order->add_order_note(
+				sprintf(
+					/* translators: 1: invoice number, 2: email address */
+					__( 'The billing email changed after this order was invoiced. Invoice %1$s stays with the Invoice Ninja client for %2$s, and its link is no longer included in order emails. To bill the new address, cancel this invoice in Invoice Ninja and use Retry.', 'invoiceninja' ),
+					OrderMeta::text( $order, OrderMeta::INVOICE_NUMBER ),
+					OrderMeta::text( $order, OrderMeta::CLIENT_EMAIL )
+				)
+			);
+			OrderMeta::set( $order, array( OrderMeta::EMAIL_CHANGED => '1' ) );
+			$this->plugin->logger->log( LogLevel::Warning, 'woocommerce', sprintf( 'The billing email of WooCommerce order %s changed after it was invoiced; the invoice stays with the original client', $order->get_order_number() ), array(), 'woo_order', (string) $order->get_id() );
+		}
 		$status = (string) ( $invoice['status_id'] ?? '' );
 		if ( in_array( $status, array( '5', '6' ), true ) ) {
 			return $invoice; // Cancelled or reversed: nothing to update.
@@ -797,6 +811,15 @@ final class OrderToInvoice {
 			OrderMeta::STATUS         => $status,
 			OrderMeta::ERROR          => '' !== $reason ? $reason : null,
 		);
+		if ( ! OrderMeta::sameBuyer( $order ) ) {
+			// The billing email changed: the next invoice goes to the client for the new one.
+			$fields += array(
+				OrderMeta::CLIENT_ID     => null,
+				OrderMeta::CONTACT_ID    => null,
+				OrderMeta::CLIENT_EMAIL  => null,
+				OrderMeta::EMAIL_CHANGED => null,
+			);
+		}
 		if ( '' !== OrderMeta::text( $order, OrderMeta::PAYMENT_ID ) ) {
 			// The payment (and its refunds) went with the old invoice: the new invoice gets its
 			// own, under a new idempotency key (Invoice Ninja keeps the old one taken).
@@ -829,6 +852,8 @@ final class OrderToInvoice {
 			'is_amount_discount'   => true,
 			'uses_inclusive_taxes' => false,
 			'discount'             => 0,
+			// WooCommerce takes the payment: Invoice Ninja must never also charge a saved card.
+			'auto_bill_enabled'    => false,
 			/* translators: %s: WooCommerce order number */
 			'private_notes'        => sprintf( __( 'WooCommerce order #%s', 'invoiceninja' ), $order->get_order_number() ),
 		);
@@ -896,8 +921,9 @@ final class OrderToInvoice {
 		OrderMeta::set(
 			$order,
 			array(
-				OrderMeta::CLIENT_ID  => $found['client_id'],
-				OrderMeta::CONTACT_ID => $found['contact_id'],
+				OrderMeta::CLIENT_ID    => $found['client_id'],
+				OrderMeta::CONTACT_ID   => $found['contact_id'],
+				OrderMeta::CLIENT_EMAIL => $email,
 			)
 		);
 		// Links the buyer's account when the billing email is the account's own email.

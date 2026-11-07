@@ -19,12 +19,15 @@ use InvoiceNinja\Sync\Mapping;
  * Rules (unlike 1.x, which deleted and re-created every post on each import):
  * - posts are updated in place, so post ids and URLs never change;
  * - nothing is removed because it's missing from a list; only products Invoice Ninja
- *   reports as archived or deleted become drafts;
+ *   reports as archived or deleted become drafts (and those with a negative price, which
+ *   are discounts or credits);
  * - a sync that would change more than 20% of the catalog stops before changing
  *   anything and waits for an admin (the circuit breaker). Only changes a shopper would
  *   notice count: price, name, description and being published. Stock changes (every
  *   sale changes Invoice Ninja's stock) and other details don't;
  * - unchanged products are skipped by comparing a content hash;
+ * - products an admin hid from this site (Visibility) stay drafts; they're still updated,
+ *   and remember the status they get back when shown again;
  * - one run writes at most BATCH products and stops after TIME_BUDGET seconds; the
  *   rest is queued as a follow-up run, so a large catalog syncs in several steps.
  */
@@ -57,6 +60,17 @@ final class ProductSync {
 	public const HOOK = 'invoiceninja_sync_products';
 
 	/**
+	 * Post meta of a product hidden from this site: the status it gets back when shown.
+	 */
+	public const HIDDEN_META = '_invoiceninja_hidden';
+
+	/**
+	 * Set while this plugin changes a product's status itself, so Visibility doesn't take
+	 * it for an admin's choice.
+	 */
+	private static bool $quiet = false;
+
+	/**
 	 * The lock this object holds, if any.
 	 */
 	private string $token = '';
@@ -70,6 +84,30 @@ final class ProductSync {
 	public function __construct( private Plugin $plugin, private Mapping $mapping ) {}
 
 	/**
+	 * Run a status change that isn't an admin's choice (see Visibility).
+	 *
+	 * @template T
+	 * @param callable(): T $change Change.
+	 * @return T
+	 */
+	public static function quietly( callable $change ): mixed {
+		$was         = self::$quiet;
+		self::$quiet = true;
+		try {
+			return $change();
+		} finally {
+			self::$quiet = $was;
+		}
+	}
+
+	/**
+	 * Whether a status change now comes from this plugin, not an admin.
+	 */
+	public static function isQuiet(): bool {
+		return self::$quiet;
+	}
+
+	/**
 	 * Whether products should sync automatically: 1.x sites keep their "Sync products"
 	 * choice; new sites follow the Store feature.
 	 */
@@ -79,6 +117,28 @@ final class ProductSync {
 			return (bool) $legacy;
 		}
 		return (bool) $this->plugin->options->setting( 'modules.store' );
+	}
+
+	/**
+	 * Whether the 1.x "Sync products" option keeps syncing off although the Store feature is
+	 * on (before 2.1.0, saving the legacy settings page wrote it as off).
+	 */
+	public function offByLegacy(): bool {
+		$legacy = get_option( 'invoiceninja_sync_products', null );
+		return null !== $legacy && false !== $legacy && ! (bool) $legacy && (bool) $this->plugin->options->setting( 'modules.store' );
+	}
+
+	/**
+	 * Turn syncing back on after offByLegacy(): forget the 1.x option, so the Store feature decides.
+	 */
+	public function clearLegacySwitch(): bool {
+		if ( ! $this->offByLegacy() ) {
+			return false;
+		}
+		delete_option( 'invoiceninja_sync_products' );
+		$this->queue( true, false );
+		$this->plugin->logger->info( 'sync', 'Product sync turned back on (it had been turned off on the legacy settings page)' );
+		return true;
 	}
 
 	/**
@@ -206,6 +266,7 @@ final class ProductSync {
 		$statuses = array_map( static fn( array $p ): string => $p['status'], $posts );
 		$legacy   = $this->legacyIndex();
 		$keys     = $this->changeKeys();
+		$hidden   = $this->hiddenIndex();
 		$existing = count( array_filter( $mapped, static fn( array $m ): bool => isset( $statuses[ $m['wp_id'] ] ) ) );
 
 		// Plan while fetching, keeping only the products to write (at most one batch).
@@ -248,7 +309,8 @@ final class ProductSync {
 				// Products just linked from 1.x have no hash yet; their first update isn't a "change".
 				$adopting = 'update' === $action && ( null === $map || '' === $map['hash'] );
 				$counts   = match ( $action ) {
-					'update' => ! $adopting && self::noticeable( $desired, $keys[ $post_id ] ?? '', $posts[ $post_id ] ?? null ),
+					// Shoppers don't see hidden products, so their changes don't count.
+					'update' => ! $adopting && ! isset( $hidden[ $post_id ] ) && self::noticeable( $desired, $keys[ $post_id ] ?? '', $posts[ $post_id ] ?? null ),
 					'draft'  => true,
 					default  => $existing > 0, // New products count once there's a catalog to protect.
 				};
@@ -519,16 +581,20 @@ final class ProductSync {
 	 * Unpublish the old company's products after a company switch and forget the links.
 	 */
 	public function forgetCompany(): void {
-		foreach ( $this->mapping->all( 'product' ) as $map ) {
-			if ( 'publish' === get_post_status( $map['wp_id'] ) ) {
-				wp_update_post(
-					array(
-						'ID'          => $map['wp_id'],
-						'post_status' => 'draft',
-					)
-				);
+		self::quietly(
+			function (): void {
+				foreach ( $this->mapping->all( 'product' ) as $map ) {
+					if ( 'publish' === get_post_status( $map['wp_id'] ) ) {
+						wp_update_post(
+							array(
+								'ID'          => $map['wp_id'],
+								'post_status' => 'draft',
+							)
+						);
+					}
+				}
 			}
-		}
+		);
 		$this->mapping->clear( 'product' );
 		$this->plugin->options->delete( 'sync_cursor_products' );
 		$this->plugin->options->delete( 'sync_paused' );
@@ -570,6 +636,18 @@ final class ProductSync {
 			$out[ (int) $row['post_id'] ] = (string) $row['meta_value'];
 		}
 		return $out;
+	}
+
+	/**
+	 * Product posts hidden from this site, by post id.
+	 *
+	 * @return array<int, true>
+	 */
+	private function hiddenIndex(): array {
+		global $wpdb;
+		// phpcs:ignore WordPress.DB.DirectDatabaseQuery
+		$ids = $wpdb->get_col( $wpdb->prepare( "SELECT pm.post_id FROM {$wpdb->postmeta} pm JOIN {$wpdb->posts} p ON p.ID = pm.post_id WHERE pm.meta_key = %s AND pm.meta_value <> '' AND p.post_type = %s", self::HIDDEN_META, self::POST_TYPE ) );
+		return array_fill_keys( array_map( 'intval', is_array( $ids ) ? $ids : array() ), true );
 	}
 
 	/**
@@ -630,10 +708,12 @@ final class ProductSync {
 			}
 			foreach ( array_slice( $group, 1 ) as $older ) {
 				if ( 'draft' !== $older->post_status && 'trash' !== $older->post_status ) {
-					wp_update_post(
-						array(
-							'ID'          => $older->ID,
-							'post_status' => 'draft',
+					self::quietly(
+						static fn() => wp_update_post(
+							array(
+								'ID'          => $older->ID,
+								'post_status' => 'draft',
+							)
 						)
 					);
 				}
@@ -651,7 +731,9 @@ final class ProductSync {
 	 * @return array{post: array<string, mixed>, meta: array<string, string>, image: string, hash: string, key: string}
 	 */
 	public static function desired( array $item ): array {
-		$hidden = ! empty( $item['is_deleted'] ) || ! empty( $item['archived_at'] );
+		// Discount and credit items (a negative price) are never sold on their own: shoppers
+		// could add them to lower an order's total.
+		$hidden = ! empty( $item['is_deleted'] ) || ! empty( $item['archived_at'] ) || ( is_numeric( $item['price'] ?? null ) && (float) $item['price'] < 0 );
 		$text   = static fn( string $key ): string => sanitize_text_field( (string) ( $item[ $key ] ?? '' ) );
 		$num    = static fn( string $key ): string => is_numeric( $item[ $key ] ?? null ) ? (string) ( 0 + $item[ $key ] ) : '0';
 		$post   = array(
@@ -698,25 +780,45 @@ final class ProductSync {
 	 * @param string|null          $status  Current status.
 	 */
 	private function write( int $post_id, array $desired, ?string $status ): int {
-		if ( $post_id > 0 && in_array( $status, array( 'private', 'pending', 'future' ), true ) && 'publish' === $desired['post']['post_status'] ) {
+		$extra  = array( '_invoiceninja_sync_key' => (string) ( $desired['key'] ?? '' ) );
+		$hidden = $post_id > 0 ? (string) get_post_meta( $post_id, self::HIDDEN_META, true ) : '';
+		if ( '' !== $hidden ) {
+			// Hidden from this site: it stays a draft and remembers the status it gets back.
+			$extra[ self::HIDDEN_META ]     = self::shownStatus( (string) $desired['post']['post_status'], $hidden );
+			$desired['post']['post_status'] = 'draft';
+		} elseif ( $post_id > 0 && in_array( $status, array( 'private', 'pending', 'future' ), true ) && 'publish' === $desired['post']['post_status'] ) {
 			unset( $desired['post']['post_status'] ); // Keep a status an admin chose.
 		}
-		$data = $desired['post'] + array(
+		$data   = $desired['post'] + array(
 			'post_type'  => self::POST_TYPE,
-			'meta_input' => $desired['meta'] + array( '_invoiceninja_sync_key' => (string) ( $desired['key'] ?? '' ) ),
+			'meta_input' => $desired['meta'] + $extra,
 		);
-		if ( $post_id > 0 ) {
-			$data['ID'] = $post_id;
-			$result     = wp_update_post( wp_slash( $data ), true );
-		} else {
-			$data['post_author'] = 0;
-			$result              = wp_insert_post( wp_slash( $data ), true );
-		}
+		$result = self::quietly(
+			static function () use ( $post_id, $data ) {
+				if ( $post_id > 0 ) {
+					$data['ID'] = $post_id;
+					return wp_update_post( wp_slash( $data ), true );
+				}
+				$data['post_author'] = 0;
+				return wp_insert_post( wp_slash( $data ), true );
+			}
+		);
 		if ( is_wp_error( $result ) ) {
 			$this->plugin->logger->warning( 'sync', 'Saving a product failed: ' . $result->get_error_message(), array( 'product' => $desired['meta']['product_id'] ) );
 			return 0;
 		}
 		return (int) $result;
+	}
+
+	/**
+	 * The status a hidden product gets back when shown (pure, for tests): what Invoice Ninja
+	 * asks for now, keeping a private, pending or scheduled status an admin chose.
+	 *
+	 * @param string $desired Status from Invoice Ninja (publish or draft).
+	 * @param string $before  Status remembered when it was hidden.
+	 */
+	public static function shownStatus( string $desired, string $before ): string {
+		return 'publish' === $desired && in_array( $before, array( 'private', 'pending', 'future' ), true ) ? $before : $desired;
 	}
 
 	/**

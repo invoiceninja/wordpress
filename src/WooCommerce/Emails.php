@@ -65,7 +65,9 @@ final class Emails {
 		$link   = OrderMeta::text( $order, OrderMeta::LINK );
 		$number = OrderMeta::text( $order, OrderMeta::INVOICE_NUMBER );
 		$status = OrderMeta::text( $order, OrderMeta::STATUS );
-		if ( '' !== $link && 'sent' === $status ) {
+		// The link logs into the portal of the client the order was invoiced for: never send it
+		// to a billing email changed since.
+		if ( '' !== $link && 'sent' === $status && OrderMeta::sameBuyer( $order ) ) {
 			$label = '' !== $number
 				/* translators: %s: invoice number */
 				? sprintf( __( 'View or download invoice %s', 'invoiceninja' ), $number )

@@ -40,6 +40,22 @@ class PrivateHostTest extends TestCase
         ];
     }
 
+    public function testANameThatDoesNotResolveIsRefusedNotSentUnchecked()
+    {
+        // The request would resolve it again itself, and the second answer could be private (DNS rebinding)
+        $this->resolved  = [];
+        $this->responder = function () {
+            $this->fail( 'no request is sent' );
+        };
+        try {
+            ( new HttpClient( 'https://rebind.example', 'secret-token-value' ) )->get( 'companies/current' );
+            $this->fail( 'expected an ApiException' );
+        } catch ( ApiException $e ) {
+            $this->assertSame( ErrorKind::Dns, $e->kind );
+        }
+        $this->assertSame( [], $this->requests );
+    }
+
     public function testLocalhostNamesArePrivate()
     {
         $this->assertTrue( HttpClient::isPrivate( 'localhost' ) );

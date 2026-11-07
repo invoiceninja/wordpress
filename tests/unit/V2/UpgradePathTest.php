@@ -92,6 +92,7 @@ class UpgradePathTest extends TestCase
                 return 1;
             }
             public function get_results( $prepared ) { return $this->test->results( (string) $prepared[0] ); }
+            public function get_col() { return []; }
             public function get_var() { return 1; }
         };
     }
@@ -557,6 +558,7 @@ class UpgradePathTest extends TestCase
             }
             public function get_row( $prepared ) { return [ 'wp_id' => 10, 'hash' => 'h', 'wp_type' => 'post' ]; }
             public function get_results( $prepared ) { return $this->test->results( (string) $prepared[0] ); }
+            public function get_col() { return []; }
         };
 
         $plugin = $this->plugin( new Options() );

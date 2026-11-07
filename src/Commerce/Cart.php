@@ -300,8 +300,11 @@ final class Cart {
 			return null;
 		}
 		$post_id = $map['wp_id'];
-		$max     = 99;
-		$limit   = (int) get_post_meta( $post_id, 'max_quantity', true );
+		if ( (float) get_post_meta( $post_id, 'price', true ) < 0 ) {
+			return null; // A discount or credit item, published by hand: never sold on its own.
+		}
+		$max   = 99;
+		$limit = (int) get_post_meta( $post_id, 'max_quantity', true );
 		if ( $limit > 0 ) {
 			$max = min( $max, $limit );
 		}

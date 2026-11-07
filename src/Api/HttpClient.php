@@ -364,7 +364,12 @@ final class HttpClient {
 		if ( self::isPrivateSet( $host, $ips ) ) {
 			throw new ApiException( ErrorKind::PrivateHost, $host . ' resolves to a private or reserved address' ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
 		}
-		if ( $ips && ! filter_var( trim( $host, '[]' ), FILTER_VALIDATE_IP ) ) {
+		if ( ! $ips ) {
+			// Unchecked, the request would resolve the name again itself, and a second answer
+			// could be a private address (DNS rebinding).
+			throw new ApiException( ErrorKind::Dns, $host . ' did not resolve' ); // phpcs:ignore WordPress.Security.EscapeOutput.ExceptionNotEscaped -- internal API error; logged, and escaped where shown.
+		}
+		if ( ! filter_var( trim( $host, '[]' ), FILTER_VALIDATE_IP ) ) {
 			$this->pinned = array( $host, $ips[0] );
 		}
 	}
@@ -437,7 +442,7 @@ final class HttpClient {
 				return true;
 			}
 		}
-		return false; // Unresolvable: the request reports a DNS error instead.
+		return false; // Unresolvable: guardPrivateHost() refuses it as a DNS error.
 	}
 
 	/**

@@ -31,9 +31,10 @@ final class Payload {
 	 * @param array<string, mixed>|null $invoice      Invoice, fetched again by id.
 	 * @param int                       $user_id      Linked WordPress user, or 0.
 	 * @param int                       $time         When it happened (Unix time).
+	 * @param int                       $occurrence   Which time this event happens (a subscription can be suspended again for the same invoice).
 	 * @return array<string, mixed>
 	 */
-	public static function build( string $event, string $context, array $subscription, array $client, ?array $recurring, ?array $invoice, int $user_id, int $time ): array {
+	public static function build( string $event, string $context, array $subscription, array $client, ?array $recurring, ?array $invoice, int $user_id, int $time, int $occurrence = 1 ): array {
 		$contacts = array();
 		foreach ( (array) ( $client['contacts'] ?? array() ) as $contact ) {
 			if ( is_array( $contact ) ) {
@@ -56,7 +57,7 @@ final class Payload {
 		}
 		$payload = array(
 			'version'           => self::VERSION,
-			'id'                => self::id( $event, (string) ( $subscription['id'] ?? '' ), (string) ( $client['id'] ?? '' ), (string) ( $recurring['id'] ?? '' ), (string) ( $invoice['id'] ?? '' ), $context ),
+			'id'                => self::id( $event, (string) ( $subscription['id'] ?? '' ), (string) ( $client['id'] ?? '' ), (string) ( $recurring['id'] ?? '' ), (string) ( $invoice['id'] ?? '' ), $context, $occurrence ),
 			'event'             => $event,
 			'context'           => $context,
 			'occurred_at'       => gmdate( 'Y-m-d\TH:i:s\Z', $time ),
@@ -118,9 +119,14 @@ final class Payload {
 	 * @param string $recurring    Recurring invoice id.
 	 * @param string $invoice      Invoice id.
 	 * @param string $context      Context.
+	 * @param int    $occurrence   Which time it happens; the first keeps the id it always had.
 	 */
-	public static function id( string $event, string $subscription, string $client, string $recurring, string $invoice, string $context ): string {
-		return 'evt_' . substr( hash( 'sha256', implode( '|', array( $event, $subscription, $client, $recurring, $invoice, $context ) ) ), 0, 32 );
+	public static function id( string $event, string $subscription, string $client, string $recurring, string $invoice, string $context, int $occurrence = 1 ): string {
+		$parts = array( $event, $subscription, $client, $recurring, $invoice, $context );
+		if ( $occurrence > 1 ) {
+			$parts[] = '#' . $occurrence;
+		}
+		return 'evt_' . substr( hash( 'sha256', implode( '|', $parts ) ), 0, 32 );
 	}
 
 	/**

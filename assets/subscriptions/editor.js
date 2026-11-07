@@ -21,7 +21,8 @@
 				return;
 			}
 			wp.apiFetch( { path: '/invoiceninja/v1/admin/subscriptions' } ).then( ( r ) => {
-				cache = ( r.items || [] ).filter( ( s ) => ! s.archived );
+				// Archived ones and those hidden from this site (Settings → Subscriptions) aren't offered.
+				cache = ( r.items || [] ).filter( ( s ) => ! s.archived && ! s.hidden );
 				setList( cache );
 			} ).catch( () => setList( [] ) );
 		}, [] );

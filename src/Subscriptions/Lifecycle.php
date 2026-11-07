@@ -203,6 +203,16 @@ final class Lifecycle {
 	}
 
 	/**
+	 * Whether nothing is owed on an invoice any more: paid, or cancelled, reversed or
+	 * deleted in Invoice Ninja (the merchant forgave it).
+	 *
+	 * @param array<string, mixed> $invoice Invoice.
+	 */
+	public static function settled( array $invoice ): bool {
+		return ! empty( $invoice['is_deleted'] ) || in_array( (int) ( $invoice['status_id'] ?? 0 ), array( 5, 6 ), true ) || self::paid( $invoice );
+	}
+
+	/**
 	 * Change the state and fire the event, unless this exact event already happened (a
 	 * repeated or replayed callback changes nothing).
 	 *
@@ -214,15 +224,37 @@ final class Lifecycle {
 	 * @param array<string, mixed>      $client    Client.
 	 * @param array<string, mixed>|null $recurring Recurring invoice.
 	 * @param array<string, mixed>|null $invoice   Invoice.
+	 * @param int                       $occurrence Which time this event happens.
 	 */
-	private function apply( string $key, array $row, string $event, string $context, array $sub, array $client, ?array $recurring, ?array $invoice ): bool {
-		$id = Payload::id( $event, (string) ( $sub['id'] ?? '' ), (string) ( $client['id'] ?? '' ), (string) ( $recurring['id'] ?? '' ), (string) ( $invoice['id'] ?? '' ), $context );
+	private function apply( string $key, array $row, string $event, string $context, array $sub, array $client, ?array $recurring, ?array $invoice, int $occurrence = 1 ): bool {
+		$id = Payload::id( $event, (string) ( $sub['id'] ?? '' ), (string) ( $client['id'] ?? '' ), (string) ( $recurring['id'] ?? '' ), (string) ( $invoice['id'] ?? '' ), $context, $occurrence );
 		if ( $this->state->seen( $id ) ) {
 			return false;
 		}
 		$this->state->set( $key, $row );
-		$this->fire( $event, $context, $sub, $client, $recurring, $invoice );
+		$this->fire( $event, $context, $sub, $client, $recurring, $invoice, $occurrence );
 		return true;
+	}
+
+	/**
+	 * The first occurrence of a suspended or resumed event not fired yet. Their state row
+	 * already stops repeats (only an active subscription is suspended, only a suspended one
+	 * resumed), so an id already fired means an earlier time: the same invoice can suspend
+	 * a subscription again after its payment was refunded or reversed.
+	 *
+	 * @param string                    $event     Event.
+	 * @param string                    $context   Context.
+	 * @param array<string, mixed>      $sub       Subscription.
+	 * @param array<string, mixed>      $client    Client.
+	 * @param array<string, mixed>|null $recurring Recurring invoice.
+	 * @param array<string, mixed>      $invoice   Invoice.
+	 */
+	private function occurrence( string $event, string $context, array $sub, array $client, ?array $recurring, array $invoice ): int {
+		$n = 1;
+		while ( $n < 100 && $this->state->seen( Payload::id( $event, (string) ( $sub['id'] ?? '' ), (string) ( $client['id'] ?? '' ), (string) ( $recurring['id'] ?? '' ), (string) ( $invoice['id'] ?? '' ), $context, $n ) ) ) {
+			++$n;
+		}
+		return $n;
 	}
 
 	/**
@@ -240,7 +272,7 @@ final class Lifecycle {
 		if ( null !== $row && in_array( $row['status'], array( 'suspended', 'cancelled' ), true ) ) {
 			return;
 		}
-		$this->apply( $key, $this->row( 'suspended', (string) $sub['id'], $client, $recurring, $invoice ), 'suspended', $context, $sub, $client, $recurring, $invoice );
+		$this->apply( $key, $this->row( 'suspended', (string) $sub['id'], $client, $recurring, $invoice ), 'suspended', $context, $sub, $client, $recurring, $invoice, $this->occurrence( 'suspended', $context, $sub, $client, $recurring, $invoice ) );
 	}
 
 	/**
@@ -251,22 +283,27 @@ final class Lifecycle {
 	 * @param array<string, mixed>      $sub       Subscription.
 	 * @param array<string, mixed>      $client    Client.
 	 * @param array<string, mixed>|null $recurring Recurring invoice.
-	 * @param array<string, mixed>      $invoice   The paid invoice.
+	 * @param array<string, mixed>      $invoice   The paid invoice, or the one that suspended it.
 	 * @throws ApiException On a temporary failure.
 	 */
 	private function resume( string $key, string $context, array $sub, array $client, ?array $recurring, array $invoice ): void {
 		$row = $this->state->get( $key );
-		if ( null === $row || 'suspended' !== $row['status'] || ! self::paid( $invoice ) ) {
+		if ( null === $row || 'suspended' !== $row['status'] ) {
+			return;
+		}
+		$same = '' === $row['invoice'] || Events::cleanId( $invoice['id'] ?? '' ) === $row['invoice'];
+		// The invoice that suspended it may also be cancelled or reversed (forgiven); another one must be paid.
+		if ( ! ( $same ? self::settled( $invoice ) : self::paid( $invoice ) ) ) {
 			return;
 		}
 		// Paying another invoice doesn't settle the one that suspended it.
-		if ( '' !== $row['invoice'] && Events::cleanId( $invoice['id'] ?? '' ) !== $row['invoice'] ) {
+		if ( ! $same ) {
 			$overdue = $this->fetch( $this->plugin->api(), 'invoices', $row['invoice'] );
 			if ( null !== $overdue && $this->unpaid( $overdue ) ) {
 				return;
 			}
 		}
-		$this->apply( $key, array( 'status' => 'active' ), 'resumed', $context, $sub, $client, $recurring, $invoice );
+		$this->apply( $key, array( 'status' => 'active' ), 'resumed', $context, $sub, $client, $recurring, $invoice, $this->occurrence( 'resumed', $context, $sub, $client, $recurring, $invoice ) );
 	}
 
 	/**
@@ -298,9 +335,10 @@ final class Lifecycle {
 	 * @param array<string, mixed>      $client    Client.
 	 * @param array<string, mixed>|null $recurring Recurring invoice.
 	 * @param array<string, mixed>|null $invoice   Invoice.
+	 * @param int                       $occurrence Which time this event happens.
 	 */
-	public function fire( string $event, string $context, array $sub, array $client, ?array $recurring, ?array $invoice ): void {
-		$payload = Payload::build( $event, $context, $sub, $client, $recurring, $invoice, $this->userFor( (string) $client['id'] ), time() );
+	public function fire( string $event, string $context, array $sub, array $client, ?array $recurring, ?array $invoice, int $occurrence = 1 ): void {
+		$payload = Payload::build( $event, $context, $sub, $client, $recurring, $invoice, $this->userFor( (string) $client['id'] ), time(), $occurrence );
 		if ( $this->state->seen( $payload['id'] ) ) {
 			return;
 		}
@@ -350,7 +388,9 @@ final class Lifecycle {
 	 * @throws ApiException On a temporary failure (the queue tries again).
 	 */
 	public function pollOverdue(): void {
-		if ( 'connected' !== $this->plugin->state->get()['status'] ) {
+		// A staging copy has the live site's subscriptions, relay URL and secret: it mustn't
+		// suspend or resume real customers.
+		if ( 'connected' !== $this->plugin->state->get()['status'] || ! $this->plugin->environment->writesAllowed() ) {
 			return;
 		}
 		$api     = $this->plugin->api();
@@ -539,7 +579,7 @@ final class Lifecycle {
 	}
 
 	/**
-	 * The WordPress user linked to a client.
+	 * The WordPress user linked to a client who confirmed their email, or 0.
 	 *
 	 * @param string $client_id Client id.
 	 */
@@ -558,7 +598,9 @@ final class Lifecycle {
 			)
 		);
 		foreach ( (array) $users as $user_id ) {
-			if ( ( $portal->links->get( (int) $user_id )['client_id'] ?? '' ) === $client_id ) {
+			// Only a user who confirmed the email is theirs: anyone can register with a
+			// customer's email, and receivers grant access by this id.
+			if ( ( $portal->links->get( (int) $user_id )['client_id'] ?? '' ) === $client_id && (bool) apply_filters( 'invoiceninja_is_verified', false, (int) $user_id ) ) {
 				return (int) $user_id;
 			}
 		}

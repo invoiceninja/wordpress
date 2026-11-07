@@ -809,7 +809,9 @@
 					row( __( 'Display', 'invoiceninja' ), null, radios( 'store', 'display', __( 'Display', 'invoiceninja' ), [
 						[ 'blocks', __( 'Blocks', 'invoiceninja' ), __( 'The new store: blocks that use your theme’s styles, the cart and checkout with an email code.', 'invoiceninja' ) ],
 						[ 'legacy', __( 'Legacy 1.x', 'invoiceninja' ), __( 'Keeps the products page and cart exactly as they were in 1.x.', 'invoiceninja' ) ],
-					] ) ) ) ),
+					] ) ),
+					row( __( 'Products', 'invoiceninja' ), null, h( 'a', { href: 'edit.php?post_type=invoiceninja_product' }, __( 'Choose which products this site shows', 'invoiceninja' ) ),
+						__( 'Every Invoice Ninja product syncs here. In Products, use Hide from site (under a product, or as a bulk action) for the ones you don’t sell on this site: they stay in Invoice Ninja and keep syncing, but shoppers never see them.', 'invoiceninja' ) ) ) ),
 				h( StorePages ),
 				h( 'h2', null, __( 'Unpaid orders', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,

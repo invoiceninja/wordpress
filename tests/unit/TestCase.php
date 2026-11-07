@@ -29,6 +29,9 @@ abstract class TestCase extends PolyfillTestCase
     /** @var string */
     protected $environment_type = 'production';
 
+    /** @var list<string> What every host name resolves to (no real DNS in unit tests) */
+    protected $resolved = [ '93.184.216.34' ];
+
     protected function set_up(): void
     {
         parent::set_up();
@@ -119,8 +122,9 @@ abstract class TestCase extends PolyfillTestCase
         Functions\when( 'wp_specialchars_decode' )->returnArg();
         Functions\stubEscapeFunctions();
         Functions\when( 'esc_html__' )->returnArg();
-        // No real DNS in unit tests: names resolve to nothing (IP literals are checked directly)
-        \Brain\Monkey\Filters\expectApplied( 'invoiceninja_pre_resolve_host' )->zeroOrMoreTimes()->andReturn( [] );
+        // No real DNS in unit tests: names resolve to a public address (IP literals are checked
+        // directly). Tests of private hosts return their own addresses.
+        \Brain\Monkey\Filters\expectApplied( 'invoiceninja_pre_resolve_host' )->zeroOrMoreTimes()->andReturnUsing( fn() => $this->resolved );
     }
 
     protected function tear_down(): void

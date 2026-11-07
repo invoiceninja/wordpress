@@ -283,6 +283,109 @@ def archived_products_are_unpublished_not_deleted():
 
 
 @test
+def products_hidden_from_the_site_stay_hidden():
+    import html as htmllib
+    import re
+    import urllib.parse
+    from lib import BASE
+    b = admin()
+    sync(b)
+    widget = product_ids()['Widget'][0]
+    lst = '/wp-admin/edit.php?post_type=invoiceninja_product'
+    _, _, page = b.get(lst)
+    link = re.search(r'href="([^"]*action=invoiceninja_product_visibility[^"]*post=%s[^"]*do=hide[^"]*)"' % widget, page)
+    check(link, 'Hide from site under the product', page[:2000])
+    href = urllib.parse.urlparse(htmllib.unescape(link.group(1)))
+    status, loc, _ = b.get(href.path + '?' + href.query)
+    check(status == 302 and 'invoiceninja_hid=1' in (loc or ''), 'hidden, back to the list', (status, loc))
+    check(product_ids()['Widget'][1] == 'draft' and meta(widget, '_invoiceninja_hidden') == 'publish', 'a draft that remembers it was published')
+    _, _, page = b.get(lst)
+    check('Hidden from site' in page and 'invoiceninja_hidden=1' in page, 'shown as hidden, with its own view')
+    status, picker = b.api('GET', '/admin/products')
+    check(status == 200 and 'Widget' not in [p['title'] for p in picker], 'not offered in the block editor', picker)
+
+    option('in_mock_price_bump', '2')
+    try:
+        sync(b)
+        check(product_ids()['Widget'][1] == 'draft' and meta(widget, 'price') == '12', 'the sync updates it but keeps it hidden')
+    finally:
+        wp('option', 'delete', 'in_mock_price_bump')
+
+    nonce = re.search(r'id="_wpnonce" name="_wpnonce" value="([0-9a-f]+)"', page)
+    check(nonce, 'bulk actions nonce')
+    status, loc, _ = b.request('/wp-admin/edit.php', {'post_type': 'invoiceninja_product', 'action': 'invoiceninja_show', 'post[]': widget, '_wpnonce': nonce.group(1), '_wp_http_referer': lst},
+                               {'Referer': BASE + lst})
+    check(status == 302 and 'invoiceninja_showed=1' in (loc or ''), 'bulk Show on site', (status, loc))
+    check(product_ids()['Widget'][1] == 'publish' and not meta(widget, '_invoiceninja_hidden'), 'published again')
+
+    wp('post', 'update', widget, '--post_status=draft')
+    check(meta(widget, '_invoiceninja_hidden') == 'publish', 'setting Draft by hand hides it too')
+    option('in_mock_price_bump', '3')
+    try:
+        sync(b)
+        check(product_ids()['Widget'][1] == 'draft', 'and the sync keeps it a draft')
+    finally:
+        wp('option', 'delete', 'in_mock_price_bump')
+    wp('post', 'update', widget, '--post_status=publish')
+    check(not meta(widget, '_invoiceninja_hidden'), 'publishing by hand shows it')
+    sync(b)
+
+
+LEGACY_OPTIONS = ['invoiceninja_sync_clients', 'invoiceninja_included_roles', 'invoiceninja_match_found', 'invoiceninja_online_purchases', 'invoiceninja_products_label',
+                  'invoiceninja_product_label', 'invoiceninja_buy_now_label', 'invoiceninja_add_to_cart_label', 'invoiceninja_checkout_label', 'invoiceninja_out_of_stock_label',
+                  'invoiceninja_product_template', 'invoiceninja_image_template', 'invoiceninja_products_css', 'invoiceninja_product_css']
+
+
+@test
+def saving_the_legacy_settings_page_never_turns_product_sync_off():
+    import json
+    import re
+    b = admin()
+    snapshot = wp_eval("echo wp_json_encode(array_map(function ($n) { return get_option($n, null); }, array_combine(%s, %s)));" % ((json.dumps(LEGACY_OPTIONS).replace('"', "'"),) * 2))
+    wp('option', 'delete', 'invoiceninja_sync_products', check_ok=False)  # A site that started on 2.x
+    try:
+        _, _, page = b.get('/wp-admin/admin.php?page=invoiceninja-legacy')
+        check('On: products sync every hour' in page and 'name="invoiceninja_sync_products"' not in page, 'the 1.x checkbox shows the 2.x state, read-only', page[:3000])
+        nonce = re.search(r"name='option_page' value='invoiceninja_settings'.*?name=\"_wpnonce\" value=\"([0-9a-f]+)\"", page, re.S)
+        check(nonce, 'settings form nonce', page[:3000])
+        status, loc, _ = b.request('/wp-admin/options.php', {'option_page': 'invoiceninja_settings', 'action': 'update', '_wpnonce': nonce.group(1),
+                                                             '_wp_http_referer': '/wp-admin/admin.php?page=invoiceninja-legacy', 'invoiceninja_products_label': 'Products'})
+        check(status == 302, 'saved', (status, loc))
+        check(not wp_ok('option', 'get', 'invoiceninja_sync_products'), 'the 1.x sync option is left alone')
+        check(wp_eval("echo InvoiceNinja\\Plugin::instance()->products->enabled() ? 'on' : 'off';") == 'on', 'products still sync')
+
+        # A site the old page already switched off is flagged on Status and repaired there
+        wp('option', 'update', 'invoiceninja_sync_products', '0')
+        _, d = b.api('GET', '/diagnostics')
+        row = next(c for c in d['checks'] if c['id'] == 'product_sync')
+        check(row['status'] == 'warn' and row['action'] == 'repair' and 'legacy settings page' in row['detail'], 'Status says why sync is off', row)
+        _, r = b.api('POST', '/diagnostics/repair')
+        check('Turned product sync back on' in r['done'] and not wp_ok('option', 'get', 'invoiceninja_sync_products'), 'Fix problems turns it back on', r)
+    finally:
+        wp('option', 'update', 'invoiceninja_sync_products', '1')
+        wp_eval("foreach (json_decode('%s', true) as $n => $v) { if (null === $v) { delete_option($n); } else { update_option($n, $v); } }" % snapshot.replace("'", "\\'"))
+
+
+@test
+def discount_products_are_never_sold():
+    b = admin()
+    store_ready()
+    p1 = "InvoiceNinja\\Plugin::instance()->products"
+    try:
+        r = wp_eval("echo %s->syncOne(array('id' => 'PDISC', 'product_key' => 'Discount', 'price' => -10));" % p1)
+        check(r == 'skipped', 'a new discount item is not published', r)
+        r = wp_eval("echo %s->syncOne(array('id' => 'P1', 'product_key' => 'Widget', 'price' => -5));" % p1)
+        check(r == 'drafted' and product_ids()['Widget'][1] == 'draft', 'a product that turns negative is unpublished', r)
+        widget = product_ids()['Widget'][0]
+        wp('post', 'update', widget, '--post_status=publish')  # Published by hand
+        status, r = Browser().api('POST', '/cart/items', {'product': 'P1', 'quantity': 3})
+        check(not r['ok'] and r['cart']['count'] == 0, 'the cart refuses it anyway', (status, r))
+    finally:
+        sync(b, full=True)
+    check(product_ids()['Widget'][1] == 'publish', 'back to its real price')
+
+
+@test
 def outage_changes_nothing():
     b = admin()
     before = product_ids()

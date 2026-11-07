@@ -74,7 +74,7 @@ final class Redirects {
 		nocache_headers();
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a link.
 		$id  = Events::cleanId( isset( $_GET['s'] ) ? sanitize_text_field( wp_unslash( $_GET['s'] ) ) : '' );
-		$sub = '' !== $id && $this->plugin->options->setting( 'modules.subs' ) ? $this->sync->find( $id ) : null;
+		$sub = '' !== $id && $this->plugin->options->setting( 'modules.subs' ) ? $this->sync->findShown( $id ) : null;
 		if ( null === $sub || '' === (string) $sub['purchase_page'] ) {
 			$this->fail( __( "This plan isn't available right now.", 'invoiceninja' ), 404 );
 		}

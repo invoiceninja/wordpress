@@ -119,7 +119,7 @@ final class Blocks {
 		if ( ! $ids ) {
 			return $admin ? $this->adminNote( __( 'Choose the plans to show in the block settings.', 'invoiceninja' ) ) : '';
 		}
-		$known = $this->sync->all();
+		$known = $this->sync->shown();
 		$plans = array();
 		foreach ( $ids as $id ) {
 			if ( isset( $known[ $id ] ) ) {
@@ -132,7 +132,7 @@ final class Blocks {
 				$this->plugin->queue->push( SubscriptionSync::HOOK, array(), 0, true );
 			}
 			return $admin
-				? $this->adminNote( __( "These plans aren't in Invoice Ninja (or haven't synced yet). Check Settings → Subscriptions.", 'invoiceninja' ) )
+				? $this->adminNote( __( "These plans are hidden from this site, aren't in Invoice Ninja, or haven't synced yet. Check Settings → Subscriptions.", 'invoiceninja' ) )
 				: '<div class="invoiceninja-pricing invoiceninja-empty"><p>' . esc_html__( 'Plans are not available right now. Please check back soon.', 'invoiceninja' ) . '</p></div>';
 		}
 		$this->enqueue();
@@ -196,9 +196,12 @@ final class Blocks {
 		if ( null !== $state ) {
 			return $state;
 		}
-		$sub = '' !== $id ? $this->sync->find( $id ) : null;
+		$sub = '' !== $id ? $this->sync->findShown( $id ) : null;
 		if ( null === $sub ) {
-			return current_user_can( 'edit_posts' ) ? $this->adminNote( __( 'Choose a subscription in the block settings.', 'invoiceninja' ) ) : '';
+			if ( ! current_user_can( 'edit_posts' ) ) {
+				return '';
+			}
+			return $this->adminNote( '' !== $id && null !== $this->sync->find( $id ) ? __( 'This subscription is hidden from this site. Show it in Settings → Subscriptions.', 'invoiceninja' ) : __( 'Choose a subscription in the block settings.', 'invoiceninja' ) );
 		}
 		$this->enqueue();
 		$label = sanitize_text_field( (string) ( $a['label'] ?? '' ) );

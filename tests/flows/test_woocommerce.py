@@ -178,6 +178,7 @@ def woo_order_becomes_a_draft_then_a_sent_invoice_without_email():
     check(meta(order_id, '_invoiceninja_invoice_id') == inv['id'] and meta(order_id, '_invoiceninja_invoice_number') == inv['number'], 'invoice id and number stored on the order')
     check(abs(float(inv['amount']) - order_total(order_id)) < 0.001, 'invoice total equals the order total', (inv['amount'], order_total(order_id)))
     check(inv['status_id'] == '2', 'invoice is sent in Invoice Ninja', inv)
+    check(body.get('auto_bill_enabled') is False, 'auto-bill is off: WooCommerce takes the payment, a saved card is never also charged', body)
     check('created in Invoice Ninja' in notes(order_id), 'order note added')
     link = meta(order_id, '_invoiceninja_invoice_link')
     check(link.endswith('INVITE1') and 'OTHER' not in link, "the buyer's own invitation link is kept, never another contact's", link)
@@ -555,6 +556,43 @@ def the_rest_api_never_hands_out_the_invitation_link():
                           " $d = rest_get_server()->response_to_data($r, false); echo json_encode(array('status' => $r->get_status(), 'keys' => array_column((array) ($d['meta_data'] ?? array()), 'key')));" % order_id))
     check(keys['status'] == 200, 'the order is read through the REST API', keys)
     check('_invoiceninja_invoice_link' not in keys['keys'], 'without the invitation link', keys)
+
+
+@test
+def a_changed_billing_email_never_gets_the_first_clients_invoice_link():
+    woo_ready()
+    order_id = new_order(email='first.buyer@example.com')
+    check(sync(order_id) == 'ok', 'invoiced')
+    check(meta(order_id, '_invoiceninja_invoice_link') != '', 'link kept for the buyer')
+    check(meta(order_id, '_invoiceninja_client_email') == 'first.buyer@example.com', 'with the email it was made for')
+    # The admin picked the wrong customer, then corrected the billing email
+    php("$o = wc_get_order(%d); $o->set_billing_email('second.buyer@example.com'); $o->save();" % order_id)
+    mail = php("echo InvoiceNinja\\WooCommerce\\Emails::text(wc_get_order(%d), true);" % order_id)
+    check('INVITE' not in mail, "the other customer's portal link is not emailed", mail)
+    check(sync(order_id) == 'ok', 'the edit is synced')
+    check('billing email changed' in notes(order_id), 'the order says what happened and what to do', notes(order_id))
+    sync(order_id)
+    check(notes(order_id).count('billing email changed') == 1, 'once')
+
+
+@test
+def catalog_push_never_brings_back_a_product_the_shop_removed():
+    b = woo_ready()
+    b.api('POST', '/settings', {'woo': {'catalog_push': True}})
+    push = "echo wp_json_encode(%s->catalog->push(false));" % M
+    try:
+        php("foreach (array('Widget', 'Gadget') as $k) { $id = wc_get_product_id_by_sku($k); if ($id) { wp_delete_post($id, true); } } delete_option('invoiceninja_woo_pushed_products');")
+        r = json.loads(php(push))
+        check('Widget' in r['create'], 'pushed into WooCommerce', r)
+        widget = php("echo wc_get_product_id_by_sku('Widget');")
+        php("wp_trash_post(%s);" % widget)  # Trashed by the shop
+        r = json.loads(php(push))
+        check('Widget' not in r['create'], 'a trashed product is not recreated', r)
+        wp('post', 'delete', widget, '--force')  # Deleted for good
+        r = json.loads(php(push))
+        check('Widget' not in r['create'] and php("echo (int) wc_get_product_id_by_sku('Widget');") == '0', 'nor a deleted one', r)
+    finally:
+        b.api('POST', '/settings', {'woo': {'catalog_push': False}})
 
 
 @test

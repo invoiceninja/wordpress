@@ -32,10 +32,12 @@ final class Credentials {
 	public function __construct( private Options $options, private Secrets $secrets ) {}
 
 	/**
-	 * Whether wp-config.php sets the connection.
+	 * Whether wp-config.php sets the connection. Either constant locks it: with only one set,
+	 * an address or token typed in Settings would be paired with the other, so the token
+	 * from wp-config.php could be sent to an address an admin typed.
 	 */
 	public function locked(): bool {
-		return defined( 'INVOICENINJA_API_URL' ) && defined( 'INVOICENINJA_API_TOKEN' );
+		return defined( 'INVOICENINJA_API_URL' ) || defined( 'INVOICENINJA_API_TOKEN' );
 	}
 
 	/**

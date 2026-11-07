@@ -77,6 +77,7 @@ class ProductSyncTest extends TestCase
             }
             public function get_results( $p ) { return $this->test->results( (string) $p[0] ); }
             public function get_var( $p ) { return $this->test->countMapped(); }
+            public function get_col( $p ) { return $this->test->hiddenIds(); }
         };
 
         Functions\when( 'is_multisite' )->justReturn( false );
@@ -123,6 +124,11 @@ class ProductSyncTest extends TestCase
     public function recordMapping( string $in_id, int $wp_id, string $hash ): void
     {
         $this->mapped[ $in_id ] = [ 'wp_id' => $wp_id, 'hash' => $hash ];
+    }
+
+    public function hiddenIds(): array
+    {
+        return array_keys( array_filter( $this->posts, fn( $p ) => '' !== (string) ( $p['meta'][ ProductSync::HIDDEN_META ] ?? '' ) ) );
     }
 
     public function countMapped(): int
@@ -321,5 +327,87 @@ class ProductSyncTest extends TestCase
         } );
         $this->sync()->run();
         $this->assertSame( time() . ':second', $this->options['invoiceninja_sync_lock'] ?? null, "the second run's lock is kept" );
+    }
+
+    // ---------- products hidden from the site ----------
+
+    public function testAHiddenProductStaysADraftAndRemembersItsStatus()
+    {
+        $this->products( 2 );
+        $this->sync()->run();
+        $this->posts[100]['status'] = 'draft';
+        $this->posts[100]['meta'][ ProductSync::HIDDEN_META ] = 'publish';
+
+        $this->catalog[0]['notes'] = 'New description';
+        $this->sync()->run();
+        $this->assertSame( 'draft', $this->posts[100]['status'], 'an update from Invoice Ninja keeps it hidden' );
+        $this->assertSame( 'publish', $this->posts[100]['meta'][ ProductSync::HIDDEN_META ] );
+        $this->assertSame( 'publish', $this->posts[101]['status'], 'others are untouched' );
+
+        $this->catalog[0]['archived_at'] = 1700000100;
+        $this->sync()->run();
+        $this->assertSame( 'draft', $this->posts[100]['status'] );
+        $this->assertSame( 'draft', $this->posts[100]['meta'][ ProductSync::HIDDEN_META ], 'archived in Invoice Ninja: shown again it stays a draft' );
+    }
+
+    public function testChangesToHiddenProductsDontTripTheBreaker()
+    {
+        $this->products( 12 );
+        $this->sync()->run();
+        foreach ( $this->posts as &$post ) {
+            unset( $post['meta']['_invoiceninja_sync_key'] ); // Written by 2.0.1: compared by status too
+            $post['status']                           = 'draft';
+            $post['meta'][ ProductSync::HIDDEN_META ] = 'publish';
+        }
+        unset( $post );
+        $this->products( 12, 15 );
+
+        $this->assertSame( 'synced', $this->sync()->run()['status'] );
+        $this->assertSame( '15', $this->posts[100]['meta']['price'] );
+        $this->assertSame( 'draft', $this->posts[100]['status'] );
+    }
+
+    public function testShownStatusKeepsAnAdminsPrivateOrScheduledChoice()
+    {
+        $this->assertSame( 'publish', ProductSync::shownStatus( 'publish', 'publish' ) );
+        $this->assertSame( 'private', ProductSync::shownStatus( 'publish', 'private' ) );
+        $this->assertSame( 'draft', ProductSync::shownStatus( 'draft', 'private' ), 'archived wins' );
+        $this->assertSame( 'publish', ProductSync::shownStatus( 'publish', 'draft' ), 'unarchived in Invoice Ninja' );
+    }
+
+    // ---------- discounts and the 1.x switch ----------
+
+    public function testNegativePriceProductsAreNeverPublished()
+    {
+        $this->assertSame( 'draft', ProductSync::desired( [ 'id' => 'D1', 'product_key' => 'Discount', 'price' => -10 ] )['post']['post_status'] );
+        $this->assertSame( 'publish', ProductSync::desired( [ 'id' => 'F1', 'product_key' => 'Free sample', 'price' => 0 ] )['post']['post_status'], 'free is fine' );
+
+        $this->products( 2 );
+        $this->catalog[] = [ 'id' => 'D1', 'product_key' => 'Discount', 'price' => -10, 'updated_at' => 1700000099 ];
+        $this->assertSame( 2, $this->sync()->run()['created'], 'a new discount item is not created' );
+        $this->catalog[0]['price'] = -5;
+        $this->assertSame( 1, $this->sync()->run()['drafted'], 'one that becomes negative is unpublished' );
+        $this->assertSame( 'draft', $this->posts[100]['status'] );
+    }
+
+    public function testSyncTurnedOffByTheLegacyPageIsReportedAndRepaired()
+    {
+        $this->options['invoiceninja_settings'] = [ 'modules' => [ 'store' => true ] ];
+        $this->options['invoiceninja_sync_products'] = 0; // What saving the 1.x page wrote
+        $sync = $this->sync();
+        $this->assertFalse( $sync->enabled() );
+        $this->assertTrue( $sync->offByLegacy() );
+
+        $this->assertTrue( $sync->clearLegacySwitch() );
+        $this->assertArrayNotHasKey( 'invoiceninja_sync_products', $this->options );
+        $this->assertTrue( $sync->enabled(), 'the Store feature decides again' );
+        $this->assertContains( ProductSync::HOOK, array_column( $this->queued, 'hook' ), 'and a sync runs' );
+        $this->assertFalse( $sync->clearLegacySwitch(), 'nothing to do the second time' );
+
+        $this->options['invoiceninja_sync_products'] = '1';
+        $this->assertFalse( $sync->offByLegacy(), 'a 1.x site that syncs is left alone' );
+        $this->options['invoiceninja_sync_products'] = 0;
+        $this->options['invoiceninja_settings']      = [ 'modules' => [ 'store' => false ] ];
+        $this->assertFalse( $sync->offByLegacy(), 'with the Store feature off, nothing should sync anyway' );
     }
 }

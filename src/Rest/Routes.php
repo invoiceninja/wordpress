@@ -459,7 +459,7 @@ final class Routes {
 	}
 
 	/**
-	 * GET /admin/products — synced products for the block editor's product picker.
+	 * GET /admin/products — synced products for the block editor's product picker (not those hidden from the site).
 	 */
 	public function adminProducts(): \WP_REST_Response {
 		$posts = get_posts(
@@ -467,6 +467,13 @@ final class Routes {
 				'post_type'   => \InvoiceNinja\Catalog\ProductSync::POST_TYPE,
 				'post_status' => array( 'publish', 'draft' ),
 				'numberposts' => 500, // phpcs:ignore WordPress.WP.PostsPerPage.posts_per_page_numberposts -- admin-only picker list.
+				// Products hidden from the site aren't offered.
+				'meta_query'  => array( // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- admin-only picker list.
+					array(
+						'key'     => \InvoiceNinja\Catalog\ProductSync::HIDDEN_META,
+						'compare' => 'NOT EXISTS',
+					),
+				),
 				'orderby'     => 'title',
 				'order'       => 'ASC',
 			)

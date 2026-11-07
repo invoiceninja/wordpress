@@ -144,7 +144,7 @@ renames a field becomes `version: 2`.
 | `client.account_key` | Invoice Ninja's `custom_value2`, which its own callbacks call the account key. Put your panel's account id in a client custom field to link the two. |
 | `recurring_invoice` | `null` for one-off purchases. `status_id`: -1 pending, 1 draft, 2 active, 3 paused, 4 completed. |
 | `invoice` | The invoice the event is about, or `null`. `status_id`: 1 draft, 2 sent, 3 partial, 4 paid, 5 cancelled, 6 reversed. |
-| `wordpress_user_id` | The WordPress user linked to the client, or 0. |
+| `wordpress_user_id` | The WordPress user linked to the client who confirmed the email is theirs, or 0. |
 
 Everything in the payload was fetched from Invoice Ninja by id when the event happened (`occurred_at`);
 nothing comes from the callback body. It's a snapshot: a delivery retried hours later still carries the

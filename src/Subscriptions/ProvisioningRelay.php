@@ -198,6 +198,11 @@ final class ProvisioningRelay {
 		if ( ! preg_match( '/^[0-9a-f]{12}$/', $lane ) ) {
 			return;
 		}
+		if ( ! $this->plugin->environment->writesAllowed() ) {
+			// A staging copy has the live relay URL and secret: its events wait in the outbox
+			// (the daily check wakes them) until orders from this site are allowed.
+			return;
+		}
 		if ( ! $this->lock( $lane ) ) {
 			$this->wake( $lane, 30 ); // Another run is sending this lane; look again shortly.
 			return;

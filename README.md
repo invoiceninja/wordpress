@@ -82,6 +82,8 @@ Turn on **Store**. Then open **Settings → Store** and click **Create missing p
 
 Products sync from Invoice Ninja every hour, and on demand from **Status → Tools → Sync now**. Each product gets its own page on your site, with its name, description, price, image and stock. Products are updated in place: links never change, and an outage never removes anything.
 
+Don't want every product on your site? In **Products**, choose **Hide from site** under a product, or select several and use **Bulk actions → Hide from site**. Hidden products stay in Invoice Ninja and keep syncing, but shoppers never see them; **Show on site** brings them back. Setting a product to Draft does the same.
+
 <p align="center"><img src="docs/images/product.png" alt="A product page with price, stock and Add to cart" width="900"></p>
 
 ### The store blocks
@@ -237,6 +239,7 @@ Turn on **Subscriptions** to sell the subscriptions you set up in Invoice Ninja.
 
 - **Pricing Table:** your plans side by side, with a monthly/yearly switch when you pair plans.
 - **Subscribe Button:** a single plan anywhere.
+- **Hide plans you don't sell here:** in **Settings → Subscriptions**, **Hide from this site** leaves a plan out of the blocks and the block editor. It stays in Invoice Ninja, and customers who have it still see it in their account.
 - **Buying:**
   - Logged-in customers who have confirmed their email land on Invoice Ninja's purchase page already signed in.
   - Guests get the form pre-filled.

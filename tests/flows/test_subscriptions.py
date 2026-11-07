@@ -106,7 +106,7 @@ def subs_ready():
                  'in_mock_legacy_reply', 'in_mock_legacy_down', 'in_mock_eligible', 'in_mock_payments',
                  'in_mock_subscription_fields', 'in_mock_paid'):
         wp('option', 'delete', name, check_ok=False)
-    for name in ('config', 'state', 'fired', 'recent', 'events'):
+    for name in ('config', 'state', 'fired', 'recent', 'events', 'hidden'):
         wp('option', 'delete', 'invoiceninja_subscriptions_' + name, check_ok=False)
     wp_eval(RELAY_ROWS.replace("'invoiceninja_subscriptions_relay_'", "'invoiceninja_subscriptions_relay'") + " foreach ($rows as $n) { delete_option($n); }")
     wp_eval("foreach (array('invoiceninja_subscription_callback', 'invoiceninja_subscription_relay', 'invoiceninja_subscription_forward', 'invoiceninja_webhook_dispatch') as $h) { as_unschedule_all_actions($h); }"
@@ -147,6 +147,30 @@ def pricing_table_and_subscribe_button_render():
     b.api('POST', '/settings', {'modules': {'subs': True}})
     for p in (pid, pid2, pid3, pid4):
         wp('post', 'delete', p, '--force')
+
+
+@test
+def hidden_subscriptions_are_left_out_of_the_site():
+    b = subs_ready()
+    status, r = b.api('POST', '/admin/subscriptions/SUBT', {'hidden': True})
+    check(status == 200 and next(i for i in r['items'] if i['id'] == 'SUBT')['hidden'], 'hidden', r)
+    check(not next(i for i in r['items'] if i['id'] == 'SUBM')['hidden'], 'the others are not')
+    path, pid = page('[invoiceninja_pricing_table ids="SUBM,SUBT"] [invoiceninja_subscribe id="SUBT" label="Try it"]')
+    try:
+        _, _, html = Browser().get(path)
+        check('Pro Monthly' in html and 'Starter' not in html and 'Try it' not in html, 'blocks leave it out', html[:3000])
+        _, _, html = Browser().login('admin', 'admin').get(path)
+        check('This subscription is hidden from this site' in html, 'editors are told why the button is missing')
+        status, _, _ = Browser().get('/?invoiceninja=subscribe&s=SUBT')
+        check(status == 404, 'its Subscribe link stops working', status)
+
+        status, r = b.api('POST', '/admin/subscriptions/SUBT', {'hidden': False})
+        check(status == 200 and not next(i for i in r['items'] if i['id'] == 'SUBT')['hidden'], 'shown again', r)
+        _, _, html = Browser().get(path)
+        check('Starter' in html and 'Try it' in html, 'back in the blocks')
+    finally:
+        wp('post', 'delete', pid, '--force')
+        wp('option', 'delete', 'invoiceninja_subscriptions_hidden', check_ok=False)
 
 
 @test
@@ -517,3 +541,89 @@ def overdue_invoice_suspends_then_payment_resumes():
     check(len(named('resumed', 'SUBY')) == 2, 'payment webhook resumes', events())
     wp('option', 'delete', 'in_mock_payments')
     wp('option', 'delete', 'in_mock_paid')
+
+
+OVERDUE_INVO1 = ("$all = get_option('in_mock_invoices'); $all['INVO1'] = array('id' => 'INVO1', 'number' => 'S-INVO1', 'client_id' => 'CLIENT_MEMBER', 'subscription_id' => 'SUBY',"
+                 " 'recurring_id' => 'RI3', 'status_id' => '2', 'amount' => 100, 'balance' => 100, 'paid_to_date' => 0, 'due_date' => gmdate('Y-m-d', time() - 10 * DAY_IN_SECONDS),"
+                 " 'po_number' => '', 'line_items' => array(), 'invitations' => array()); update_option('in_mock_invoices', $all);")
+POLL = "InvoiceNinja\\Plugin::instance()->module('subscriptions')->lifecycle->pollOverdue();"
+RELAY = "InvoiceNinja\\Plugin::instance()->module('subscriptions')->relay"
+
+
+@test
+def a_reversed_payment_suspends_again_and_a_forgiven_invoice_resumes():
+    b = subs_ready()
+    seed()
+    wp_eval(OVERDUE_INVO1)
+    b.api('POST', '/settings', {'subscriptions': {'suspend_days': 7}})
+    try:
+        wp_eval(POLL)
+        check(len(named('suspended', 'SUBY')) == 1, 'suspended', events())
+        wp_eval("update_option('in_mock_paid', array('INVO1'));")
+        wp_eval(POLL)
+        check(len(named('resumed', 'SUBY')) == 1, 'resumed once paid', events())
+
+        wp('option', 'delete', 'in_mock_paid')  # The payment was refunded or charged back
+        wp_eval(POLL)
+        suspended = named('suspended', 'SUBY')
+        check(len(suspended) == 2 and suspended[0]['id'] != suspended[1]['id'], 'suspended again for the same invoice, with a new event id', events())
+
+        wp_eval("$all = get_option('in_mock_invoices'); $all['INVO1']['status_id'] = '5'; update_option('in_mock_invoices', $all);")  # Forgiven
+        wp_eval(POLL)
+        check(len(named('resumed', 'SUBY')) == 2, 'cancelling the overdue invoice resumes it', events())
+        state = json.loads(wp_eval("echo wp_json_encode(get_option('invoiceninja_subscriptions_state'));"))
+        check(state['ri:RI3']['status'] == 'active', 'state follows', state)
+    finally:
+        wp('option', 'delete', 'in_mock_paid', check_ok=False)
+
+
+@test
+def a_staging_copy_never_suspends_or_relays_to_the_live_system():
+    b = subs_ready()
+    seed()
+    status, r = b.api('POST', '/admin/subscriptions/SUBY', {'connected': True, 'relay_url': 'https://relay.test/provision'})
+    check(status == 200, 'relay set', r)
+    wp_eval(OVERDUE_INVO1)
+    b.api('POST', '/settings', {'subscriptions': {'suspend_days': 7}})
+    run_jobs('invoiceninja_subscription_relay')
+    _, c = b.api('POST', '/environment', {'action': 'pause'})
+    check(not c['environment']['allowed'], 'this site is now treated as a copy')
+    try:
+        wp_eval(POLL)
+        check(not named('suspended', 'SUBY'), "a copy's daily check suspends no one", events())
+        # An event cloned from the live site's outbox waits
+        wp_eval("%s->queue('SUBY', array('version' => 1, 'id' => 'evt_cloned', 'event' => 'resumed', 'client' => array('id' => 'CLIENT_MEMBER')));" % RELAY)
+        reset_mock_log()
+        run_jobs('invoiceninja_subscription_relay')
+        check(not [e for e in mock_log() if e.get('event') == 'relay'], 'nothing is sent to the live provisioning system', mock_log())
+        check([e['id'] for e in outbox()] == ['evt_cloned'], 'the event waits in the outbox', outbox())
+    finally:
+        b.api('POST', '/environment', {'action': 'allow'})
+    wp_eval("%s->kick();" % RELAY)
+    run_jobs('invoiceninja_subscription_relay')
+    check([json.loads(e['body'])['id'] for e in mock_log() if e.get('event') == 'relay'] == ['evt_cloned'], 'sent once this site is allowed', mock_log())
+    b.api('POST', '/admin/subscriptions/SUBY', {'connected': False, 'relay_url': ''})
+
+
+@test
+def events_name_only_a_wordpress_user_who_confirmed_their_email():
+    b = subs_ready()
+    seed()
+    b.api('POST', '/admin/subscriptions/SUBY', {'connected': True, 'relay_url': 'https://relay.test/provision'})
+    wp('user', 'delete', 'subnewcomer', '--yes', check_ok=False)
+    uid = wp('user', 'create', 'subnewcomer', 'subnewcomer@example.com', '--role=subscriber', '--porcelain')
+    links = "(new InvoiceNinja\\Portal\\Links(InvoiceNinja\\Plugin::instance()))"
+    check(wp_eval("echo %s->link(%s, get_userdata(%s)->user_email, 'CLIENT_MEMBER', 'C2') ? 'yes' : 'no';" % (links, uid, uid)) == 'yes', 'linked by email, not confirmed')
+    fire = ("InvoiceNinja\\Plugin::instance()->module('subscriptions')->lifecycle->fire('paid', 'plan_paid', array('id' => 'SUBY', 'name' => 'Pro Yearly'),"
+            " array('id' => 'CLIENT_MEMBER'), null, array('id' => '%s'));")
+    last = RELAY_ROWS + " $rows = preg_grep('/_\\d{12}$/', $rows); $v = get_option(end($rows)); echo (int) $v['payload']['wordpress_user_id'];"
+    try:
+        wp_eval(fire % 'INVU7')
+        check(wp_eval(last) == '0', 'an unconfirmed account is not named (anyone can register with a customer\'s email)')
+        wp('user', 'meta', 'update', uid, 'in_mock_verified', '1')
+        wp_eval(fire % 'INVU8')
+        check(wp_eval(last) == uid, 'once confirmed, it is', wp_eval(last))
+    finally:
+        wp('user', 'delete', uid, '--yes', check_ok=False)
+        b.api('POST', '/admin/subscriptions/SUBY', {'connected': False, 'relay_url': ''})
+

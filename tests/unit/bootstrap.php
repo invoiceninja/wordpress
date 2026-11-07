@@ -33,6 +33,24 @@ if ( ! class_exists( 'WP_Error' ) ) {
     }
 }
 
+if ( ! class_exists( 'WP_Post' ) ) {
+    // Minimal stand-in for WordPress' WP_Post
+    class WP_Post
+    {
+        public $ID = 0;
+        public $post_type = 'post';
+        public $post_status = 'publish';
+        public $post_title = '';
+
+        public function __construct( $post = null )
+        {
+            foreach ( (array) $post as $key => $value ) {
+                $this->$key = $value;
+            }
+        }
+    }
+}
+
 foreach ( array( 'MINUTE_IN_SECONDS' => 60, 'HOUR_IN_SECONDS' => 3600, 'DAY_IN_SECONDS' => 86400 ) as $name => $value ) {
     if ( ! defined( $name ) ) {
         define( $name, $value );

@@ -242,6 +242,12 @@ class SettingsController extends BaseController {
 			],
 		];
 
+		if ( \InvoiceNinja\Plugin::booted() ) {
+			// 2.0 decides whether products sync (Features > Store). Saving this form must never
+			// write the 1.x option: an unchecked box would turn syncing off for good.
+			$args = array_values( array_filter( $args, static fn( $arg ) => 'invoiceninja_sync_products' !== $arg['option_name'] ) );
+		}
+
 		$this->settings->setSettings( $args );
 	}
 
@@ -365,6 +371,11 @@ class SettingsController extends BaseController {
 				'callback' => function () {
 					$value          = get_option( 'invoiceninja_sync_products' );
 					$products_label = get_option( 'invoiceninja_products_label' );
+					if ( \InvoiceNinja\Plugin::booted() ) {
+						echo esc_html( \InvoiceNinja\Plugin::instance()->products->enabled() ? __( 'On: products sync every hour.', 'invoiceninja' ) : __( 'Off.', 'invoiceninja' ) ) . ' ';
+						echo '<a href="' . esc_url( admin_url( 'admin.php?page=invoiceninja-status' ) ) . '">' . esc_html__( 'Sync now in Invoice Ninja > Status', 'invoiceninja' ) . '</a>';
+						return;
+					}
 					echo '<label for="invoiceninja_sync_products"><input type="checkbox" ' . checked( 1, $value, false ) . ' value="1" id="invoiceninja_sync_products" name="invoiceninja_sync_products"/> Automatically import ' . esc_attr( strtolower( $products_label ) ) . ' from Invoice Ninja</label>';
 				},
 				'page'     => 'invoiceninja_products',
