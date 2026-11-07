@@ -4,7 +4,7 @@ Tags: invoice, billing, payments, quotes, subscriptions
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.0.2
+Stable tag: 2.1.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -100,6 +100,19 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 
 == Changelog ==
 
+= 2.1.0 =
+* New: hide products from your site. In Products, use Hide from site under a product or as a bulk action. Hidden products stay in Invoice Ninja and keep syncing, but shoppers never see them. Setting a product to Draft does the same.
+* New: hide subscriptions from your site in Settings → Subscriptions. The blocks and the block editor leave them out; customers who have one still see it in their account.
+* Fix: saving the legacy settings page no longer turns product sync off. If it already did, Status → Fix problems turns it back on.
+* Fix: products with a negative price (discounts and credits) are never put up for sale, so they can't lower an order's total.
+* Fix: a staging copy no longer runs the daily overdue check or sends provisioning updates to your live system. Updates wait until the site is allowed to send.
+* Fix: a subscription is suspended again when the payment for its overdue invoice is refunded or reversed, and resumed when you cancel or reverse that invoice.
+* Fix: subscription events name a WordPress user only after they confirmed their email.
+* Fix (WooCommerce): invoices for orders never auto-bill a saved card, since WooCommerce takes the payment.
+* Fix (WooCommerce): when the billing email changes after an order was invoiced, the invoice link is no longer emailed, and the order gets a note explaining what to do.
+* Fix (WooCommerce): catalog push no longer brings back products you trashed or deleted in WooCommerce.
+* Security: a token or address set in wp-config.php locks the connection, so the token can't be sent to an address typed in Settings. An Invoice Ninja address that doesn't resolve is refused instead of being sent unchecked.
+
 = 2.0.2 =
 * Fix: when Invoice Ninja calculates the tax, the order total and emails match the invoice, and the cart says tax is added on the payment page. US buyers enter a ZIP code so they're charged their own state's sales tax.
 * Fix: orders whose invoice was cancelled or deleted in Invoice Ninja are closed, and cancelling such an order no longer fails.
@@ -148,6 +161,9 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 * Fix: the product import no longer deletes products when Invoice Ninja can't be reached.
 
 == Upgrade Notice ==
+
+= 2.1.0 =
+Hide products and subscriptions from your site, plus fixes for product sync, discount products, subscriptions on staging copies and WooCommerce invoices. Recommended for all 2.0 sites.
 
 = 2.0.2 =
 Fixes for checkout totals when Invoice Ninja calculates tax, product sync, staging copies and the 1.x display. Recommended for all 2.0 sites.
