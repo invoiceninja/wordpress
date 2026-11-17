@@ -410,4 +410,66 @@ class ProductSyncTest extends TestCase
         $this->options['invoiceninja_settings']      = [ 'modules' => [ 'store' => false ] ];
         $this->assertFalse( $sync->offByLegacy(), 'with the Store feature off, nothing should sync anyway' );
     }
+
+    // ---------- 2.1: categories (tags) and photos (documents) ----------
+
+    public function testTagsAndPhotosChangeTheHashOnlyWhenAProductHasThem()
+    {
+        $plain = [ 'id' => 'P1', 'product_key' => 'A', 'notes' => 'x', 'price' => 5 ];
+        $old   = ProductSync::desired( $plain );
+        $this->assertNull( $old['tags'], 'Invoice Ninja without tags: categories are left alone' );
+        $this->assertSame( sha1( json_encode( [ $old['post'], $old['meta'], $old['image'] ] ) ), $old['hash'], 'the hash from before 2.1, so untagged products are not all rewritten' );
+        $this->assertSame( $old['hash'], ProductSync::desired( $plain + [ 'tags' => [], 'documents' => [] ] )['hash'] );
+
+        $tagged = ProductSync::desired( $plain + [ 'tags' => [ [ 'id' => 'T1', 'name' => 'Mugs' ] ] ] );
+        $this->assertNotSame( $old['hash'], $tagged['hash'], 'a new tag is written' );
+        $this->assertSame( $old['key'], $tagged['key'], 'but is not a change shoppers notice (the circuit breaker)' );
+        $renamed = ProductSync::desired( $plain + [ 'tags' => [ [ 'id' => 'T1', 'name' => 'Cups' ] ] ] );
+        $this->assertNotSame( $tagged['hash'], $renamed['hash'], 'a renamed tag is written' );
+    }
+
+    public function testTagsAreCleanedSortedAndDeduplicated()
+    {
+        $tags = \InvoiceNinja\Catalog\Categories::fromProduct( [
+            [ 'id' => 'T2', 'name' => ' Tableware ', 'color' => '#fff' ],
+            [ 'id' => 'T1', 'name' => 'Drinkware' ],
+            [ 'id' => 'T2', 'name' => 'Tableware' ],
+            [ 'id' => '', 'name' => 'No id' ],
+            [ 'id' => 'T3', 'name' => '' ],
+            'junk',
+        ] );
+        $this->assertSame( [ [ 'id' => 'T1', 'name' => 'Drinkware' ], [ 'id' => 'T2', 'name' => 'Tableware' ] ], $tags );
+        $this->assertSame( [], \InvoiceNinja\Catalog\Categories::fromProduct( null ) );
+    }
+
+    public function testThePhotoGalleryTakesOnlyPublicImages()
+    {
+        $doc     = fn( $id, $extra = [] ) => $extra + [ 'id' => $id, 'type' => 'png', 'hash' => 'h' . $id, 'name' => $id . '.png', 'size' => 1000, 'is_public' => true ];
+        $gallery = ProductSync::galleryFrom( [
+            $doc( 'D1' ),
+            $doc( 'D2', [ 'is_public' => false ] ),
+            $doc( 'D3', [ 'type' => 'pdf' ] ),
+            $doc( 'D4', [ 'type' => 'tiff' ] ),
+            $doc( 'D5', [ 'size' => 6000000 ] ),
+            $doc( 'D6', [ 'archived_at' => 1700000000 ] ),
+            $doc( 'D7', [ 'type' => 'JPEG' ] ),
+            $doc( 'D1' ),
+        ] );
+        $this->assertSame( [ 'D1', 'D7' ], array_column( $gallery, 'id' ), 'public PNG/JPEG/GIF/WebP only, in order, once' );
+        $this->assertSame( 'jpeg', $gallery[1]['type'] );
+        $many = ProductSync::galleryFrom( array_map( fn( $i ) => $doc( 'D' . $i ), range( 1, 20 ) ) );
+        $this->assertCount( ProductSync::GALLERY_MAX, $many );
+    }
+
+    public function testTheFirstSyncAfterAnUpdateIsFullThenIncrementalAgain()
+    {
+        $this->products( 2 );
+        $this->options['invoiceninja_sync_cursor_products'] = 1700000001;
+        $this->sync()->run();
+        $this->assertStringNotContainsString( 'updated_at', urldecode( $this->requests[0]['url'] ), 'every product is fetched once, to pick up tags and photos' );
+        $this->assertSame( ProductSync::FIELDS_VERSION, $this->options['invoiceninja_sync_fields_version'] );
+        $this->requests = [];
+        $this->sync()->run();
+        $this->assertStringContainsString( 'updated_at', urldecode( $this->requests[0]['url'] ), 'then only changed products' );
+    }
 }

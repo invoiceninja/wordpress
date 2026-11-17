@@ -304,6 +304,7 @@ final class Plugin {
 		add_action( 'invoiceninja_company_switched', array( $this->products, 'forgetCompany' ) );
 		( new \InvoiceNinja\Catalog\Visibility() )->register();
 		$this->queue->handle( 'invoiceninja_place_order', array( $this->orderService, 'retry' ) );
+		$this->queue->handle( \InvoiceNinja\Commerce\OrderService::SHIPPING_HOOK, fn( array $payload ) => $this->orderService->shippingJob( $payload ) );
 		$this->queue->handle( AbandonedOrders::HOOK, fn() => $this->abandoned->run() );
 		// Settings > Store and the 1.x purchase option stay in step (the 1.x buttons still read
 		// theirs), once migration 7 has copied the 1.x value over.

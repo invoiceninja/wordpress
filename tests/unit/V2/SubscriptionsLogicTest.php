@@ -81,6 +81,50 @@ class SubscriptionsLogicTest extends TestCase
         $this->assertSame( [ 'a' => 'x', 'b' => 'y' ], Blocks::pairs( 'a:x,b:y,c:,c:c,bad' ) );
     }
 
+    public function testPlanTextIsCleanedAndHasNoDefaults()
+    {
+        \Brain\Monkey\Functions\when( 'sanitize_textarea_field' )->alias( 'trim' );
+        $this->assertSame( [], Blocks::details( '' ) );
+        $this->assertSame( [], Blocks::details( [] ) );
+        $details = Blocks::details( [
+            'SUBM'    => [ 'name' => ' Pro ', 'description' => 'For regulars.', 'perks' => "First pick\r\n\n  15% off  \n" ],
+            'bad id!' => [ 'name' => 'x' ],
+            'SUBT'    => 'not an array',
+        ] );
+        $this->assertSame( [ 'SUBM' => [ 'name' => 'Pro', 'description' => 'For regulars.', 'perks' => [ 'First pick', '15% off' ] ] ], $details );
+    }
+
+    public function testYearlySavingsComeFromThePairedPrices()
+    {
+        $monthly = [ 'id' => 'M', 'price' => 10, 'frequency_id' => 5, 'currency_id' => '1' ];
+        $yearly  = [ 'id' => 'Y', 'price' => 100, 'frequency_id' => 10, 'currency_id' => '1' ];
+        $saving  = Blocks::savings( $monthly, $yearly );
+        $this->assertSame( 'Y', $saving['yearly_id'] );
+        $this->assertSame( 20.0, $saving['amount'] );
+        $this->assertSame( 2, $saving['months'] );
+        $this->assertSame( $saving, Blocks::savings( $yearly, $monthly ), 'whichever way round they are paired' );
+
+        $odd = Blocks::savings( $monthly, [ 'price' => 105 ] + $yearly );
+        $this->assertSame( 15.0, $odd['amount'] );
+        $this->assertSame( 0, $odd['months'], '1.5 months is not a whole number of payments' );
+
+        $this->assertNull( Blocks::savings( $monthly, [ 'price' => 120 ] + $yearly ), 'no saving, nothing shown' );
+        $this->assertNull( Blocks::savings( $monthly, [ 'price' => 130 ] + $yearly ) );
+        $this->assertNull( Blocks::savings( $monthly, [ 'currency_id' => '2' ] + $yearly ), 'different currencies' );
+        $this->assertNull( Blocks::savings( $monthly, [ 'frequency_id' => 7 ] + $yearly ), 'only monthly against yearly' );
+    }
+
+    public function testTheToggleHintNeverPromisesMoreThanEveryPlanSaves()
+    {
+        $two  = [ 'yearly_id' => 'Y', 'amount' => 20.0, 'months' => 2, 'percent' => 16.67 ];
+        $odd  = [ 'yearly_id' => 'Z', 'amount' => 15.0, 'months' => 0, 'percent' => 12.5 ];
+        $this->assertSame( '2 months free', Blocks::toggleHint( [ $two, $two ] ) );
+        $this->assertSame( 'save up to 16%', Blocks::toggleHint( [ $two, $odd ] ) );
+        $this->assertSame( 'save up to 16%', Blocks::toggleHint( [ $two, null ] ), 'one pair saves nothing' );
+        $this->assertSame( '', Blocks::toggleHint( [ null ] ) );
+        $this->assertSame( '', Blocks::toggleHint( [] ) );
+    }
+
     public function testAccountRowsMapStatusesAndLinks()
     {
         $subs      = [ 'S1' => [ 'name' => 'Pro', 'allow_plan_changes' => true, 'allow_cancellation' => false ] ];

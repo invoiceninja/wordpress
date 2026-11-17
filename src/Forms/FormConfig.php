@@ -25,8 +25,15 @@ final class FormConfig {
 		'email'      => array( true, true ),
 		'phone'      => array( true, false ),
 		'product'    => array( true, false ),
+		'quantity'   => array( false, false ),
+		'needed_by'  => array( false, false ),
 		'message'    => array( true, true ),
 	);
+
+	/**
+	 * Largest quantity accepted.
+	 */
+	public const MAX_QUANTITY = 1000000;
 
 	/**
 	 * The product choice for "Not sure yet".
@@ -42,12 +49,14 @@ final class FormConfig {
 		'email'      => 191,
 		'phone'      => 40,
 		'product'    => 64,
+		'quantity'   => 12, // "1,000,000" or "1 000 000" with its separators.
+		'needed_by'  => 10,
 		'message'    => 5000,
 	);
 
 	/**
-	 * The form's config from block attributes (camelCase: showPhone, requirePhone, products,
-	 * privacyPage, requirePrivacy, termsPage, requireTerms).
+	 * The form's config from block attributes (camelCase: showPhone, requirePhone, showQuantity,
+	 * showNeededBy, products, privacyPage, requirePrivacy, termsPage, requireTerms).
 	 *
 	 * @param array<string, mixed> $attributes       Block or shortcode attributes.
 	 * @param list<string>         $default_products Products offered when the block chooses none.
@@ -166,9 +175,11 @@ final class FormConfig {
 	 *
 	 * @param array<string, mixed> $config Config from fromAttributes().
 	 * @param array<string, mixed> $input  Submitted values.
+	 * @param int|null             $now    Now (for tests).
 	 * @return array{values: array<string, string>, consents: array<string, bool>, errors: array<string, string>}
 	 */
-	public static function validate( array $config, array $input ): array {
+	public static function validate( array $config, array $input, ?int $now = null ): array {
+		$now    = $now ?? time();
 		$values = array();
 		$errors = array();
 		foreach ( self::FIELDS as $name => $unused ) {
@@ -192,6 +203,14 @@ final class FormConfig {
 				$errors[ $name ] = __( 'Choose one of the listed options.', 'invoiceninja' );
 			} elseif ( 'phone' === $name && '' !== $value && ! preg_match( '/^[0-9+().\/\s-]{3,40}$/', $value ) ) {
 				$errors[ $name ] = __( 'Enter a phone number using digits, spaces and + ( ) - only.', 'invoiceninja' );
+			} elseif ( 'quantity' === $name && '' !== $value && null === self::quantity( $value ) ) {
+				/* translators: %s: largest number allowed */
+				$errors[ $name ] = sprintf( __( 'Enter a whole number from 1 to %s.', 'invoiceninja' ), number_format_i18n( self::MAX_QUANTITY ) );
+			} elseif ( 'needed_by' === $name && '' !== $value && ! self::neededBy( $value, $now ) ) {
+				$errors[ $name ] = __( "Choose a date that hasn't passed, within the next five years.", 'invoiceninja' );
+			}
+			if ( 'quantity' === $name && null !== self::quantity( $value ) ) {
+				$value = (string) self::quantity( $value );
 			}
 			$values[ $name ] = 'email' === $name ? strtolower( $value ) : $value;
 		}
@@ -227,6 +246,8 @@ final class FormConfig {
 			'email'      => __( 'Email', 'invoiceninja' ),
 			'phone'      => __( 'Phone', 'invoiceninja' ),
 			'product'    => __( 'What are you interested in?', 'invoiceninja' ),
+			'quantity'   => __( 'Quantity', 'invoiceninja' ),
+			'needed_by'  => __( 'Needed by', 'invoiceninja' ),
 			'message'    => __( 'Message', 'invoiceninja' ),
 		);
 	}
@@ -243,8 +264,39 @@ final class FormConfig {
 			'email'      => __( 'Enter your email address.', 'invoiceninja' ),
 			'phone'      => __( 'Enter your phone number.', 'invoiceninja' ),
 			'product'    => __( 'Choose what you are interested in.', 'invoiceninja' ),
+			'quantity'   => __( 'Enter how many you need.', 'invoiceninja' ),
+			'needed_by'  => __( 'Enter the date you need it by.', 'invoiceninja' ),
 			default      => __( 'Tell us what you need.', 'invoiceninja' ),
 		};
+	}
+
+	/**
+	 * A requested quantity as a whole number (1 to MAX_QUANTITY), or null when it isn't one.
+	 * Thousands separators are allowed ("1,200", "1 200"); decimals are not.
+	 *
+	 * @param string $value Value.
+	 */
+	public static function quantity( string $value ): ?int {
+		$digits = (string) preg_replace( '/[\s,.\x{00A0}\x{202F}\']/u', '', trim( $value ) );
+		if ( ! preg_match( '/^[0-9]{1,7}$/', $digits ) || preg_match( '/[.,]\d{1,2}$/', trim( $value ) ) ) {
+			return null;
+		}
+		$number = (int) $digits;
+		return $number >= 1 && $number <= self::MAX_QUANTITY ? $number : null;
+	}
+
+	/**
+	 * Whether a "needed by" date is a real YYYY-MM-DD date from yesterday (time zones) to five
+	 * years ahead.
+	 *
+	 * @param string $value Value.
+	 * @param int    $now   Now.
+	 */
+	public static function neededBy( string $value, int $now ): bool {
+		if ( ! preg_match( '/^(\d{4})-(\d{2})-(\d{2})$/', $value, $m ) || ! checkdate( (int) $m[2], (int) $m[3], (int) $m[1] ) ) {
+			return false;
+		}
+		return $value >= gmdate( 'Y-m-d', $now - DAY_IN_SECONDS ) && $value <= gmdate( 'Y-m-d', $now + 5 * 366 * DAY_IN_SECONDS );
 	}
 
 	/**

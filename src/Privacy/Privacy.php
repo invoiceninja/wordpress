@@ -92,6 +92,10 @@ final class Privacy {
 						'value' => (string) ( $order['customer']['phone'] ?? '' ),
 					),
 					array(
+						'name'  => __( 'Delivery address', 'invoiceninja' ),
+						'value' => implode( ', ', \InvoiceNinja\Commerce\Checkout::addressLines( is_array( $order['customer']['shipping'] ?? null ) ? $order['customer']['shipping'] : array(), $this->plugin->statics->countries() ) ),
+					),
+					array(
 						'name'  => __( 'Items', 'invoiceninja' ),
 						'value' => implode( ', ', array_map( static fn( array $i ): string => $i['quantity'] . ' × ' . $i['title'], (array) $order['items'] ) ),
 					),
@@ -154,6 +158,7 @@ final class Privacy {
 				),
 				array( 'id' => (int) $order['id'] )
 			);
+			delete_transient( 'invoiceninja_order_invoice_' . (int) $order['id'] ); // The Order Status page's copy of the invoice.
 			$removed = true;
 		}
 		$user = get_user_by( 'email', $email );
@@ -180,7 +185,7 @@ final class Privacy {
 		}
 		wp_add_privacy_policy_content(
 			__( 'Invoice Ninja', 'invoiceninja' ),
-			'<p>' . esc_html__( 'When you place an order or request a quote, we send your name, email, phone and the items to our billing system (Invoice Ninja) to create your invoice or quote. We email you a 6-digit code to confirm your email address. If you tick "Remember this device", a cookie remembers that for 30 days. Cookies also keep your cart and your latest order on this browser.', 'invoiceninja' ) . '</p>'
+			'<p>' . esc_html__( 'When you place an order or request a quote, we send your name, email, phone and the items to our billing system (Invoice Ninja) to create your invoice or quote. If the shop asks for a delivery address, it is kept with your order and sent to Invoice Ninja too. We email you a 6-digit code to confirm your email address. If you tick "Remember this device", a cookie remembers that for 30 days. Cookies also keep your cart and your latest order on this browser.', 'invoiceninja' ) . '</p>'
 		);
 	}
 

@@ -132,6 +132,72 @@ class FormsTest extends TestCase
         $this->assertStringEndsWith( "\nRef: wp_k7_lead_3_ff", $notes );
     }
 
+    public function testQuantityAndNeededByAreOffUntilTheBlockTurnsThemOn()
+    {
+        $off = FormConfig::fromAttributes( [], [ 'P1' ] );
+        $this->assertFalse( $off['fields']['quantity']['show'] );
+        $this->assertFalse( $off['fields']['needed_by']['show'] );
+        $this->assertSame( '', FormConfig::validate( $off, [ 'email' => 'a@b.co', 'first_name' => 'A', 'message' => 'Hi', 'quantity' => 'lots' ] )['values']['quantity'] );
+
+        $on = FormConfig::fromAttributes( [ 'showQuantity' => true, 'showNeededBy' => 'true', 'requireNeededBy' => true ], [ 'P1' ] );
+        $this->assertTrue( $on['fields']['quantity']['show'] );
+        $this->assertFalse( $on['fields']['quantity']['required'] );
+        $this->assertTrue( $on['fields']['needed_by']['required'] );
+    }
+
+    public function testQuantityIsAWholeNumberAndNeededByARealFutureDate()
+    {
+        Functions\when( 'number_format_i18n' )->alias( 'number_format' );
+        $this->assertSame( 24, FormConfig::quantity( '24' ) );
+        $this->assertSame( 1200, FormConfig::quantity( '1,200' ) );
+        $this->assertSame( 1200, FormConfig::quantity( ' 1 200 ' ) );
+        $this->assertNull( FormConfig::quantity( '1.5' ) );
+        $this->assertNull( FormConfig::quantity( '0' ) );
+        $this->assertNull( FormConfig::quantity( 'about 20' ) );
+        $this->assertNull( FormConfig::quantity( '99999999' ) );
+
+        $now = gmmktime( 12, 0, 0, 11, 17, 2026 );
+        $this->assertTrue( FormConfig::neededBy( '2026-12-01', $now ) );
+        $this->assertTrue( FormConfig::neededBy( '2026-11-16', $now ), 'yesterday in UTC can still be today somewhere' );
+        $this->assertFalse( FormConfig::neededBy( '2026-11-10', $now ) );
+        $this->assertFalse( FormConfig::neededBy( '2026-02-30', $now ) );
+        $this->assertFalse( FormConfig::neededBy( '12/01/2026', $now ) );
+        $this->assertFalse( FormConfig::neededBy( '2040-01-01', $now ) );
+
+        $config = FormConfig::fromAttributes( [ 'showQuantity' => true, 'showNeededBy' => true ], [ 'P1' ] );
+        $base   = [ 'email' => 'a@b.co', 'first_name' => 'A', 'message' => 'Hi' ];
+        $bad    = FormConfig::validate( $config, $base + [ 'quantity' => 'a dozen', 'needed_by' => '2020-01-01' ], $now );
+        $this->assertSame( [ 'quantity', 'needed_by' ], array_keys( $bad['errors'] ) );
+        $ok = FormConfig::validate( $config, $base + [ 'quantity' => '1,200', 'needed_by' => '2026-12-01' ], $now );
+        $this->assertSame( [], $ok['errors'] );
+        $this->assertSame( '1200', $ok['values']['quantity'] );
+        $this->assertSame( '2026-12-01', $ok['values']['needed_by'] );
+    }
+
+    public function testTheQuantityGoesOnTheLineAndTheDateInThePrivateNotes()
+    {
+        $body = QuotePayload::quoteBody( 'C1', '', 'Ref: x', [ 'product_key' => 'Widget', 'price' => 10.0, 'quantity' => 24 ], [] );
+        $this->assertSame( 24, $body['line_items'][0]['quantity'] );
+        $this->assertArrayNotHasKey( 'due_date', $body, "a quote's due date is when it expires" );
+
+        $fields = [ 'quantity' => '24', 'needed_by' => '2026-12-01' ];
+        $on     = QuotePayload::privateNotes( 'm', $fields, [], 'shop.example.com', true );
+        $this->assertStringContainsString( 'Needed by: 2026-12-01', $on );
+        $this->assertStringNotContainsString( 'Quantity', $on, 'already the line quantity' );
+        $off = QuotePayload::privateNotes( 'm', $fields + [ 'product' => FormConfig::NOT_SURE ], [], 'shop.example.com' );
+        $this->assertStringContainsString( 'Quantity requested: 24', $off, 'no line to put it on' );
+        $this->assertStringEndsWith( "\nRef: m", $off );
+    }
+
+    public function testProductChoicesAreChipsUpToSixUnlessTheBlockSays()
+    {
+        $this->assertTrue( \InvoiceNinja\Forms\QuoteForm::useChips( 'auto', 6 ) );
+        $this->assertFalse( \InvoiceNinja\Forms\QuoteForm::useChips( 'auto', 7 ) );
+        $this->assertFalse( \InvoiceNinja\Forms\QuoteForm::useChips( 'dropdown', 2 ) );
+        $this->assertTrue( \InvoiceNinja\Forms\QuoteForm::useChips( 'chips', 20 ) );
+        $this->assertTrue( \InvoiceNinja\Forms\QuoteForm::useChips( 'bogus', 3 ), 'unknown values act as auto' );
+    }
+
     public function testQuoteStatuses()
     {
         $this->assertSame( 'draft', QuotePayload::status( [ 'status_id' => '1' ] ) );

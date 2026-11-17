@@ -149,7 +149,7 @@ final class Links {
 	 * by email. Use this before showing customer data or opening a portal link.
 	 *
 	 * @param int $user_id User id.
-	 * @return array{client_id: string, contact_id: string, contact: array<string, mixed>}|null
+	 * @return array{client_id: string, contact_id: string, contact: array<string, mixed>, client: array<string, mixed>}|null
 	 * @throws ApiException When Invoice Ninja can't be asked.
 	 */
 	public function confirmed( int $user_id ): ?array {
@@ -170,7 +170,11 @@ final class Links {
 		}
 		$contact = self::matchingContact( $client, $link['contact_id'], $email );
 		if ( null !== $contact ) {
-			return $link + array( 'contact' => $contact );
+			// The client record too: its currency and credit balance, for the Account block.
+			return $link + array(
+				'contact' => $contact,
+				'client'  => $client,
+			);
 		}
 		// The client was deleted or the contact's email changed: look again by email.
 		$this->clear( $user_id );
@@ -187,6 +191,7 @@ final class Links {
 			'client_id'  => $found['client_id'],
 			'contact_id' => $found['contact_id'],
 			'contact'    => $contact,
+			'client'     => $found['client'],
 		);
 	}
 
@@ -355,19 +360,45 @@ final class Links {
 	 * @return list<int>
 	 */
 	private function exportable( array $skip, int $limit ): array {
-		$roles = $this->roles();
-		$query = new \WP_User_Query(
+		$query = $this->exportQuery(
 			array(
-				'role__in'    => $roles ? $roles : array( 'customer', 'subscriber' ),
-				'fields'      => 'ID',
 				'number'      => $limit,
 				'exclude'     => $skip,
 				'orderby'     => 'ID',
-				'meta_query'  => UserData::missingQuery( self::CLIENT ), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- background export only.
 				'count_total' => false,
 			)
 		);
 		return array_map( 'intval', (array) $query->get_results() );
+	}
+
+	/**
+	 * How many users export() would queue now: the saved roles, no client yet.
+	 */
+	public function pendingExport(): int {
+		$query = $this->exportQuery(
+			array(
+				'number'      => 1,
+				'count_total' => true,
+			)
+		);
+		return (int) $query->get_total();
+	}
+
+	/**
+	 * Users in the client roles (customer and subscriber when none are saved) without an
+	 * Invoice Ninja client: the one query behind export() and pendingExport().
+	 *
+	 * @param array<string, mixed> $args Extra WP_User_Query arguments.
+	 */
+	private function exportQuery( array $args ): \WP_User_Query {
+		$roles = $this->roles();
+		return new \WP_User_Query(
+			array(
+				'role__in'   => $roles ? $roles : array( 'customer', 'subscriber' ),
+				'fields'     => 'ID',
+				'meta_query' => UserData::missingQuery( self::CLIENT ), // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_query -- the export and one admin count.
+			) + $args
+		);
 	}
 
 	/**

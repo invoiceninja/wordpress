@@ -15,6 +15,9 @@
  *   in_mock_captcha_fail    1: a quote-form CAPTCHA (invoiceninja_captcha, ignoring its context) refuses everyone
  *   in_mock_checkout_captcha_fail     1: invoiceninja_checkout_captcha refuses everyone
  *   in_mock_pay_invoice_captcha_fail  1: invoiceninja_pay_invoice_captcha refuses everyone
+ *   in_mock_product_extras  JSON {"P1": {"tags": [{"id": "T1", "name": "Tools"}], "documents": [...], "custom_value1": "..."}}
+ *                           fields added to products in the list and GET products/{id}; documents/{id}/download
+ *                           answers with a small PNG (a document whose id starts with "TXT" answers with text)
  *
  * Known clients: a+b@x.com and member@x.com (the company's currency), euro@x.com (EUR).
  * Never load this on a real site: it is only mounted by dev/docker-compose.yml.
@@ -42,6 +45,25 @@ function in_mock_response( $body, $code = 200 ) {
     ];
 }
 
+// Catalog extras (tags, documents, custom fields) for one product, from in_mock_product_extras
+function in_mock_product_extras( array $product ) {
+    $extras = json_decode( (string) get_option( 'in_mock_product_extras', '' ), true );
+    return is_array( $extras ) && is_array( $extras[ $product['id'] ] ?? null ) ? array_merge( $product, $extras[ $product['id'] ] ) : $product;
+}
+
+// A small PNG for a document download, coloured by the document id
+function in_mock_document_png( $id ) {
+    if ( ! function_exists( 'imagecreatetruecolor' ) ) {
+        return base64_decode( 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==' );
+    }
+    $hash = md5( (string) $id );
+    $img  = imagecreatetruecolor( 64, 64 );
+    imagefill( $img, 0, 0, imagecolorallocate( $img, hexdec( substr( $hash, 0, 2 ) ), hexdec( substr( $hash, 2, 2 ) ), hexdec( substr( $hash, 4, 2 ) ) ) );
+    ob_start();
+    imagepng( $img );
+    return (string) ob_get_clean();
+}
+
 function in_mock_product( $id, $key, $price, $max_quantity, $in_stock ) {
     return [
         'id' => $id, 'product_key' => $key, 'notes' => "$key description", 'price' => $price, 'cost' => 1,
@@ -58,11 +80,16 @@ function in_mock_clients() {
         'a+b@x.com'    => 'CLIENT_PLUS',
         'member@x.com' => 'CLIENT_MEMBER',
         'euro@x.com'   => 'CLIENT_EURO',
+        'usd@x.com'    => 'CLIENT_USD',
     ];
 }
 
-// Client settings: CLIENT_EURO uses euros (currency 3); the others inherit the company's dollars
+// Client settings: CLIENT_EURO uses euros (currency 3), CLIENT_USD has the company's dollars
+// set on itself; the others inherit the company's dollars
 function in_mock_client_settings( $id ) {
+    if ( $id === 'CLIENT_USD' ) {
+        return [ 'currency_id' => '1' ];
+    }
     return $id === 'CLIENT_EURO' ? [ 'currency_id' => '3' ] : new stdClass();
 }
 
@@ -177,12 +204,23 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         ] );
     }
 
+    // A document's file (product photos), like Invoice Ninja's streamed download: no image content type
+    if ( preg_match( '#^documents/([A-Za-z0-9]+)/download$#', $route, $dm ) && $method === 'GET' ) {
+        return [
+            'headers'  => [ 'x-app-version' => get_option( 'in_mock_version', '5.13.52' ), 'content-type' => 'text/html; charset=UTF-8' ],
+            'body'     => strpos( $dm[1], 'TXT' ) === 0 ? 'not an image' : in_mock_document_png( $dm[1] ),
+            'response' => [ 'code' => 200, 'message' => 'OK' ],
+            'cookies'  => [],
+            'filename' => null,
+        ];
+    }
+
     // One product: in_mock_live_stock ("P1:1,P2:0") is stock that changed since the last sync
     if ( preg_match( '#^products/([A-Za-z0-9]+)$#', $route, $pm ) && $method === 'GET' ) {
         if ( get_option( 'in_mock_slow_stock' ) ) {
             return new WP_Error( 'http_request_failed', 'cURL error 28: Operation timed out after 1500 milliseconds' );
         }
-        $product = in_mock_product( $pm[1], $pm[1] === 'P1' ? 'Widget' : 'Gadget', $pm[1] === 'P1' ? 10 : 25.5, $pm[1] === 'P1' ? 5 : 0, $pm[1] === 'P1' ? 3 : 0 );
+        $product = in_mock_product_extras( in_mock_product( $pm[1], $pm[1] === 'P1' ? 'Widget' : 'Gadget', $pm[1] === 'P1' ? 10 : 25.5, $pm[1] === 'P1' ? 5 : 0, $pm[1] === 'P1' ? 3 : 0 ) );
         foreach ( array_filter( explode( ',', (string) get_option( 'in_mock_live_stock', '' ) ) ) as $pair ) {
             [ $id, $stock ] = array_pad( explode( ':', $pair ), 2, '0' );
             if ( $id === $pm[1] ) {
@@ -214,6 +252,7 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             $product['updated_at']  = 1700000000;
             $product['archived_at'] = in_array( $product['id'], $archived, true ) ? 1700000000 : 0;
             $product['is_deleted']  = false;
+            $product                = in_mock_product_extras( $product );
         }
         return in_mock_response( [ 'data' => $products ] );
     }
@@ -280,12 +319,18 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         // Like Invoice Ninja: each line's tax rates, or its own rate when it calculates taxes
         $own_tax   = get_option( 'in_mock_calculate_taxes' ) ? 19.0 : null;
         $inclusive = ! empty( $data['uses_inclusive_taxes'] );
+        $taxes   = 0;
+        $lines   = [];
         foreach ( $data['line_items'] ?? [] as $line ) {
             $net     = round( (float) $line['cost'] * (float) $line['quantity'], 2 );
             $amount += $net;
-            foreach ( null !== $own_tax ? [ $own_tax ] : [ $line['tax_rate1'] ?? 0, $line['tax_rate2'] ?? 0, $line['tax_rate3'] ?? 0 ] as $rate ) {
+            $rates   = null !== $own_tax ? [ $own_tax ] : [ $line['tax_rate1'] ?? 0, $line['tax_rate2'] ?? 0, $line['tax_rate3'] ?? 0 ];
+            foreach ( $rates as $rate ) {
                 $amount += $inclusive ? 0 : round( $net * (float) $rate / 100, 2 );
+                $taxes  += $inclusive ? round( $net * (float) $rate / ( 100 + array_sum( $rates ) ), 2 ) : round( $net * (float) $rate / 100, 2 );
             }
+            // Like Invoice Ninja: each line's total (before tax unless prices include it)
+            $lines[] = $line + [ 'line_total' => $net ];
         }
         $amount = round( $amount, 2 );
         $client_id = (string) ( $data['client_id'] ?? '' );
@@ -295,7 +340,9 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
         $invoice = [
             'id' => $n === 1 ? 'INV1' : 'INV' . $n, 'number' => sprintf( '%04d', $n ), 'client_id' => $client_id,
             'po_number' => $data['po_number'] ?? '', 'amount' => $amount, 'balance' => $amount, 'paid_to_date' => 0, 'status_id' => '2',
-            'created_at' => time(), 'line_items' => $data['line_items'] ?? [],
+            'created_at' => time(), 'line_items' => $lines, 'total_taxes' => round( $taxes, 2 ),
+            // Like Invoice Ninja: the invoice date defaults to today; due_date stays empty without payment terms
+            'date' => (string) ( $data['date'] ?? gmdate( 'Y-m-d' ) ), 'due_date' => (string) ( $data['due_date'] ?? '' ),
             'public_notes' => $data['public_notes'] ?? '', 'uses_inclusive_taxes' => (bool) ( $data['uses_inclusive_taxes'] ?? false ),
             // Another contact's invitation first, like a client whose primary contact isn't the buyer
             'invitations' => get_option( 'in_mock_other_contact_first' ) ? [ $other, $mine ] : [ $mine, $other ],

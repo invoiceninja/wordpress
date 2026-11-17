@@ -4,7 +4,7 @@
 	"name": "invoiceninja/account",
 	"title": "Account",
 	"category": "invoiceninja",
-	"description": "A customer's invoices, quotes, payments, credits and subscriptions, with Pay and PDF links.",
+	"description": "A customer's balance due, invoices, quotes, payments, credits and subscriptions, with Pay and PDF links.",
 	"icon": "admin-users",
 	"keywords": [
 		"portal",
@@ -30,6 +30,10 @@
 				"credits",
 				"subscriptions"
 			]
+		},
+		"balance": {
+			"type": "boolean",
+			"default": true
 		},
 		"label": {
 			"type": "string",

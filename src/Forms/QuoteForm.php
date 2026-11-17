@@ -36,6 +36,9 @@ final class QuoteForm {
 	/** Past PER_SITE_HOUR requests are held for review; past this many times it, refused. */
 	public const HOLD_FACTOR = 5;
 
+	/** Most answers the product question shows as chips when the block says "auto". */
+	public const AUTO_CHIPS = 6;
+
 	/** Seconds a form token is good for (forms.js asks for a fresh one when someone starts typing). */
 	public const MAX_AGE = 43200;
 
@@ -114,44 +117,79 @@ final class QuoteForm {
 			wp_add_inline_script( self::HANDLE, 'window.invoiceNinjaQuoteForm = ' . wp_json_encode( array( 'i18n' => $this->strings() ) ) . ';', 'before' );
 		}
 
-		$config  = FormConfig::fromAttributes( $attributes, $this->defaultProducts() );
-		$labels  = FormConfig::labels();
-		$prefix  = 'invoiceninja-qf' . ( ++self::$count ) . '-';
-		$heading = trim( (string) ( $attributes['heading'] ?? '' ) );
-		$submit  = trim( (string) ( $attributes['submitLabel'] ?? '' ) );
-		$html    = '';
-		$auto    = array(
+		$config   = FormConfig::fromAttributes( $attributes, $this->defaultProducts() );
+		$labels   = FormConfig::labels();
+		$prefix   = 'invoiceninja-qf' . ( ++self::$count ) . '-';
+		$heading  = trim( (string) ( $attributes['heading'] ?? '' ) );
+		$submit   = trim( (string) ( $attributes['submitLabel'] ?? '' ) );
+		$auto     = array(
 			'first_name' => 'given-name',
 			'last_name'  => 'family-name',
 			'email'      => 'email',
 			'phone'      => 'tel',
 		);
+		$rendered = array();
 		foreach ( FormConfig::FIELDS as $name => $unused ) {
 			unset( $unused );
 			$field = $config['fields'][ $name ];
 			if ( ! $field['show'] ) {
 				continue;
 			}
-			$id    = $prefix . $name;
-			$attrs = ' id="' . esc_attr( $id ) . '" name="' . esc_attr( $name ) . '" aria-describedby="' . esc_attr( $id . '-error' ) . '"' . ( $field['required'] ? ' required aria-required="true"' : '' );
-			$label = '<label for="' . esc_attr( $id ) . '">' . esc_html( $labels[ $name ] ) . ( $field['required'] ? '' : ' <span class="invoiceninja-muted">' . esc_html__( '(optional)', 'invoiceninja' ) . '</span>' ) . '</label>';
-			if ( 'message' === $name ) {
-				$control = '<textarea' . $attrs . ' rows="5" maxlength="' . (int) FormConfig::MAX_LENGTH[ $name ] . '"></textarea>';
-			} elseif ( 'product' === $name ) {
-				$control = '<select' . $attrs . '><option value="">' . esc_html__( 'Choose…', 'invoiceninja' ) . '</option>';
+			$id       = $prefix . $name;
+			$required = $field['required'] ? ' required aria-required="true"' : '';
+			$attrs    = ' id="' . esc_attr( $id ) . '" name="' . esc_attr( $name ) . '" aria-describedby="' . esc_attr( $id . '-error' ) . '"' . $required;
+			$optional = $field['required'] ? '' : ' <span class="invoiceninja-muted">' . esc_html__( '(optional)', 'invoiceninja' ) . '</span>';
+			$label    = '<label for="' . esc_attr( $id ) . '">' . esc_html( $labels[ $name ] ) . $optional . '</label>';
+			$error    = '<span class="invoiceninja-field__error" id="' . esc_attr( $id . '-error' ) . '" hidden></span>';
+			$class    = 'invoiceninja-field invoiceninja-field--' . esc_attr( str_replace( '_', '-', $name ) );
+			if ( 'product' === $name ) {
+				$options = array();
 				foreach ( $config['products'] as $product_id ) {
 					$info = $this->plugin->cart->product( $product_id );
 					if ( null !== $info ) {
-						$control .= '<option value="' . esc_attr( $product_id ) . '">' . esc_html( $info['title'] ) . '</option>';
+						$options[ $product_id ] = (string) $info['title'];
 					}
 				}
-				$control .= '<option value="' . esc_attr( FormConfig::NOT_SURE ) . '">' . esc_html__( 'Not sure yet', 'invoiceninja' ) . '</option></select>';
+				$options[ FormConfig::NOT_SURE ] = __( 'Not sure yet', 'invoiceninja' );
+				if ( self::useChips( (string) ( $attributes['productDisplay'] ?? 'auto' ), count( $options ) ) ) {
+					// A radio group drawn as chips: works without JavaScript and with arrow keys.
+					$chips = '';
+					$n     = 0;
+					foreach ( $options as $value => $title ) {
+						$chip_id = 0 === $n++ ? $id : $id . '-' . $n;
+						// Only a required question with a single answer starts answered ("Not sure yet" is always offered, so in practice nothing is).
+						$checked = $field['required'] && 1 === count( $options ) ? ' checked' : '';
+						$chips  .= '<label class="invoiceninja-chip" for="' . esc_attr( $chip_id ) . '"><input type="radio" class="invoiceninja-chip__input" id="' . esc_attr( $chip_id ) . '" name="product" value="' . esc_attr( (string) $value ) . '" aria-describedby="' . esc_attr( $id . '-error' ) . '"' . ( $field['required'] ? ' required' : '' ) . $checked . '><span class="invoiceninja-chip__label">' . esc_html( $title ) . '</span></label>';
+					}
+					$rendered[ $name ] = '<fieldset class="' . $class . ' invoiceninja-choice" data-field="product"' . ( $field['required'] ? ' aria-required="true"' : '' ) . '><legend class="invoiceninja-choice__legend">' . esc_html( $labels[ $name ] ) . $optional . '</legend><div class="invoiceninja-chips">' . $chips . '</div>' . $error . '</fieldset>';
+					continue;
+				}
+				$control = '<select' . $attrs . '><option value="">' . esc_html__( 'Choose…', 'invoiceninja' ) . '</option>';
+				foreach ( $options as $value => $title ) {
+					$control .= '<option value="' . esc_attr( (string) $value ) . '">' . esc_html( $title ) . '</option>';
+				}
+				$control .= '</select>';
+			} elseif ( 'message' === $name ) {
+				$control = '<textarea' . $attrs . ' rows="5" maxlength="' . (int) FormConfig::MAX_LENGTH[ $name ] . '"></textarea>';
+			} elseif ( 'quantity' === $name ) {
+				$control = '<input type="text" inputmode="numeric"' . $attrs . ' autocomplete="off" maxlength="' . (int) FormConfig::MAX_LENGTH[ $name ] . '">';
+			} elseif ( 'needed_by' === $name ) {
+				// The minimum is a hint only (a cached page may show an older one); the server checks.
+				$control = '<input type="date"' . $attrs . ' autocomplete="off" min="' . esc_attr( wp_date( 'Y-m-d' ) ?: gmdate( 'Y-m-d' ) ) . '">';
 			} else {
 				$type    = 'email' === $name ? 'email' : ( 'phone' === $name ? 'tel' : 'text' );
 				$control = '<input type="' . $type . '"' . $attrs . ' autocomplete="' . esc_attr( $auto[ $name ] ) . '" maxlength="' . (int) FormConfig::MAX_LENGTH[ $name ] . '">';
 			}
-			$html .= '<p class="invoiceninja-field invoiceninja-field--' . esc_attr( str_replace( '_', '-', $name ) ) . '" data-field="' . esc_attr( $name ) . '">' . $label . $control . '<span class="invoiceninja-field__error" id="' . esc_attr( $id . '-error' ) . '" hidden></span></p>';
+			$rendered[ $name ] = '<p class="' . $class . '" data-field="' . esc_attr( $name ) . '">' . $label . $control . $error . '</p>';
 		}
+		// Short fields that belong together sit side by side where there is room.
+		foreach ( array( array( 'first_name', 'last_name' ), array( 'quantity', 'needed_by' ) ) as [ $a, $b ] ) {
+			if ( isset( $rendered[ $a ], $rendered[ $b ] ) ) {
+				$rendered[ $a ] = '<div class="invoiceninja-quote-form__row">' . $rendered[ $a ] . $rendered[ $b ] . '</div>';
+				unset( $rendered[ $b ] );
+			}
+		}
+		$html = implode( '', $rendered );
 		foreach ( array( 'privacy', 'terms' ) as $which ) {
 			$page = $this->consentPage( (int) $config[ $which ]['page'] );
 			if ( null === $page ) {
@@ -186,6 +224,21 @@ final class QuoteForm {
 			. '</form>'
 			. '<div class="invoiceninja-quote-form__done" tabindex="-1" hidden></div>'
 			. '</div>';
+	}
+
+	/**
+	 * Whether the product question shows as chips: "chips", "dropdown", or "auto" (chips for
+	 * up to six answers, "Not sure yet" included).
+	 *
+	 * @param string $display productDisplay attribute.
+	 * @param int    $options Number of answers.
+	 */
+	public static function useChips( string $display, int $options ): bool {
+		return match ( $display ) {
+			'chips'    => true,
+			'dropdown' => false,
+			default    => $options <= self::AUTO_CHIPS,
+		};
 	}
 
 	/**
@@ -239,15 +292,15 @@ final class QuoteForm {
 	 * @param \WP_REST_Request $request Request.
 	 */
 	public function submit( \WP_REST_Request $request ): \WP_REST_Response {
-		$input  = $request->get_json_params();
-		$input  = is_array( $input ) && $input ? $input : $request->get_body_params();
-		$input  = is_array( $input ) ? $input : array();
-		$ip     = Routes::clientIp();
-		$thanks = $this->thanks();
+		$input = $request->get_json_params();
+		$input = is_array( $input ) && $input ? $input : $request->get_body_params();
+		$input = is_array( $input ) ? $input : array();
+		$ip    = Routes::clientIp();
 		// Bots that fill every field get the same reply as people, and nothing is saved.
 		if ( self::trapped( $input ) ) {
 			$this->plugin->logger->log( LogLevel::Info, 'forms', 'Quote request dropped: spam trap filled' );
-			return new \WP_REST_Response( $thanks );
+			$email = is_scalar( $input['email'] ?? null ) ? strtolower( trim( sanitize_text_field( (string) $input['email'] ) ) ) : '';
+			return new \WP_REST_Response( $this->thanks( is_email( $email ) ? $email : '' ) );
 		}
 		$form = FormConfig::verify( (string) ( is_scalar( $input['form'] ?? '' ) ? $input['form'] : '' ), $this->plugin->secrets->get( 'secret' ) );
 		if ( null === $form ) {
@@ -353,24 +406,35 @@ final class QuoteForm {
 		 * @param array $lead Lead.
 		 */
 		do_action( 'invoiceninja_lead_received', $lead );
-		return new \WP_REST_Response( $thanks );
+		return new \WP_REST_Response( $this->thanks( $values['email'] ) );
 	}
 
 	/**
 	 * The success reply.
 	 *
+	 * @param string $email The address the reply goes to (checked already), or ''.
 	 * @return array{ok: bool, title: string, message: string, redirect: string}
 	 */
-	private function thanks(): array {
+	private function thanks( string $email = '' ): array {
 		$days     = (int) $this->plugin->options->setting( 'forms.reply_days' );
 		$redirect = FormConfig::redirectUrl( (string) $this->plugin->options->setting( 'forms.redirect_url' ) );
+		if ( '' !== $email ) {
+			// Saying where the reply goes lets someone spot a mistyped address.
+			$message = $days > 0
+				/* translators: 1: email address, 2: number of days */
+				? sprintf( _n( "We'll reply to %1\$s within %2\$d day.", "We'll reply to %1\$s within %2\$d days.", $days, 'invoiceninja' ), $email, $days )
+				/* translators: %s: email address */
+				: sprintf( __( "We'll reply to %s soon.", 'invoiceninja' ), $email );
+		} else {
+			$message = $days > 0
+				/* translators: %d: number of days */
+				? sprintf( _n( "We'll reply within %d day.", "We'll reply within %d days.", $days, 'invoiceninja' ), $days )
+				: __( "We'll reply soon.", 'invoiceninja' );
+		}
 		return array(
 			'ok'       => true,
 			'title'    => __( 'Thanks! We received your request.', 'invoiceninja' ),
-			'message'  => $days > 0
-				/* translators: %d: number of days */
-				? sprintf( _n( "We'll reply within %d day.", "We'll reply within %d days.", $days, 'invoiceninja' ), $days )
-				: __( "We'll reply soon.", 'invoiceninja' ),
+			'message'  => $message,
 			'redirect' => $redirect,
 		);
 	}

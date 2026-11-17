@@ -12,6 +12,14 @@
 	}
 
 	const { createElement: h, Fragment, useState, useEffect, useRef, createRoot } = wp.element;
+	// Translated text with a link inside ("… in <a>Products</a>."); plain text if it can't be parsed.
+	const interpolate = ( text, map ) => {
+		try {
+			return wp.element.createInterpolateElement( text, map );
+		} catch ( e ) {
+			return text.replace( /<\/?[a-z]+>/g, '' );
+		}
+	};
 	const { __, _n, sprintf } = wp.i18n;
 
 	const api = ( path, options ) =>
@@ -77,6 +85,45 @@
 		return h( 'a', { href, target: '_blank', rel: 'noopener noreferrer', className },
 			children, ' ', h( 'span', { 'aria-hidden': 'true' }, '↗' ),
 			h( 'span', { className: 'screen-reader-text' }, __( '(opens in a new tab)', 'invoiceninja' ) ) );
+	}
+
+	/**
+	 * A read-only value with a Copy button; "Copied" is shown and announced.
+	 *
+	 * @param {Object} props
+	 * @param {string} props.value Text to copy.
+	 * @param {string} props.label What it is, for the field and the button.
+	 */
+	function CopyField( { value, label } ) {
+		const [ copied, setCopied ] = useState( false );
+		const field = useRef( null );
+		const timer = useRef( 0 );
+		useEffect( () => () => window.clearTimeout( timer.current ), [] );
+		const copy = async () => {
+			let ok = false;
+			try {
+				await window.navigator.clipboard.writeText( value );
+				ok = true;
+			} catch ( e ) {
+				// No clipboard API (a plain-http site): copy the selected field instead.
+				if ( field.current ) {
+					field.current.select();
+					try {
+						ok = window.document.execCommand( 'copy' );
+					} catch ( x ) {
+						ok = false;
+					}
+				}
+			}
+			setCopied( ok ? 'yes' : 'no' );
+			window.clearTimeout( timer.current );
+			timer.current = window.setTimeout( () => setCopied( false ), 4000 );
+		};
+		return h( 'span', { className: 'in-copy' },
+			h( 'input', { ref: field, type: 'text', readOnly: true, value, className: 'code', 'aria-label': label, size: value.length + 1, onFocus: ( e ) => e.target.select() } ),
+			h( Button, { onClick: copy, 'aria-label': sprintf( /* translators: %s: e.g. "Shortcode" */ __( 'Copy %s', 'invoiceninja' ), label ) }, copied === 'yes' ? __( 'Copied', 'invoiceninja' ) : __( 'Copy', 'invoiceninja' ) ),
+			h( 'span', { role: 'status', className: copied === 'no' ? 'in-muted' : 'screen-reader-text' },
+				copied === 'yes' ? __( 'Copied to the clipboard.', 'invoiceninja' ) : copied === 'no' ? __( 'Select it and copy it yourself.', 'invoiceninja' ) : '' ) );
 	}
 
 	function Button( props ) {
@@ -239,21 +286,25 @@
 					stat( __( 'Paid', 'invoiceninja' ), s.paid ),
 					stat( __( 'Waiting for payment', 'invoiceninja' ), String( s.awaiting ), boot.urls.orders + '&status=awaiting_payment' ),
 					stat( __( 'Need attention', 'invoiceninja' ), String( s.attention ), boot.urls.orders + '&status=attention' ) ),
-				s.latest.length ? h( 'table', { className: 'widefat striped' },
+				s.latest.length ? h( 'table', { className: 'widefat striped in-latest' },
 					h( 'thead', null, h( 'tr', null, [ __( 'Order', 'invoiceninja' ), __( 'Customer', 'invoiceninja' ), __( 'Status', 'invoiceninja' ), __( 'Total', 'invoiceninja' ) ].map( ( l ) => h( 'th', { key: l, scope: 'col' }, l ) ) ) ),
 					h( 'tbody', null, s.latest.map( ( o ) => h( 'tr', { key: o.id },
 						h( 'td', null, h( 'a', { href: boot.urls.orders + '&s=' + encodeURIComponent( o.number ) }, o.number ) ),
 						h( 'td', null, o.email ),
 						h( 'td', null, h( Pill, { tone: ( ORDER_STATUS[ o.status ] || [ 'neutral' ] )[ 0 ] }, ( ORDER_STATUS[ o.status ] || [ null, o.status ] )[ 1 ] ) ),
-						h( 'td', null, o.total ) ) ) ) )
+						h( 'td', { className: 'in-num' }, o.total ) ) ) ) )
 					: h( 'p', { className: 'in-muted' }, s.pages.shop ? __( 'No orders yet. Place a test order from your Shop page to check everything works.', 'invoiceninja' ) : __( 'No orders yet.', 'invoiceninja' ) ) ) );
 	}
 
 	// ---------- Setup wizard ----------
 
+	function stepOf( steps, index ) {
+		return sprintf( /* translators: 1: step, 2: total */ __( 'Step %1$d of %2$d', 'invoiceninja' ), Math.min( index + 1, steps.length ), steps.length );
+	}
+
 	function Stepper( { steps, index, onJump } ) {
-		return h( 'nav', { 'aria-label': __( 'Setup progress', 'invoiceninja' ), className: 'in-stepper' },
-			h( 'ol', { style: { gridTemplateColumns: 'repeat(' + steps.length + ', minmax(0, 1fr))' } },
+		return h( 'nav', { 'aria-label': __( 'Setup progress', 'invoiceninja' ), className: steps.length > 5 ? 'in-stepper in-stepper--many' : 'in-stepper' },
+			h( 'ol', null,
 				steps.map( ( s, i ) => {
 					const done = i < index;
 					const now = i === index;
@@ -265,7 +316,7 @@
 				} ) ),
 			h( 'div', { className: 'in-stepper__compact' },
 				h( 'strong', null, steps[ Math.min( index, steps.length - 1 ) ].label ), ' ',
-				h( 'span', { className: 'in-muted' }, sprintf( /* translators: 1: step, 2: total */ __( '· Step %1$d of %2$d', 'invoiceninja' ), Math.min( index + 1, steps.length ), steps.length ) ) ) );
+				h( 'span', { className: 'in-muted' }, '· ' + stepOf( steps, index ) ) ) );
 	}
 
 	function ChoiceCards( { name, value, onChange, options } ) {
@@ -276,6 +327,7 @@
 					h( 'input', { type: 'radio', name, checked: value === o.id, onChange: () => onChange( o.id ) } ),
 					h( 'strong', null, o.title ) ),
 				h( 'span', { className: 'in-muted' }, o.desc ),
+				// The icon stays beside the tint, so colour is never the only signal.
 				o.note ? h( 'span', { className: 'in-choice__note in-choice__note--' + o.noteKind }, h( StatusIcon, { kind: o.noteKind } ), o.note ) : null ) ) );
 	}
 
@@ -287,15 +339,26 @@
 		}
 	}
 
+	// The same rules as InvoiceNinja\Api\BaseUrl::normalize(), so the preview is the address the server saves.
 	function normalizePreview( raw ) {
-		let u = String( raw || '' ).trim().replace( /\/+$/, '' ).replace( /\/api\/v1$/i, '' ).replace( /\/+$/, '' );
-		if ( ! u ) {
+		let u = String( raw || '' ).trim();
+		if ( ! u || /\s/.test( u ) ) {
 			return '';
 		}
 		if ( ! /^https?:\/\//i.test( u ) ) {
 			u = 'https://' + u;
 		}
-		return u;
+		let parts;
+		try {
+			parts = new URL( u );
+		} catch ( e ) {
+			return '';
+		}
+		if ( ! parts.hostname || parts.username || parts.password ) {
+			return '';
+		}
+		const path = parts.pathname.replace( /\/+/g, '/' ).replace( /\/(api\/v1)?\/*$/i, '' ).replace( /\/(client|login|dashboard)(\/.*)?$/i, '' );
+		return parts.protocol.toLowerCase() + '//' + parts.host.toLowerCase() + path.replace( /\/+$/, '' );
 	}
 
 	function Setup() {
@@ -320,6 +383,7 @@
 		// Decided once, so allowing orders doesn't remove the step and shift the steps after it.
 		const [ askEnvironment ] = useState( ! env.allowed && ! env.looks_live );
 		const head = useRef( null );
+		const mounted = useRef( false );
 
 		const steps = [ { id: 'where', label: __( 'Connect', 'invoiceninja' ) }, { id: 'token', label: __( 'Token', 'invoiceninja' ) }, { id: 'company', label: __( 'Company', 'invoiceninja' ) } ];
 		if ( boot.wooActive ) {
@@ -333,9 +397,11 @@
 		const current = done ? 'done' : steps[ step ].id;
 
 		useEffect( () => {
-			if ( head.current ) {
+			// Move focus to the new step's title, but not on page load: that put a focus ring on the heading.
+			if ( mounted.current && head.current ) {
 				head.current.focus();
 			}
+			mounted.current = true;
 		}, [ step ] );
 
 		const go = ( n ) => {
@@ -453,15 +519,15 @@
 			hint = ! where ? __( 'Choose where your Invoice Ninja is.', 'invoiceninja' ) : where === 'none' ? __( 'Come back when you have Invoice Ninja.', 'invoiceninja' ) : where === 'self' && ! normalized ? __( 'Enter your Invoice Ninja address.', 'invoiceninja' ) : '';
 			body = h( Fragment, null,
 				h( ChoiceCards, { name: __( 'Where is your Invoice Ninja?', 'invoiceninja' ), value: where, onChange: setWhere, options: [
-					{ id: 'hosted', title: __( 'Hosted', 'invoiceninja' ), desc: __( 'Run by Invoice Ninja at invoicing.co', 'invoiceninja' ), note: __( 'Needs a Pro or Enterprise plan', 'invoiceninja' ), noteKind: 'warn' },
+					{ id: 'hosted', title: __( 'Hosted', 'invoiceninja' ), desc: __( 'Run by Invoice Ninja at invoicing.co', 'invoiceninja' ), note: __( 'Needs Pro or Enterprise', 'invoiceninja' ), noteKind: 'warn' },
 					{ id: 'self', title: __( 'Self-hosted', 'invoiceninja' ), desc: __( 'Installed on your own server', 'invoiceninja' ), note: __( 'Works on any plan', 'invoiceninja' ), noteKind: 'pass' },
 					{ id: 'none', title: __( "I don't have it yet", 'invoiceninja' ), desc: __( 'Self-host it for free, or start a hosted Pro account', 'invoiceninja' ) },
 				] } ),
 				where === 'self' ? h( 'div', { className: 'in-field' },
 					h( 'label', { htmlFor: 'in-url' }, __( 'Invoice Ninja address', 'invoiceninja' ) ),
-					h( 'input', { id: 'in-url', className: 'regular-text', type: 'text', inputMode: 'url', autoComplete: 'url', spellCheck: false, value: url, placeholder: 'billing.example.com', onChange: ( e ) => setUrl( e.target.value ) } ),
-					h( 'p', { className: 'description' }, __( "The address you use to log in to Invoice Ninja. Paste it as it is; we'll fix the format.", 'invoiceninja' ) ),
-					normalized ? h( 'p', null, __( "We'll connect to", 'invoiceninja' ), ' ', h( 'strong', null, normalized ) ) : null ) : null,
+					h( 'input', { id: 'in-url', className: 'regular-text', type: 'text', inputMode: 'url', autoComplete: 'url', spellCheck: false, value: url, placeholder: 'billing.example.com', 'aria-describedby': 'in-url-help', onChange: ( e ) => setUrl( e.target.value ) } ),
+					h( 'p', { className: 'description', id: 'in-url-help' }, __( 'Paste the address you log in at. Extra parts like /login are removed for you.', 'invoiceninja' ) ),
+					normalized ? h( 'p', { className: 'in-connect-to' }, __( "We'll connect to", 'invoiceninja' ), ' ', h( 'code', null, normalized ) ) : null ) : null,
 				where === 'none' ? h( Notice, { type: 'info', title: __( 'Get Invoice Ninja first', 'invoiceninja' ) },
 					h( 'p', null, __( 'Invoice Ninja is source-available invoicing, free to self-host. Self-hosted connects on any plan. Hosted accounts need a Pro or Enterprise plan to connect.', 'invoiceninja' ) ),
 					h( 'p', { className: 'in-row' },
@@ -602,14 +668,16 @@
 			h( 'div', { className: 'in-wizard' },
 				h( Stepper, { steps, index: done ? steps.length : step, onJump: go } ),
 				h( 'section', { className: 'in-card in-wizard__card', 'aria-labelledby': 'in-step-title' },
-					h( 'h2', { id: 'in-step-title', tabIndex: -1, ref: head }, title ),
-					sub ? h( 'p', { className: 'in-muted' }, sub ) : null,
-					error ? h( Notice, { type: 'error' }, h( 'p', null, error ) ) : null,
-					body ),
-				showNav ? h( 'p', { className: 'in-row' },
-					step > 0 ? h( Button, { onClick: () => go( step - 1 ) }, __( 'Back', 'invoiceninja' ) ) : null,
-					h( Button, { primary: true, busy, disabled: ! canContinue, onClick: onContinue, 'aria-describedby': 'in-continue-hint' }, continueLabel ),
-					h( 'span', { id: 'in-continue-hint', className: 'in-muted' }, hint ) ) : null ) );
+					h( 'div', { className: 'in-wizard__body' },
+						h( 'h2', { id: 'in-step-title', tabIndex: -1, ref: head }, title ),
+						sub ? h( 'p', { className: 'in-muted' }, sub ) : null,
+						error ? h( Notice, { type: 'error' }, h( 'p', null, error ) ) : null,
+						body ),
+					showNav ? h( 'div', { className: 'in-wizard__foot' },
+						step > 0 ? h( Button, { onClick: () => go( step - 1 ) }, __( 'Back', 'invoiceninja' ) ) : null,
+						h( Button, { primary: true, busy, disabled: ! canContinue, onClick: onContinue, 'aria-describedby': 'in-continue-hint' }, continueLabel ),
+						h( 'span', { id: 'in-continue-hint', className: 'in-muted' }, hint ),
+						h( 'span', { className: 'in-muted in-push in-wizard__count' }, stepOf( steps, step ) ) ) : null ) ) );
 	}
 
 	// ---------- Settings ----------
@@ -623,7 +691,8 @@
 			.concat( extra.map( ( x ) => [ x.id, x.label ] ) )
 			.concat( [ [ 'advanced', __( 'Advanced', 'invoiceninja' ) ] ] );
 		const ext = extra.find( ( x ) => x.id === tab );
-		return h( Fragment, null,
+		// Capped so settings sentences stay readable on wide screens (the Connection tab has a side column).
+		return h( 'div', { className: tab === 'connection' ? 'in-settings in-settings--wide' : 'in-settings' },
 			h( 'h1', null, __( 'Settings', 'invoiceninja' ) ),
 			h( Tabs, { tabs, tab, setTab } ),
 			tab === 'connection' ? h( ConnectionSettings ) : ext ? h( ext.render, { key: tab } ) : h( AdvancedSettings, { key: tab, section: tab } ) );
@@ -722,32 +791,78 @@
 			h( 'aside', { className: 'in-aside' }, h( ConnectionCard, { connection: conn } ) ) );
 	}
 
-	function StorePages() {
-		const [ pages, setPages ] = useState( null );
+	// A page as Admin::pageInfo() describes it, or from POST /pages.
+	const pathOf = ( url ) => {
+		try {
+			return decodeURI( new URL( url ).pathname );
+		} catch ( e ) {
+			return '';
+		}
+	};
+
+	/**
+	 * Store pages (or the Account page) as a table: name and address, what it's for, Edit and
+	 * View. "Missing" and the Create button only appear when a page is missing.
+	 *
+	 * @param {Object} props
+	 * @param {Array}  props.rows    [ key, label, purpose ] per page.
+	 * @param {string} props.caption Accessible table name.
+	 */
+	function PagesTable( { rows, caption } ) {
+		const [ pages, setPages ] = useState( Object.assign( {}, boot.pages || {} ) );
 		const [ busy, setBusy ] = useState( false );
 		const [ message, setMessage ] = useState( '' );
+		const missing = rows.filter( ( [ k ] ) => ! pages[ k ] ).map( ( [ k ] ) => k );
 		const create = async () => {
 			setBusy( true );
 			setMessage( '' );
 			try {
-				const r = await api( '/pages', { method: 'POST', data: { pages: [ 'shop', 'checkout', 'status' ] } } );
-				setPages( r.pages );
-				setMessage( __( 'Your store pages are ready.', 'invoiceninja' ) );
+				const r = await api( '/pages', { method: 'POST', data: { pages: missing } } );
+				const next = Object.assign( {}, pages );
+				Object.keys( r.pages || {} ).forEach( ( k ) => {
+					next[ k ] = Object.assign( { status: 'publish', path: pathOf( r.pages[ k ].url ) }, r.pages[ k ] );
+				} );
+				boot.pages = next;
+				setPages( next );
+				setMessage( missing.length > 1 ? __( 'The pages are ready.', 'invoiceninja' ) : __( 'The page is ready.', 'invoiceninja' ) );
 			} catch ( e ) {
 				setMessage( errorText( e ) );
 			}
 			setBusy( false );
 		};
-		const labels = { shop: __( 'Shop', 'invoiceninja' ), checkout: __( 'Checkout', 'invoiceninja' ), status: __( 'Order Status', 'invoiceninja' ) };
-		const saved = ( boot.settings && boot.settings.pages ) || {};
+		return h( Fragment, null,
+			h( 'table', { className: 'widefat striped in-pages' },
+				h( 'caption', { className: 'screen-reader-text' }, caption ),
+				h( 'thead', null, h( 'tr', null,
+					h( 'th', { scope: 'col' }, __( 'Page', 'invoiceninja' ) ),
+					h( 'th', { scope: 'col' }, __( 'What it’s for', 'invoiceninja' ) ),
+					h( 'td', null, h( 'span', { className: 'screen-reader-text' }, __( 'Actions', 'invoiceninja' ) ) ) ) ),
+				h( 'tbody', null, rows.map( ( [ k, label, purpose ] ) => {
+					const p = pages[ k ];
+					return h( 'tr', { key: k },
+						h( 'th', { scope: 'row' },
+							h( 'strong', null, p && p.title ? p.title : label ), ' ',
+							! p ? h( Pill, { tone: 'warning' }, __( 'Missing', 'invoiceninja' ) ) : p.status !== 'publish' ? h( Pill, null, __( 'Not published', 'invoiceninja' ) ) : null,
+							p && p.path ? h( 'code', { className: 'in-pages__path' }, p.path ) : null ),
+						h( 'td', null, purpose ),
+						h( 'td', { className: 'in-pages__actions' }, p ? h( 'span', { className: 'in-links' },
+							p.edit ? h( 'a', { href: p.edit, 'aria-label': sprintf( /* translators: %s: page name */ __( 'Edit %s', 'invoiceninja' ), label ) }, __( 'Edit', 'invoiceninja' ) ) : null,
+							p.url && p.status === 'publish' ? h( 'a', { href: p.url, 'aria-label': sprintf( /* translators: %s: page name */ __( 'View %s', 'invoiceninja' ), label ) }, __( 'View', 'invoiceninja' ) ) : null ) : null ) );
+				} ) ) ),
+			h( 'div', { className: 'in-row in-pages__foot' },
+				missing.length ? h( Button, { busy, onClick: create }, missing.length > 1 ? __( 'Create missing pages', 'invoiceninja' ) : __( 'Create the page', 'invoiceninja' ) ) : null,
+				h( 'span', { role: 'status' }, message ) ) );
+	}
+
+	function StorePages() {
 		return h( Fragment, null,
 			h( 'h2', null, __( 'Store pages', 'invoiceninja' ) ),
-			h( 'p', { className: 'in-muted' }, __( 'Shop lists your products, Checkout holds the cart and payment steps, and Order Status opens from the link in order emails. You can edit them like any page.', 'invoiceninja' ) ),
-			pages ? h( 'ul', null, Object.keys( pages ).map( ( k ) => h( 'li', { key: k }, h( 'strong', null, labels[ k ] || k ), ' ', h( 'a', { href: pages[ k ].url }, __( 'View', 'invoiceninja' ) ), ' · ', h( 'a', { href: pages[ k ].edit }, __( 'Edit', 'invoiceninja' ) ) ) ) )
-				: h( 'p', null, Object.keys( labels ).map( ( k ) => saved[ k ] ? null : labels[ k ] ).filter( Boolean ).length
-					? sprintf( /* translators: %s: page names */ __( 'Not created yet: %s.', 'invoiceninja' ), Object.keys( labels ).filter( ( k ) => ! saved[ k ] ).map( ( k ) => labels[ k ] ).join( ', ' ) )
-					: __( 'All store pages exist.', 'invoiceninja' ) ),
-			h( 'p', { className: 'in-row' }, h( Button, { busy, onClick: create }, __( 'Create missing pages', 'invoiceninja' ) ), h( 'span', { role: 'status' }, message ) ) );
+			h( 'p', { className: 'in-muted' }, __( 'Edit these like any other page.', 'invoiceninja' ) ),
+			h( PagesTable, { caption: __( 'Store pages', 'invoiceninja' ), rows: [
+				[ 'shop', __( 'Shop', 'invoiceninja' ), __( 'Lists your products.', 'invoiceninja' ) ],
+				[ 'checkout', __( 'Checkout', 'invoiceninja' ), __( 'Cart and payment steps.', 'invoiceninja' ) ],
+				[ 'status', __( 'Order Status', 'invoiceninja' ), __( 'Opens from the link in order emails.', 'invoiceninja' ) ],
+			] } ) );
 	}
 
 	function AdvancedSettings( { section } ) {
@@ -797,21 +912,30 @@
 				h( 'span', null, h( 'strong', null, l ), help ? h( 'span', { className: 'in-muted' }, help ) : null ) ) ) );
 		const saveRow = h( 'p', { className: 'in-row' }, h( Button, { primary: true, busy, onClick: save }, __( 'Save changes', 'invoiceninja' ) ), h( 'span', { role: 'status' }, message ) );
 		if ( section === 'store' ) {
+			const legacy = s.store.display === 'legacy';
 			return h( Fragment, null,
 				h( 'h2', null, __( 'Selling', 'invoiceninja' ) ),
 				h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
+					// Display first: it decides what the rest of the page means.
+					row( __( 'Display', 'invoiceninja' ), null, radios( 'store', 'display', __( 'Display', 'invoiceninja' ), [
+						[ 'blocks', __( 'Blocks', 'invoiceninja' ), __( 'The new store: blocks that use your theme’s styles, with Mini Cart, Checkout and Order Status.', 'invoiceninja' ) ],
+						[ 'legacy', __( 'Legacy 1.x', 'invoiceninja' ), __( 'Keeps the products page and cart exactly as they were in 1.x. Buyers log in to check out.', 'invoiceninja' ) ],
+					] ) ),
 					row( __( 'Online ordering', 'invoiceninja' ), null, radios( 'store', 'mode', __( 'Online ordering', 'invoiceninja' ), [
 						[ 'cart', __( 'Cart', 'invoiceninja' ), __( 'Shoppers add several products, then check out.', 'invoiceninja' ) ],
 						[ 'buy_now', __( 'Buy Now', 'invoiceninja' ), __( 'One product per order, straight to checkout.', 'invoiceninja' ) ],
 						[ 'off', __( 'Off', 'invoiceninja' ), __( 'Show products and prices only.', 'invoiceninja' ) ],
 					] ) ),
-					row( __( 'Who can order', 'invoiceninja' ), null, check( 'store', 'require_login', __( 'Require customers to log in', 'invoiceninja' ), __( 'Off: guests confirm their email with a 6-digit code instead.', 'invoiceninja' ) ) ),
-					row( __( 'Display', 'invoiceninja' ), null, radios( 'store', 'display', __( 'Display', 'invoiceninja' ), [
-						[ 'blocks', __( 'Blocks', 'invoiceninja' ), __( 'The new store: blocks that use your theme’s styles, the cart and checkout with an email code.', 'invoiceninja' ) ],
-						[ 'legacy', __( 'Legacy 1.x', 'invoiceninja' ), __( 'Keeps the products page and cart exactly as they were in 1.x.', 'invoiceninja' ) ],
-					] ) ),
-					row( __( 'Products', 'invoiceninja' ), null, h( 'a', { href: 'edit.php?post_type=invoiceninja_product' }, __( 'Choose which products this site shows', 'invoiceninja' ) ),
-						__( 'Every Invoice Ninja product syncs here. In Products, use Hide from site (under a product, or as a bulk action) for the ones you don’t sell on this site: they stay in Invoice Ninja and keep syncing, but shoppers never see them.', 'invoiceninja' ) ) ) ),
+					row( __( 'Who can order', 'invoiceninja' ), null, h( 'label', { className: 'in-check' + ( legacy ? ' is-disabled' : '' ) },
+						// The legacy display always asks buyers to log in, so the box shows that and can't be changed there.
+						h( 'input', { type: 'checkbox', checked: legacy || !! s.store.require_login, disabled: legacy, 'aria-describedby': 'in-login-help', onChange: ( e ) => set( 'store', 'require_login', e.target.checked ) } ),
+						h( 'span', null, h( 'strong', null, __( 'Require customers to log in', 'invoiceninja' ) ),
+							h( 'span', { className: 'in-muted', id: 'in-login-help' }, legacy ? __( 'The legacy display always asks buyers to log in.', 'invoiceninja' ) : __( 'Off: guests confirm their email with a 6-digit code instead.', 'invoiceninja' ) ) ) ) ),
+					row( __( 'Delivery address', 'invoiceninja' ), null, check( 'store', 'delivery_address', __( 'Ask for a delivery address', 'invoiceninja' ), __( 'Checkout asks where to send the order and saves it as the client’s shipping address in Invoice Ninja. Nothing is charged for shipping.', 'invoiceninja' ) ) ),
+					row( __( 'Products', 'invoiceninja' ), null, h( 'p', { className: 'in-flush' }, interpolate(
+						/* translators: keep <a> and </a>: they link to the Products screen. */
+						__( 'All Invoice Ninja products sync here. To keep one off this site, use Hide from site in <a>Products</a>. It stays in Invoice Ninja.', 'invoiceninja' ),
+						{ a: h( 'a', { href: 'edit.php?post_type=invoiceninja_product' } ) } ) ) ) ) ),
 				h( StorePages ),
 				h( 'h2', null, __( 'Unpaid orders', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
@@ -1163,66 +1287,106 @@
 
 	function Welcome() {
 		const w = boot.welcome || {};
+		const modules = ( boot.settings && boot.settings.modules ) || {};
 		const [ display, setDisplay ] = useState( w.display || 'legacy' );
 		const [ busy, setBusy ] = useState( '' );
-		const [ message, setMessage ] = useState( '' );
+		const [ done, setDone ] = useState( null );
+		const [ error, setError ] = useState( '' );
 		const [ confirming, setConfirming ] = useState( false );
+		const cancelRef = useRef( null );
+		const triggerRef = useRef( null );
+		const target = display === 'blocks' ? 'legacy' : 'blocks';
+		useEffect( () => {
+			if ( confirming && cancelRef.current ) {
+				cancelRef.current.focus();
+			}
+		}, [ confirming ] );
+		const closeConfirm = () => {
+			setConfirming( false );
+			if ( triggerRef.current ) {
+				triggerRef.current.focus();
+			}
+		};
+		// The display only changes here, after the confirmation: never on a click elsewhere.
 		const act = async ( action ) => {
 			setBusy( action );
-			setMessage( '' );
+			setError( '' );
 			try {
 				const r = await api( '/store/display', { method: 'POST', data: { action } } );
-				if ( action === 'preview' && r.url ) {
-					window.open( r.url, '_blank', 'noopener' );
-				} else if ( action === 'blocks' ) {
-					setDisplay( 'blocks' );
-					setMessage( __( 'Your shop now uses the blocks. The Shop, Checkout and Order Status pages are ready.', 'invoiceninja' ) );
-				} else if ( action === 'legacy' ) {
-					setDisplay( 'legacy' );
-					setMessage( __( 'Your shop is back on the 1.x display.', 'invoiceninja' ) );
+				if ( action === 'preview' ) {
+					if ( r.url ) {
+						window.open( r.url, '_blank', 'noopener' );
+					}
+				} else {
+					setDisplay( action );
+					setDone( action );
+					setConfirming( false );
 				}
 			} catch ( e ) {
-				setMessage( errorText( e ) );
+				setError( errorText( e ) );
 			}
-			setConfirming( false );
 			setBusy( '' );
 		};
-		const card = ( title, body, extra ) => h( 'section', { className: 'in-card' }, h( 'h3', null, title ), h( 'p', null, body ), extra || null );
+		const doneText = {
+			blocks: __( 'Your shop now uses the blocks. The Shop, Checkout and Order Status pages are ready.', 'invoiceninja' ),
+			legacy: __( 'Your shop is back on the 1.x display.', 'invoiceninja' ),
+			kept: __( 'Your shop stays on the 1.x display. You can switch any time in Settings → Store.', 'invoiceninja' ),
+		};
+		const tabUrl = ( tab ) => boot.urls.settings + '&tab=' + tab;
 		const features = [
-			[ __( 'Guest checkout', 'invoiceninja' ), __( 'Buyers check out without an account, confirming their email with a code.', 'invoiceninja' ) ],
-			[ __( 'Customer account', 'invoiceninja' ), __( 'Invoices, quotes, payments and subscriptions on your own site.', 'invoiceninja' ) ],
-			[ __( 'Quote requests', 'invoiceninja' ), __( 'A form that creates draft quotes in Invoice Ninja.', 'invoiceninja' ) ],
-			[ __( 'Subscriptions', 'invoiceninja' ), __( 'Pricing tables and subscribe buttons for your Invoice Ninja subscriptions.', 'invoiceninja' ) ],
-			[ __( 'WooCommerce invoicing', 'invoiceninja' ), __( 'Every WooCommerce order becomes an invoice and payment in Invoice Ninja.', 'invoiceninja' ) ],
-		];
-		return h( Fragment, null,
+			[ 'guest', __( 'Guest checkout', 'invoiceninja' ), __( 'Buyers check out without an account, confirming their email with a code.', 'invoiceninja' ), tabUrl( 'store' ), __( 'Store settings', 'invoiceninja' ) ],
+			[ 'account', __( 'Customer account', 'invoiceninja' ), __( 'Invoices, quotes, payments and subscriptions on your own site.', 'invoiceninja' ), 'customers' ],
+			[ 'quote_form', __( 'Quote requests', 'invoiceninja' ), __( 'A form that creates draft quotes in Invoice Ninja.', 'invoiceninja' ), 'forms' ],
+			[ 'subs', __( 'Subscriptions', 'invoiceninja' ), __( 'Pricing tables and subscribe buttons for your Invoice Ninja subscriptions.', 'invoiceninja' ), 'subscriptions' ],
+		].concat( boot.wooActive ? [ [ 'woo', __( 'WooCommerce invoicing', 'invoiceninja' ), __( 'Every WooCommerce order becomes an invoice and payment in Invoice Ninja.', 'invoiceninja' ), 'woocommerce' ] ] : [] )
+			// A feature that's off links to Home, where it's turned on; its settings tab only exists when it's on.
+			.map( ( [ key, title, body, tab, label ] ) => [ key, title, body ].concat( label ? [ tab, label ] : modules[ key ] ? [ tabUrl( tab ), __( 'Settings', 'invoiceninja' ) ] : [ boot.urls.home, __( 'Turn on', 'invoiceninja' ) ] ) );
+		return h( 'div', { className: 'in-welcome' },
 			h( 'h1', null, __( 'Welcome to Invoice Ninja 2.0', 'invoiceninja' ) ),
-			h( 'p', { className: 'in-lead' }, __( 'A rebuilt plugin with guest checkout, a customer account, quotes, subscriptions and WooCommerce invoicing. Your shop looks exactly the same until you choose otherwise. Nothing from 1.x is deleted.', 'invoiceninja' ) ),
-			message ? h( Notice, { type: 'info' }, h( 'p', { role: 'status' }, message ) ) : null,
-			h( 'h2', null, __( 'What’s different', 'invoiceninja' ) ),
-			h( 'div', { className: 'in-tools' },
-				card( __( 'Your shop looks the same', 'invoiceninja' ), __( 'Product pages, the cart and your templates use the 1.x display. Product links don’t change, and buyers still log in to check out, as in 1.x.', 'invoiceninja' ) ),
-				card( __( 'Buyers confirm their email once', 'invoiceninja' ), __( 'With the new blocks, guests enter a 6-digit code from their email at checkout. It keeps invoices going only to people who own the address.', 'invoiceninja' ) ),
-				card( __( 'Carts in progress were emptied', 'invoiceninja' ), __( 'Buyers who had items in their cart during the update just add them again.', 'invoiceninja' ) ) ),
-			h( 'h2', null, __( 'Try the new blocks', 'invoiceninja' ) ),
-			h( Card, null,
-				h( 'p', null, __( 'The new display is built from blocks you arrange in the editor. It follows your theme’s styles and adds the Mini Cart, Checkout and Order Status blocks.', 'invoiceninja' ) ),
-				h( 'p', null, h( 'strong', null, __( 'Current display:', 'invoiceninja' ) ), ' ', display === 'blocks' ? h( Pill, { tone: 'success' }, __( 'Blocks', 'invoiceninja' ) ) : h( Pill, null, __( 'Legacy 1.x', 'invoiceninja' ) ) ),
-				w.customisations && w.customisations.length ? h( Notice, { type: 'warning', title: __( 'Your 1.x customisations won’t carry over to blocks', 'invoiceninja' ) },
-					h( 'p', null, sprintf( /* translators: %s: list of customisations */ __( 'We found %s. They keep working in the 1.x display.', 'invoiceninja' ), w.customisations.join( ', ' ) ) ) ) : null,
-				h( 'p', { className: 'in-row' },
-					h( Button, { busy: busy === 'preview', onClick: () => act( 'preview' ) }, __( 'Preview with blocks', 'invoiceninja' ), ' ', h( 'span', { 'aria-hidden': 'true' }, '↗' ), h( 'span', { className: 'screen-reader-text' }, __( '(opens a draft copy of your Shop page in a new tab)', 'invoiceninja' ) ) ),
-					display === 'blocks'
-						? h( Button, { busy: busy === 'legacy', onClick: () => act( 'legacy' ) }, __( 'Switch back to 1.x display', 'invoiceninja' ) )
-						: confirming
-							? h( Fragment, null,
-								h( 'span', null, __( 'Switch your shop to the blocks? Your Shop page keeps a revision, and you can switch back in Settings → Store.', 'invoiceninja' ) ),
-								h( Button, { onClick: () => setConfirming( false ) }, __( 'Not now', 'invoiceninja' ) ),
-								h( Button, { primary: true, busy: busy === 'blocks', onClick: () => act( 'blocks' ) }, __( 'Switch to blocks', 'invoiceninja' ) ) )
-							: h( Button, { primary: true, onClick: () => setConfirming( true ) }, __( 'Switch to blocks…', 'invoiceninja' ) ) ) ),
-			h( 'h2', null, __( 'New in 2.0', 'invoiceninja' ) ),
-			h( 'div', { className: 'in-tools' }, features.map( ( [ title, body ] ) => h( 'section', { key: title, className: 'in-card' }, h( 'h3', null, title ), h( 'p', null, body ) ) ) ),
-			h( 'p', { className: 'in-row' }, h( 'a', { className: 'button button-primary', href: boot.urls.home }, __( 'Go to Home', 'invoiceninja' ) ), h( 'a', { href: boot.urls.settings + '&tab=store' }, __( 'Store settings', 'invoiceninja' ) ) ) );
+			h( 'p', { className: 'in-lead' }, __( 'Your shop looks and works exactly as before until you switch to the new display. Nothing from 1.x was deleted.', 'invoiceninja' ) ),
+			h( 'div', { className: 'notice notice-warning inline' }, h( 'p', null, __( 'Carts that were open during the update were emptied. Those buyers need to add their items again.', 'invoiceninja' ) ) ),
+			h( 'div', { role: 'status' },
+				done ? h( 'div', { className: 'notice notice-success inline' }, h( 'p', null, doneText[ done ] ) ) : null,
+				error ? h( 'div', { className: 'notice notice-error inline' }, h( 'p', null, error ) ) : null ),
+			h( 'div', { className: 'in-welcome__grid' },
+				h( Card, { title: __( 'Your store display', 'invoiceninja' ), className: 'in-display', headerExtra: display === 'blocks' ? h( Pill, { tone: 'success' }, __( 'Blocks', 'invoiceninja' ) ) : h( Pill, null, __( 'Legacy 1.x', 'invoiceninja' ) ) },
+					h( 'dl', { className: 'in-display__options' },
+						h( 'dt', null, __( 'Legacy 1.x', 'invoiceninja' ), display === 'legacy' ? h( 'span', { className: 'in-muted' }, ' ' + __( '(current)', 'invoiceninja' ) ) : null ),
+						h( 'dd', null, __( 'Products page and cart exactly as in 1.x. Buyers log in to check out.', 'invoiceninja' ) ),
+						h( 'dt', null, __( 'Blocks', 'invoiceninja' ), display === 'blocks' ? h( 'span', { className: 'in-muted' }, ' ' + __( '(current)', 'invoiceninja' ) ) : null ),
+						h( 'dd', null, __( 'Follows your theme and adds the Mini Cart, Checkout and Order Status blocks. Guests check out by confirming their email with a 6-digit code.', 'invoiceninja' ) ) ),
+					display === 'legacy' && w.customisations && w.customisations.length ? h( 'div', { className: 'notice notice-warning inline' },
+						h( 'p', null, h( 'strong', null, __( 'Your 1.x customisations won’t carry over to blocks.', 'invoiceninja' ) ), ' ',
+							sprintf( /* translators: %s: list of customisations */ __( 'We found %s. They keep working in the 1.x display.', 'invoiceninja' ), w.customisations.join( ', ' ) ) ) ) : null,
+					confirming ? h( 'div', { className: 'in-confirm in-display__confirm', role: 'group', 'aria-labelledby': 'in-display-q', onKeyDown: ( e ) => {
+						if ( e.key === 'Escape' ) {
+							e.stopPropagation();
+							closeConfirm();
+						}
+					} },
+						h( 'p', { id: 'in-display-q' }, target === 'blocks'
+							? __( 'Switch your shop to the blocks? Your Shop page keeps a revision, and you can switch back in Settings → Store.', 'invoiceninja' )
+							: __( 'Switch your shop back to the 1.x display? Your Shop page gets its 1.x content back.', 'invoiceninja' ) ),
+						h( 'p', { className: 'in-row' },
+							h( 'button', { type: 'button', className: 'button', ref: cancelRef, onClick: closeConfirm }, __( 'Cancel', 'invoiceninja' ) ),
+							h( Button, { primary: true, busy: busy === target, onClick: () => act( target ) }, target === 'blocks' ? __( 'Switch to blocks', 'invoiceninja' ) : __( 'Switch back to 1.x', 'invoiceninja' ) ) ) )
+						: h( 'p', { className: 'in-row' },
+							h( Button, { onClick: ( e ) => {
+								triggerRef.current = e.currentTarget;
+								setDone( null );
+								setConfirming( true );
+							} }, target === 'blocks' ? __( 'Switch to blocks…', 'invoiceninja' ) : __( 'Switch back to 1.x…', 'invoiceninja' ) ),
+							display === 'legacy' ? h( Button, { link: true, onClick: () => setDone( 'kept' ) }, __( 'Keep legacy 1.x', 'invoiceninja' ) ) : null ),
+					h( 'p', { className: 'in-display__preview' },
+						h( Button, { link: true, busy: busy === 'preview', onClick: () => act( 'preview' ) }, __( 'Preview your shop with blocks', 'invoiceninja' ), ' ', h( 'span', { 'aria-hidden': 'true' }, '↗' ),
+							h( 'span', { className: 'screen-reader-text' }, __( '(opens a draft copy of your Shop page in a new tab)', 'invoiceninja' ) ) ) ) ),
+				h( Card, { title: __( 'New in 2.0', 'invoiceninja' ), className: 'in-new' },
+					h( 'ul', { className: 'in-list' }, features.map( ( [ key, title, body, href, label ] ) => h( 'li', { key, className: 'in-list__item' },
+						h( 'div', { className: 'in-grow' }, h( 'strong', null, title ), h( 'div', { className: 'in-muted' }, body ) ),
+						h( 'a', { href, className: 'in-new__link' }, label, h( 'span', { className: 'screen-reader-text' }, ': ' + title ) ) ) ) ) ) ),
+			h( 'p', { className: 'in-row in-welcome__next' },
+				h( 'a', { className: 'button button-primary', href: boot.urls.home }, __( 'Go to Home', 'invoiceninja' ) ),
+				h( 'a', { href: tabUrl( 'store' ) }, __( 'Store settings', 'invoiceninja' ) ) ) );
 	}
 
 	// ---------- Orders ----------
@@ -1438,6 +1602,7 @@
 								h( 'td', null,
 									h( 'div', null, o.name || o.email ),
 									o.name ? h( 'div', { className: 'in-muted' }, o.email ) : null,
+									o.address ? h( 'div', { className: 'in-muted' }, o.address ) : null,
 									h( 'div', { className: 'in-muted' }, o.items.map( ( i ) => i.quantity + ' × ' + i.title ).join( ', ' ) ),
 									o.note ? h( 'div', { className: o.status === 'attention' ? 'in-note in-note--error' : 'in-note' }, o.note ) : null ),
 								h( 'td', null, h( Pill, { tone }, label ) ),
@@ -1478,7 +1643,7 @@
 	};
 	window.invoiceNinjaAdminUI = {
 		h, Fragment, useState, useEffect, useRef, __, _n, sprintf, api, errorText, saveSettings,
-		Button, Notice, Card, Pill, External, StatusIcon, boot,
+		Button, Notice, Card, Pill, External, StatusIcon, boot, interpolate, PagesTable, CopyField,
 		addTab( tab ) {
 			extensionTabs.push( tab );
 		},

@@ -13,20 +13,27 @@
 	box-sizing: border-box;
 }
 
+/* The billing-period toggle sits centred over the cards, so it lines up with them however
+   wide the block is (the page title above belongs to the theme). */
 .invoiceninja-pricing__toggle {
-	display: inline-flex;
+	display: flex;
+	justify-content: center;
+	inline-size: fit-content;
+	max-inline-size: 100%;
 	gap: 0.25rem;
 	padding: 0.25rem;
-	margin-block-end: var(--invoiceninja-gap);
+	margin: 0 auto var(--invoiceninja-gap);
 	border: 1px solid var(--invoiceninja-border);
-	border-radius: 999px;
+	border-radius: calc(var(--invoiceninja-radius) + 0.25rem);
+	box-sizing: border-box;
 }
 .invoiceninja-pricing__toggle[hidden] { display: none; }
 .invoiceninja-pricing__period {
+	flex: 0 1 auto;
 	min-block-size: 2.75rem;
-	padding: 0.4rem 1.1rem;
+	padding: 0.4rem 1rem;
 	border: 0;
-	border-radius: 999px;
+	border-radius: var(--invoiceninja-radius);
 	background: transparent;
 	color: inherit;
 	font: inherit;
@@ -61,18 +68,42 @@
 	border-radius: var(--invoiceninja-radius);
 }
 .invoiceninja-plan.is-featured { border-width: 2px; border-color: currentColor; }
-.invoiceninja-plan__body { display: flex; flex-direction: column; gap: 0.5rem; flex: 1; }
+.invoiceninja-plan__body { display: flex; flex-direction: column; gap: 0.75rem; flex: 1; }
 .invoiceninja-plan__body[hidden] { display: none; }
-.invoiceninja-plan__badge { margin: 0; font-size: 0.85em; font-weight: 600; text-transform: uppercase; letter-spacing: 0.04em; }
+.invoiceninja-plan__head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem; }
+.invoiceninja-plan__badge {
+	margin: 0;
+	padding: 0.15rem 0.6rem;
+	border: 1px solid currentColor;
+	border-radius: calc(var(--invoiceninja-radius) / 2);
+	font-size: 0.85em;
+	font-weight: 600;
+}
 .invoiceninja-plan__name { margin: 0; font-size: 1.25em; }
+.invoiceninja-plan__description { margin: 0; color: var(--invoiceninja-muted); }
+.invoiceninja-plan__pricing { display: flex; flex-direction: column; gap: 0.25rem; }
 .invoiceninja-plan__price { margin: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.5rem; align-items: baseline; }
 .invoiceninja-plan__price .invoiceninja-price { font-size: 1.75em; font-weight: 700; }
 .invoiceninja-plan__per,
 .invoiceninja-plan__trial { color: var(--invoiceninja-muted); }
-.invoiceninja-plan__trial { margin: 0; }
+.invoiceninja-plan__trial,
+.invoiceninja-plan__saving { margin: 0; }
+.invoiceninja-plan__saving { font-weight: 600; }
+.invoiceninja-plan__perks { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+ul.invoiceninja-plan__perks { padding-block-start: 0.75rem; border-block-start: 1px solid var(--invoiceninja-border); }
+.invoiceninja-plan__perks li { display: flex; gap: 0.5rem; align-items: baseline; }
+.invoiceninja-plan__check { flex: none; align-self: center; }
 .invoiceninja-plan__action { margin: auto 0 0; padding-block-start: 0.75rem; }
 .invoiceninja-plan__action .wp-element-button { display: block; text-align: center; }
 
+/* Where the browser can, each card's parts share rows with the other cards', so prices, perks
+   and buttons line up even when one plan has no description or perks. */
+@supports (grid-template-rows: subgrid) {
+	.invoiceninja-plan { display: grid; grid-row: span 5; grid-template-rows: subgrid; row-gap: 0; }
+	.invoiceninja-plan__body { display: contents; }
+	.invoiceninja-plan__body > * + * { margin-block-start: 0.75rem; }
+	.invoiceninja-plan__body > :empty { margin-block-start: 0; }
+}
 .invoiceninja-subscribe-block { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
 
 .invoiceninja-subreturn { max-inline-size: 40rem; margin: 3rem auto; text-align: center; }

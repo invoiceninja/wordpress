@@ -165,80 +165,220 @@
 			return box;
 		};
 
-		const table = ( tab, rows ) => {
-			if ( ! rows.length ) {
-				return el( 'p', { text: t.nothingTab } );
+		const sr = ( text ) => el( 'span', { class: 'invoiceninja-sr', text } );
+
+		// One request per tab, shared by the tab and the Balance due panel (which reads Invoices).
+		const fetched = {};
+		const fetchTab = ( tab ) => {
+			if ( ! fetched[ tab ] ) {
+				fetched[ tab ] = api( 'GET', '/account/' + tab ).then( ( r ) => {
+					if ( ! r.rows ) {
+						delete fetched[ tab ]; // Failed: the next look asks again.
+					}
+					return r;
+				} );
 			}
+			return fetched[ tab ];
+		};
+
+		const docLabel = { invoices: t.docInvoice, quotes: t.docQuote, credits: t.docCredit, payments: t.docPayment };
+		const named = ( tab, r ) => fmt( docLabel[ tab ] || '%s', r.number || r.name || '' );
+
+		const tag = ( r ) => r.status ? el( 'span', { class: 'invoiceninja-tag invoiceninja-tag--' + ( r.tone || 'open' ), text: r.status } ) : null;
+
+		const pdfLink = ( tab, r ) => r.links && r.links.pdf
+			? el( 'a', { class: 'invoiceninja-account__action', href: r.links.pdf, target: '_blank', rel: 'noopener' }, sr( named( tab, r ) + ' ' ), t.pdf, sr( ' ' + t.opensNewTab ) )
+			: null;
+
+		// Columns per tab. "area" places a cell in the phone card; "num" right-aligns money.
+		const columns = ( tab ) => {
+			const number = { area: 'number', head: t.colNumber, cell: ( r ) => [
+				r.links && r.links.view ? el( 'a', { class: 'invoiceninja-account__number', href: r.links.view, 'aria-label': named( tab, r ) + ' ' + t.opensBilling }, r.number ) : el( 'span', { class: 'invoiceninja-account__number', text: r.number } ),
+				r.order ? el( 'span', { class: 'invoiceninja-account__order' }, r.links && r.links.order ? el( 'a', { href: r.links.order, text: fmt( t.orderRef, r.order ) } ) : fmt( t.orderRef, r.order ) ) : null,
+			] };
+			const date = { area: 'date', head: t.colDate, label: true, cell: ( r ) => r.date || '' };
+			const due = ( head ) => ( { area: 'due', head, label: true, cell: ( r ) => r.due || '—' } );
+			const amount = { area: 'amount', head: t.colAmount, label: true, num: true, cell: ( r ) => r.amount || '' };
+			const balance = { area: 'balance', head: t.colBalance, label: true, num: true, cell: ( r ) => r.balance || '' };
+			const status = { area: 'status', head: t.colStatus, cell: tag };
+			const actions = ( fn ) => ( { area: 'actions', head: t.colActions, srHead: true, cell: fn } );
 			if ( tab === 'subscriptions' ) {
-				return el( 'table', { class: 'invoiceninja-table' },
-					el( 'thead', null, el( 'tr', null, [ t.colPlan, t.colStatus, t.colNext, t.colAmount, '' ].map( ( h ) => el( 'th', { scope: 'col', text: h } ) ) ) ),
-					el( 'tbody', null, rows.map( ( r ) => el( 'tr', null,
-						el( 'td', { text: r.name } ), el( 'td', { text: r.status } ), el( 'td', { text: r.next_date || '—' } ), el( 'td', { text: r.amount || '' } ),
-						el( 'td', { class: 'invoiceninja-table__actions' },
-							r.links && r.links.change ? el( 'a', { href: r.links.change, text: t.changePlan } ) : null, ' ',
-							r.links && r.links.payment_method ? el( 'a', { href: r.links.payment_method, text: t.paymentMethod } ) : null, ' ',
-							r.links && r.links.cancel ? el( 'a', { href: r.links.cancel, text: t.cancelPlan } ) : el( 'span', { class: 'invoiceninja-muted', text: t.cancelContact } ) ) ) ) ) );
+				return [
+					{ area: 'number', head: t.colPlan, cell: ( r ) => el( 'span', { class: 'invoiceninja-account__number', text: r.name } ) },
+					status,
+					{ area: 'due', head: t.colNext, label: true, cell: ( r ) => r.next_date || '—' },
+					amount,
+					actions( ( r ) => [
+						r.links && r.links.change ? el( 'a', { class: 'invoiceninja-account__action', href: r.links.change }, t.changePlan, sr( ' ' + r.name ) ) : null,
+						r.links && r.links.payment_method ? el( 'a', { class: 'invoiceninja-account__action', href: r.links.payment_method }, t.paymentMethod, sr( ' ' + r.name ) ) : null,
+						r.links && r.links.cancel ? el( 'a', { class: 'invoiceninja-account__action', href: r.links.cancel }, t.cancelPlan, sr( ' ' + r.name ) ) : el( 'span', { class: 'invoiceninja-muted', text: t.cancelContact } ),
+					] ),
+				];
 			}
-			const money = tab !== 'payments';
-			const head = [ t.colNumber, t.colDate ].concat( money ? [ t.colDue ] : [] ).concat( [ t.colAmount ] ).concat( money ? [ t.colBalance ] : [] ).concat( [ t.colStatus, '' ] );
-			return el( 'table', { class: 'invoiceninja-table' },
-				el( 'thead', null, el( 'tr', null, head.map( ( h ) => el( 'th', { scope: 'col', text: h } ) ) ) ),
-				el( 'tbody', null, rows.map( ( r ) => el( 'tr', null,
-					el( 'td', { text: r.number } ), el( 'td', { text: r.date } ), money ? el( 'td', { text: r.due || '—' } ) : null,
-					el( 'td', { text: r.amount } ), money ? el( 'td', { text: r.balance } ) : null, el( 'td', { text: r.status } ),
-					el( 'td', { class: 'invoiceninja-table__actions' },
-						r.links.pay ? el( 'a', { class: 'wp-element-button', href: r.links.pay }, t.pay, el( 'span', { class: 'invoiceninja-sr', text: ' ' + r.number + ' ' + t.opensBilling } ) ) : null, ' ',
-						r.links.view ? el( 'a', { href: r.links.view }, t.view, el( 'span', { class: 'invoiceninja-sr', text: ' ' + r.number } ) ) : null, ' ',
-						r.links.pdf ? el( 'a', { href: r.links.pdf, target: '_blank', rel: 'noopener' }, t.pdf, el( 'span', { class: 'invoiceninja-sr', text: ' ' + r.number + ' ' + t.opensNewTab } ) ) : null ) ) ) ) );
+			if ( tab === 'payments' ) {
+				return [ number, date, amount, status ];
+			}
+			if ( tab === 'quotes' ) {
+				return [ number, date, due( t.colValid ), amount, status, actions( ( r ) => [ pdfLink( tab, r ) ] ) ];
+			}
+			if ( tab === 'credits' ) {
+				return [ number, date, amount, balance, status, actions( ( r ) => [ pdfLink( tab, r ) ] ) ];
+			}
+			return [ number, date, due( t.colDue ), amount, balance, status, actions( ( r ) => [
+				pdfLink( tab, r ),
+				r.links.pay ? el( 'a', { class: 'wp-element-button invoiceninja-account__pay', href: r.links.pay }, t.pay, sr( ' ' + named( tab, r ) + ' ' + t.opensBilling ) ) : null,
+			] ) ];
+		};
+
+		const empty = ( tab, r ) => {
+			const words = {
+				invoices: [ t.emptyInvoices, t.hintInvoices ],
+				quotes: [ t.emptyQuotes, t.hintQuotes ],
+				payments: [ t.emptyPayments, t.hintPayments ],
+				credits: [ t.emptyCredits, t.hintCredits ],
+				subscriptions: [ t.emptySubs, t.hintSubs ],
+			}[ tab ] || [ t.nothingTab, '' ];
+			return el( 'div', { class: 'invoiceninja-empty' },
+				el( 'p', { class: 'invoiceninja-empty__title', text: words[ 0 ] } ),
+				words[ 1 ] ? el( 'p', { class: 'invoiceninja-muted', text: words[ 1 ] } ) : null,
+				tab === 'quotes' && r.requestUrl ? el( 'p', null, el( 'a', { href: r.requestUrl, text: t.requestQuote } ) ) : null );
+		};
+
+		// A real table on wide screens; each row a stacked card on narrow ones (CSS). The
+		// explicit roles keep the table meaning when the cards change its display.
+		const table = ( tab, r ) => {
+			const rows = r.rows || [];
+			if ( ! rows.length ) {
+				return empty( tab, r );
+			}
+			const cols = columns( tab );
+			return el( 'table', { class: 'invoiceninja-table invoiceninja-table--' + tab, role: 'table' },
+				el( 'thead', { role: 'rowgroup' }, el( 'tr', { role: 'row' }, cols.map( ( c ) => el( 'th', { scope: 'col', role: 'columnheader', class: 'invoiceninja-cell--' + c.area + ( c.num ? ' invoiceninja-num' : '' ) }, c.srHead ? sr( c.head ) : c.head ) ) ) ),
+				el( 'tbody', { role: 'rowgroup' }, rows.map( ( row ) => el( 'tr', { role: 'row' }, cols.map( ( c ) => el( 'td', {
+					role: 'cell',
+					class: 'invoiceninja-cell--' + c.area + ( c.num ? ' invoiceninja-num' : '' ),
+					'data-label': c.label ? c.head : null,
+				}, c.cell( row ) ) ) ) ) ) );
+		};
+
+		const header = ( me, linked ) => el( 'div', { class: 'invoiceninja-account__head' },
+			me.email ? el( 'p', { class: 'invoiceninja-account__who' },
+				fmt( t.signedInAs, me.email ),
+				me.logoutUrl ? [ ' ', el( 'a', { href: me.logoutUrl, text: t.signOut } ) ] : null ) : null,
+			linked ? el( 'a', { class: 'wp-element-button invoiceninja-account__portal', href: me.portalUrl, target: '_blank', rel: 'noopener' },
+				t.billingPortal, el( 'span', { 'aria-hidden': 'true', text: ' ↗' } ), sr( ' ' + t.opensNewTab ) ) : null );
+
+		// Balance due: what the unpaid invoices add up to, and the way to pay them.
+		const balancePanel = () => {
+			const box = el( 'section', { class: 'invoiceninja-balance', 'aria-labelledby': 'invoiceninja-balance-title', hidden: true } );
+			fetchTab( 'invoices' ).then( ( r ) => {
+				const b = r.balance;
+				if ( ! b || ( ! b.count && ! b.credit && ! ( r.rows || [] ).length ) ) {
+					return; // Nothing billed yet: no panel.
+				}
+				let action = null;
+				if ( b.count && b.pay ) {
+					const text = b.count > 1 ? t.payInPortal : ( b.payAmount ? fmt( t.payAmount, b.payAmount ) : fmt( t.payNumber, b.number ) );
+					action = el( 'p', { class: 'invoiceninja-balance__action' }, el( 'a', { class: 'wp-element-button', href: b.pay },
+						text, sr( ' ' + ( b.count > 1 ? '' : fmt( t.docInvoice, b.number ) + ' ' ) + t.opensBilling ) ) );
+				}
+				box.appendChild( el( 'div', { class: 'invoiceninja-balance__text' },
+					el( 'h2', { id: 'invoiceninja-balance-title', class: 'invoiceninja-balance__title', text: t.balanceDue } ),
+					el( 'p', { class: 'invoiceninja-balance__amount' + ( b.count ? '' : ' is-paid' ), text: b.count ? b.total : t.allPaid } ),
+					b.detail ? el( 'p', { class: 'invoiceninja-balance__detail' + ( b.overdue ? ' is-overdue' : '' ), text: b.detail } ) : null,
+					b.credit ? el( 'p', { class: 'invoiceninja-balance__detail', text: b.credit } ) : null ) );
+				if ( action ) {
+					box.appendChild( action );
+				}
+				box.hidden = false;
+			} );
+			return box;
+		};
+
+		// Tabs scroll sideways when they don't fit, with a fade on the side that has more.
+		const fade = ( scroller ) => {
+			const update = () => {
+				const max = scroller.scrollWidth - scroller.clientWidth;
+				const pos = Math.abs( scroller.scrollLeft );
+				const rtl = window.getComputedStyle( scroller ).direction === 'rtl';
+				const fromStart = pos > 1;
+				const toEnd = pos < max - 1;
+				scroller.classList.toggle( 'is-more-left', rtl ? toEnd : fromStart );
+				scroller.classList.toggle( 'is-more-right', rtl ? fromStart : toEnd );
+			};
+			scroller.addEventListener( 'scroll', update, { passive: true } );
+			if ( window.ResizeObserver ) {
+				new window.ResizeObserver( update ).observe( scroller );
+			} else {
+				window.addEventListener( 'resize', update );
+			}
+			window.requestAnimationFrame( update );
 		};
 
 		const tabs = ( me ) => {
 			const labels = { invoices: t.tabInvoices, quotes: t.tabQuotes, payments: t.tabPayments, credits: t.tabCredits, subscriptions: t.tabSubscriptions };
-			const list = el( 'div', { class: 'invoiceninja-tabs', role: 'tablist', 'aria-label': t.yourOrder } );
-			const panel = el( 'div', { class: 'invoiceninja-tabpanel', role: 'tabpanel', tabindex: '0' } );
-			const buttons = wanted.map( ( tab, i ) => el( 'button', { type: 'button', role: 'tab', id: 'invoiceninja-tab-' + tab, 'aria-controls': 'invoiceninja-tabpanel', 'aria-selected': i === 0 ? 'true' : 'false', tabindex: i === 0 ? '0' : '-1', class: 'invoiceninja-tab', onClick: () => open( tab ) }, labels[ tab ] || tab ) );
-			panel.id = 'invoiceninja-tabpanel';
+			const list = el( 'div', { class: 'invoiceninja-tabs', role: 'tablist', 'aria-label': t.accountTabs } );
+			const scroller = el( 'div', { class: 'invoiceninja-tabs-scroll' }, list );
+			const panel = el( 'div', { class: 'invoiceninja-tabpanel', role: 'tabpanel', tabindex: '0', id: 'invoiceninja-tabpanel' } );
+			const buttons = wanted.map( ( tab, i ) => el( 'button', { type: 'button', role: 'tab', id: 'invoiceninja-tab-' + tab, 'aria-controls': 'invoiceninja-tabpanel', 'aria-selected': i === 0 ? 'true' : 'false', tabindex: i === 0 ? '0' : '-1', class: 'invoiceninja-tab', 'data-tab': tab, onClick: () => open( tab, true ) }, labels[ tab ] || tab ) );
 			buttons.forEach( ( b ) => list.appendChild( b ) );
 			list.addEventListener( 'keydown', ( e ) => {
 				const index = buttons.indexOf( document.activeElement );
-				if ( index < 0 || ( e.key !== 'ArrowRight' && e.key !== 'ArrowLeft' ) ) {
+				if ( index < 0 ) {
 					return;
 				}
-				const next = buttons[ ( index + ( e.key === 'ArrowRight' ? 1 : buttons.length - 1 ) ) % buttons.length ];
-				next.focus();
-				next.click();
+				const rtl = window.getComputedStyle( list ).direction === 'rtl';
+				const step = { ArrowRight: rtl ? -1 : 1, ArrowLeft: rtl ? 1 : -1 }[ e.key ];
+				let next = null;
+				if ( step ) {
+					next = buttons[ ( index + step + buttons.length ) % buttons.length ];
+				} else if ( e.key === 'Home' ) {
+					next = buttons[ 0 ];
+				} else if ( e.key === 'End' ) {
+					next = buttons[ buttons.length - 1 ];
+				}
+				if ( next ) {
+					e.preventDefault();
+					next.focus();
+					open( next.getAttribute( 'data-tab' ), true );
+				}
 			} );
 			let latest = 0;
-			const open = async ( tab ) => {
+			const open = async ( tab, chosen ) => {
 				const mine = ++latest;
 				buttons.forEach( ( b ) => {
-					const on = b.id === 'invoiceninja-tab-' + tab;
+					const on = b.getAttribute( 'data-tab' ) === tab;
 					b.setAttribute( 'aria-selected', on ? 'true' : 'false' );
 					b.setAttribute( 'tabindex', on ? '0' : '-1' );
+					if ( on && chosen && b.scrollIntoView ) {
+						b.scrollIntoView( { block: 'nearest', inline: 'nearest' } );
+					}
 				} );
 				panel.setAttribute( 'aria-labelledby', 'invoiceninja-tab-' + tab );
 				panel.setAttribute( 'aria-busy', 'true' );
 				panel.textContent = '';
 				panel.appendChild( el( 'p', { class: 'invoiceninja-loading', text: '…' } ) );
-				const r = await api( 'GET', '/account/' + tab );
+				const r = await fetchTab( tab );
 				if ( mine !== latest ) {
 					return; // Another tab was chosen while this one loaded.
 				}
 				panel.textContent = '';
 				panel.removeAttribute( 'aria-busy' );
-				panel.appendChild( r.rows ? table( tab, r.rows ) : notice( 'error', r.message || t.portalDown ) );
+				panel.appendChild( r.rows ? table( tab, r ) : notice( 'error', r.message || t.portalDown ) );
 				if ( r.code === 'network' ) {
 					panel.appendChild( retry( () => open( tab ) ) );
 				}
 			};
+			const balanceOn = root.getAttribute( 'data-balance' ) !== '0';
 			if ( wanted.length ) {
 				open( wanted[ 0 ] );
 			}
+			fade( scroller );
 			return [
+				balanceOn ? balancePanel() : null,
 				me.portalPassword ? el( 'p', { class: 'invoiceninja-muted', text: t.portalPassword } ) : null,
-				el( 'p', null, el( 'a', { href: me.portalUrl, target: '_blank', rel: 'noopener' }, t.openPortal, ' ', el( 'span', { 'aria-hidden': 'true', text: '↗' } ), el( 'span', { class: 'invoiceninja-sr', text: ' ' + t.opensNewTab } ) ) ),
-				list,
-				panel,
+				wanted.length ? scroller : null,
+				wanted.length ? panel : null,
 			];
 		};
 
@@ -264,7 +404,7 @@
 				top.push( notice( 'warning', t.portalDown ) );
 			}
 			if ( ! me.verified ) {
-				paint( top.concat( [ verifyBox( me ) ] ) );
+				paint( [ header( me, false ) ].concat( top, [ verifyBox( me ) ] ) );
 				return;
 			}
 			if ( back && ! message ) {
@@ -273,10 +413,10 @@
 				return;
 			}
 			if ( ! me.linked ) {
-				paint( top.concat( [ el( 'p', { text: t.noHistory } ) ] ) );
+				paint( [ header( me, false ) ].concat( top, [ el( 'p', { text: t.noHistory } ) ] ) );
 				return;
 			}
-			paint( top.concat( tabs( me ) ) );
+			paint( [ header( me, true ) ].concat( top, tabs( me ) ) );
 		};
 		load();
 	}

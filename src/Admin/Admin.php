@@ -207,6 +207,7 @@ final class Admin {
 				'customers'      => (int) ( count_users()['total_users'] ?? 0 ),
 				'requireLogin'   => (bool) $this->plugin->options->setting( 'store.require_login' ),
 			) : null,
+			'pages'        => 'settings' === $screen ? $this->pages() : null,
 			'can'          => array(
 				'manageSite' => current_user_can( 'manage_options' ),
 				'manage'     => current_user_can( Capabilities::MANAGE ),
@@ -222,6 +223,33 @@ final class Admin {
 				'docs'      => 'https://invoiceninja.github.io/en/wordpress/',
 			),
 		);
+	}
+
+	/**
+	 * The store and Account pages for Settings: null for a page that doesn't exist (or is in the trash).
+	 *
+	 * @return array<string, array<string, mixed>|null>
+	 */
+	private function pages(): array {
+		$pages = array();
+		foreach ( array( 'shop', 'checkout', 'status', 'account' ) as $key ) {
+			$id     = (int) $this->plugin->options->setting( 'pages.' . $key );
+			$status = $id > 0 ? get_post_status( $id ) : false;
+			if ( false === $status || 'trash' === $status ) {
+				$pages[ $key ] = null;
+				continue;
+			}
+			$url           = (string) get_permalink( $id );
+			$pages[ $key ] = array(
+				'id'     => $id,
+				'title'  => html_entity_decode( wp_strip_all_tags( get_the_title( $id ) ), ENT_QUOTES | ENT_HTML5, 'UTF-8' ),
+				'status' => $status,
+				'url'    => $url,
+				'path'   => 'publish' === $status ? rawurldecode( (string) wp_parse_url( $url, PHP_URL_PATH ) ) : '',
+				'edit'   => (string) get_edit_post_link( $id, 'raw' ),
+			);
+		}
+		return $pages;
 	}
 
 	/**

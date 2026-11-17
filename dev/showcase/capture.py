@@ -1,5 +1,6 @@
 """Take the README screenshots (runs inside the Playwright image; see screenshots.py)."""
 import json
+import re
 import sys
 import urllib.request
 
@@ -65,25 +66,31 @@ with sync_playwright() as p:
     page.wait_for_timeout(600)
     shot(page, 'checkout-cart')
 
-    page.get_by_role('button', name='Checkout', exact=True).click()
+    page.get_by_role('button', name=re.compile(r'^Checkout')).first.click()
     email = 'jane.cooper@example.com'
     page.get_by_label('Email').fill(email)
     page.get_by_label('First name').fill('Jane')
     page.get_by_label('Last name').fill('Cooper')
-    shot(page, 'checkout-details')
+    shot(page, 'checkout-details', full=True)
 
     page.get_by_role('button', name='Continue').click()
-    expect(page.get_by_role('heading', name='Check your email')).to_be_visible()
-    shot(page, 'checkout-code')
+    # The showcase turns on the delivery address step
+    page.get_by_label('Address', exact=True).fill('22 Elm Street')
+    page.get_by_label('Town or city').fill('Portland')
+    page.get_by_label('Postcode').fill('97201')
+    shot(page, 'checkout-delivery', full=True)
+    page.get_by_role('button', name='Continue').click()
+    expect(page.get_by_role('heading', name='Confirm your email')).to_be_visible()
+    shot(page, 'checkout-code', full=True)
 
     code = json.load(urllib.request.urlopen(BASE + '/wp-json/in-mock/v1/code?email=' + email))['code']
     page.get_by_label('6-digit code').fill(code)
-    expect(page.get_by_role('heading', name='Thanks. Your order is ready to pay.')).to_be_visible(timeout=20000)
-    shot(page, 'checkout-pay')
+    expect(page.get_by_text('Thanks. Your order is ready to pay.')).to_be_visible(timeout=20000)
+    shot(page, 'checkout-pay', full=True)
 
     page.get_by_role('link', name='View your order').click()
-    page.wait_for_selector('.invoiceninja-pill')
-    shot(page, 'order-status')
+    expect(page.get_by_text('Your order is waiting for payment.')).to_be_visible()
+    shot(page, 'order-status', full=True)
 
     page.goto(BASE + urls['quote'])
     page.wait_for_load_state('networkidle')
@@ -125,7 +132,7 @@ with sync_playwright() as p:
         ('admin-status', '/wp-admin/admin.php?page=invoiceninja-status', '.in-checks li'),
         ('admin-store-settings', '/wp-admin/admin.php?page=invoiceninja-settings&tab=store', 'input[name="in-mode"]'),
         ('admin-quotes', '/wp-admin/admin.php?page=invoiceninja-quotes', 'table'),
-        ('admin-welcome', '/wp-admin/admin.php?page=invoiceninja-welcome', '.in-tools'),
+        ('admin-welcome', '/wp-admin/admin.php?page=invoiceninja-welcome', '.in-whatsnew, .in-card'),
         ('admin-setup', '/wp-admin/admin.php?page=invoiceninja-setup', '.in-stepper'),
     ):
         page.goto(BASE + path)

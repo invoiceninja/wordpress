@@ -50,6 +50,8 @@ final class Options {
 			'abandoned_enabled' => false,
 			'abandoned_days'    => 14,
 			'abandoned_action'  => 'cancel',
+			// Checkout asks for a delivery address, saved as the client's shipping address.
+			'delivery_address'  => false,
 		),
 		'pages'                    => array(
 			'shop'     => 0,

@@ -1,5 +1,7 @@
 """End-to-end flows for M3: verified emails, the Account block, verified redirects, Pay Invoice, privacy."""
 
+import json
+
 from lib import Browser, api_calls, check, describe, reset_mock_log, wp, wp_eval
 from test_v2 import admin, checkout, last_code, mails, shopper, store_ready
 
@@ -227,3 +229,90 @@ def array_query_parameters_do_not_break_pages():
     check('data-invoiceninja-account' in html and 'data-return' not in html, 'the Account block ignores an array return address', html[:300])
     status, _, _ = Browser().get('/?invoiceninja=subscribe&s=SUBM&email[]=x')
     check(status < 500, 'the subscribe link still answers', status)
+
+
+def verified_member():
+    """The member account, verified and linked to CLIENT_PLUS (a+b@x.com)."""
+    m = member()
+    m.api('POST', '/account/verify/start', {})
+    status, r = m.api('POST', '/account/verify/confirm', {'code': last_code('a+b@x.com')})
+    check(status == 200 and r['ok'], 'code confirmed', r)
+    return m
+
+
+def mock_invoices(*invoices):
+    """Replace the mock's invoices (CLIENT_PLUS, with the buyer's own invitation) and forget the cached tab."""
+    full = {}
+    for inv in invoices:
+        row = {'client_id': 'CLIENT_PLUS', 'status_id': '2', 'amount': inv.get('balance', 0), 'po_number': '', 'date': '2026-11-02', 'due_date': '',
+               'invitations': [{'key': 'K' + inv['id'], 'client_contact_id': 'C1', 'link': 'https://in.test/client/invoice/K' + inv['id']}]}
+        row.update(inv)
+        row.setdefault('number', inv['id'])
+        full[inv['id']] = row
+    wp_eval("update_option('in_mock_invoices', json_decode('%s', true), false); delete_transient('invoiceninja_acct_%s_invoices');" % (json.dumps(full), member_id()))
+
+
+@test
+def account_balance_due_rows_and_header():
+    store_ready()
+    m = verified_member()
+    _, me = m.api('GET', '/account')
+    check(me['linked'] and 'action=logout' in me['logoutUrl'] and '_wpnonce=' in me['logoutUrl'], 'the reply carries a sign-out link', me)
+
+    # Two open invoices (one overdue) and a paid one
+    mock_invoices({'id': 'ACCTA', 'balance': 30, 'due_date': '2026-01-01'},
+                  {'id': 'ACCTB', 'status_id': '3', 'amount': 40, 'balance': 20, 'due_date': '2099-01-01'},
+                  {'id': 'ACCTC', 'status_id': '4', 'amount': 15, 'balance': 0})
+    wp('option', 'update', 'in_mock_credit_balance', '12.5')
+    try:
+        _, r = m.api('GET', '/account/invoices')
+    finally:
+        wp('option', 'delete', 'in_mock_credit_balance', check_ok=False)
+    b = r['balance']
+    check(b['count'] == 2 and b['overdue'] == 1 and b['total'] == '$50.00', 'the balance adds up the open invoices', b)
+    check('2 unpaid invoices' in b['detail'] and '1 overdue' in b['detail'], 'with how many and how many are overdue', b)
+    check('12.50' in b['credit'], 'and the available credit', b)
+    check('invoiceninja=portal' in b['pay'] and 'to=invoices' in b['pay'], 'several invoices are paid in the billing portal', b)
+    status, location, _ = m.get(b['pay'].split('8089', 1)[-1])
+    check(status == 302 and '/client/key_login/' in location and 'next=%2Fclient%2Finvoices' in location, "it opens the portal's invoice list", (status, location))
+    rows = {row['number']: row for row in r['rows']}
+    check(rows['ACCTA']['status'] == 'Overdue' and rows['ACCTA']['tone'] == 'alert', 'a past-due invoice with a balance is overdue', rows['ACCTA'])
+    check(rows['ACCTB']['tone'] == 'open' and rows['ACCTC']['tone'] == 'done' and 'pay' not in rows['ACCTC']['links'], 'paid has no Pay', rows)
+    check(all('invoiceninja=view' in row['links']['view'] for row in r['rows']), 'every number opens its invoice through the site', r['rows'])
+    check(rows['ACCTC']['due'] == '' and rows['ACCTC']['date'] != '' and '2026-11-02' not in rows['ACCTC']['date'], 'dates as the site shows them; no due date is empty', rows['ACCTC'])
+    status, location, _ = m.get(rows['ACCTA']['links']['view'].split('8089', 1)[-1])
+    check(status == 302 and location == 'https://in.test/client/invoice/KACCTA', "the number opens the buyer's own invitation", (status, location))
+
+    # One open invoice: Pay goes straight to it, with its amount; the store order is named
+    wp_eval("global $wpdb; $wpdb->insert(InvoiceNinja\\Commerce\\Orders::table(), array('number' => 'ACCT-1', 'token' => md5('acct-1'), 'status' => 'awaiting_payment', 'email' => 'a+b@x.com', 'items' => '[]', 'invoice_id' => 'ACCTA', 'created_at' => gmdate('Y-m-d H:i:s'), 'updated_at' => gmdate('Y-m-d H:i:s')));")
+    try:
+        mock_invoices({'id': 'ACCTA', 'balance': 30}, {'id': 'ACCTC', 'status_id': '4', 'amount': 15, 'balance': 0})
+        _, r = m.api('GET', '/account/invoices')
+    finally:
+        wp_eval("global $wpdb; $wpdb->delete(InvoiceNinja\\Commerce\\Orders::table(), array('number' => 'ACCT-1'));")
+    b = r['balance']
+    check(b['count'] == 1 and 'invoiceninja=pay' in b['pay'] and 'id=ACCTA' in b['pay'] and b['payAmount'] == '$30.00' and b['number'] == 'ACCTA', 'one invoice: Pay is its own link', b)
+    row = [x for x in r['rows'] if x['number'] == 'ACCTA'][0]
+    check(row.get('order') == 'ACCT-1' and 'order=ACCT-1' in row['links']['order'], 'the store order number links to its status page', row)
+
+    # All paid
+    mock_invoices({'id': 'ACCTC', 'status_id': '4', 'amount': 15, 'balance': 0})
+    _, r = m.api('GET', '/account/invoices')
+    check(r['balance']['count'] == 0 and r['balance']['pay'] == '' and r['rows'], 'nothing due: no Pay', r)
+
+
+@test
+def account_empty_quotes_link_the_quote_page_and_block_options():
+    store_ready()
+    m = verified_member()
+    page = wp('post', 'create', '--post_type=page', '--post_status=publish', '--post_title=Ask for a quote', '--post_content=<!-- wp:invoiceninja/quote-form /-->', '--porcelain')
+    try:
+        wp_eval("delete_transient('invoiceninja_quote_page'); delete_transient('invoiceninja_acct_%s_quotes');" % member_id())
+        _, r = m.api('GET', '/account/quotes')
+        check(r['rows'] == [] and r['requestUrl'].startswith('http'), 'an empty Quotes tab links to the quote request page', r)
+    finally:
+        wp('post', 'delete', page, '--force', check_ok=False)
+    html = wp_eval("echo InvoiceNinja\\Plugin::instance()->module('portal')->account->render(array('balance' => false, 'tabs' => 'invoices, payments'));")
+    check('data-balance="0"' in html and 'data-tabs="invoices,payments"' in html, 'the panel can be turned off; shortcode tabs as a list', html[:300])
+    html = wp_eval("echo do_blocks('<!-- wp:invoiceninja/account /-->');")
+    check('data-balance="1"' in html, 'the panel is on by default', html[:300])

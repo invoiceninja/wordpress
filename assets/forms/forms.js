@@ -35,6 +35,13 @@
 			if ( ! input.name ) {
 				return;
 			}
+			if ( input.type === 'radio' ) {
+				// A chip group: only the chosen answer counts, and none chosen sends an empty one.
+				if ( input.checked || ! ( input.name in data ) ) {
+					data[ input.name ] = input.checked ? input.value : '';
+				}
+				return;
+			}
 			data[ input.name ] = input.type === 'checkbox' ? input.checked : input.value;
 		} );
 		return data;
@@ -77,7 +84,9 @@
 		form.addEventListener( 'input', begin );
 
 		const fieldOf = ( name ) => form.querySelector( '[data-field="' + name + '"]' );
-		const inputOf = ( name ) => form.querySelector( '[name="' + name + '"]' );
+		const inputOf = ( name ) => form.querySelector( '[name="' + name + '"]:checked' ) || form.querySelector( '[name="' + name + '"]' );
+		// Every control of a field (a chip group has one per answer).
+		const inputsOf = ( name ) => form.querySelectorAll( '[name="' + name + '"]' );
 
 		function resetErrors() {
 			summary.hidden = true;
@@ -90,10 +99,7 @@
 					error.hidden = true;
 					error.textContent = '';
 				}
-				const input = inputOf( field.getAttribute( 'data-field' ) );
-				if ( input ) {
-					input.removeAttribute( 'aria-invalid' );
-				}
+				inputsOf( field.getAttribute( 'data-field' ) ).forEach( ( input ) => input.removeAttribute( 'aria-invalid' ) );
 			} );
 		}
 
@@ -137,7 +143,7 @@
 					return;
 				}
 				field.classList.add( 'is-invalid' );
-				input.setAttribute( 'aria-invalid', 'true' );
+				inputsOf( name ).forEach( ( each ) => each.setAttribute( 'aria-invalid', 'true' ) );
 				const error = field.querySelector( '.invoiceninja-field__error' );
 				if ( error ) {
 					error.textContent = errors[ name ];

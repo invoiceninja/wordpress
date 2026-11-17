@@ -26,3 +26,20 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
     }
     return $pre;
 }, 5, 3 );
+
+// The client record (from invoiceninja-mock-webhooks.php) with the fields the Account block
+// reads: the client's currency (like the email lookup) and its credit balance
+// (in_mock_credit_balance, e.g. "12.5").
+add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
+    if ( ! is_array( $pre ) || ( $args['method'] ?? 'GET' ) !== 'GET' || ! preg_match( '#^https://in\.test/api/v1/clients/([A-Za-z0-9_]+)$#', $url, $m ) ) {
+        return $pre;
+    }
+    $body = json_decode( (string) ( $pre['body'] ?? '' ), true );
+    if ( ! is_array( $body ) || ! isset( $body['data']['id'] ) ) {
+        return $pre;
+    }
+    $body['data']['settings']       = function_exists( 'in_mock_client_settings' ) ? in_mock_client_settings( $m[1] ) : new stdClass();
+    $body['data']['credit_balance'] = (float) get_option( 'in_mock_credit_balance', 0 );
+    $pre['body']                    = wp_json_encode( $body );
+    return $pre;
+}, 6, 3 );

@@ -35,6 +35,7 @@ final class Routes {
 		'/checkout/confirm',
 		'/checkout/forget',
 		'/orders/(?P<number>[A-Za-z0-9-]+)',
+		'/orders/(?P<number>[A-Za-z0-9-]+)/pdf',
 		'/orders/find',
 		'/orders/last',
 		'/orders/last/change',
@@ -83,6 +84,7 @@ final class Routes {
 		$this->route( '/orders/last', 'GET', array( $this, 'lastOrder' ), '__return_true' );
 		$this->route( '/orders/last/change', 'POST', array( $this, 'changeLastOrder' ), $same_site );
 		$this->route( '/orders/(?P<number>[A-Za-z0-9-]+)', 'GET', array( $this, 'orderStatus' ), '__return_true' );
+		$this->route( '/orders/(?P<number>[A-Za-z0-9-]+)/pdf', 'GET', array( $this, 'orderPdf' ), '__return_true' );
 
 		$this->route( '/connection', 'GET', array( $this, 'getConnection' ), $view );
 		$this->route( '/connection', 'POST', array( $this, 'saveConnection' ), $manage_site );
@@ -325,8 +327,9 @@ final class Routes {
 		$cart    = $this->plugin->cart;
 		$summary = $cart->summary( $cart->items( $cart->currentId() ) );
 		if ( $request->get_param( 'checkout' ) ) {
-			$summary['tax_address'] = $this->plugin->checkout->taxConfig(); // 'tax' is the cart's tax amount.
-			$summary['unavailable'] = null !== $this->plugin->checkout->unavailable()
+			$summary['tax_address']      = $this->plugin->checkout->taxConfig(); // 'tax' is the cart's tax amount.
+			$summary['delivery_address'] = $this->plugin->checkout->deliveryConfig();
+			$summary['unavailable']      = null !== $this->plugin->checkout->unavailable()
 				|| 'off' === $this->plugin->options->setting( 'store.mode' )
 				|| ! \InvoiceNinja\Frontend\Store::enabled();
 			// Only to this site's own pages: the cart reply is public.
@@ -542,6 +545,47 @@ final class Routes {
 	}
 
 	/**
+	 * GET /orders/{number}/pdf — the order's invoice PDF, with the key in X-Order-Key.
+	 *
+	 * @param \WP_REST_Request $request Request.
+	 */
+	public function orderPdf( \WP_REST_Request $request ): \WP_REST_Response {
+		nocache_headers();
+		$key = (string) ( $request->get_header( 'x-order-key' ) ?? '' );
+		try {
+			$file = $this->plugin->checkout->invoicePdf( (string) $request->get_param( 'number' ), $key, self::ip() );
+		} catch ( \InvoiceNinja\Api\ApiException $e ) {
+			return $this->error( 'unavailable', __( "We couldn't get the invoice right now. Please try again later.", 'invoiceninja' ), 503 );
+		}
+		if ( 'limited' === $file ) {
+			return $this->error( 'rate_limited', __( 'Too many requests. Please try again later.', 'invoiceninja' ), 429 );
+		}
+		if ( ! is_array( $file ) ) {
+			return $this->error( 'not_found', __( "We couldn't find that invoice.", 'invoiceninja' ), 404 );
+		}
+		// A file, not JSON: sent as it is once the headers below are out.
+		add_filter(
+			'rest_pre_serve_request',
+			static function ( $served ) use ( $file ) {
+				if ( ! $served ) {
+					echo $file['body']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- a PDF file.
+				}
+				return true;
+			},
+			20
+		);
+		return new \WP_REST_Response(
+			null,
+			200,
+			array(
+				'Content-Type'           => 'application/pdf',
+				'Content-Disposition'    => 'attachment; filename="' . $file['filename'] . '"',
+				'X-Content-Type-Options' => 'nosniff',
+			)
+		);
+	}
+
+	/**
 	 * Buyer details from a request.
 	 *
 	 * @param \WP_REST_Request $request Request.
@@ -557,7 +601,7 @@ final class Routes {
 			// Asked for when Invoice Ninja works out the tax from the address.
 			'country_id'  => $text( 'country_id' ),
 			'postal_code' => $text( 'postal_code' ),
-		);
+		) + array_combine( \InvoiceNinja\Commerce\Checkout::DELIVERY_FIELDS, array_map( $text, \InvoiceNinja\Commerce\Checkout::DELIVERY_FIELDS ) ); // The delivery address, when it's asked for.
 	}
 
 	/**
@@ -932,6 +976,8 @@ final class Routes {
 			'invoice_url'    => '' !== (string) $order['invoice_id'] && null !== $app ? $app( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ) ) : '',
 			'client_url'     => '' !== (string) $order['client_id'] && null !== $app ? $app( 'clients/' . rawurlencode( (string) $order['client_id'] ) ) : '',
 			'note'           => \InvoiceNinja\Commerce\Orders::noteText( (string) $order['note'] ),
+			// The delivery address checkout asked for, one line (empty when it wasn't asked).
+			'address'        => implode( ', ', \InvoiceNinja\Commerce\Checkout::addressLines( is_array( $order['customer']['shipping'] ?? null ) ? $order['customer']['shipping'] : array(), $this->plugin->statics->countries() ) ),
 			'created_at'     => (string) $order['created_at'],
 			// The status page shows the buyer's Pay button (their invitation, which signs into
 			// the client's portal): only for those who may also resend and cancel the order.

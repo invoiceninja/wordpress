@@ -188,6 +188,102 @@ final class Strings {
 			'invoiceNumber'    => __( 'Invoice number', 'invoiceninja' ),
 			'payInvoiceSend'   => __( 'Email me the payment link', 'invoiceninja' ),
 			'payInvoiceSent'   => __( "If that invoice is open and the email matches, we've emailed its payment link. It can take a minute or two.", 'invoiceninja' ),
+			// Account block: header, Balance due, tabs, rows and empty tabs.
+			/* translators: %s: email address */
+			'signedInAs'       => __( 'Signed in as %s', 'invoiceninja' ),
+			'signOut'          => __( 'Sign out', 'invoiceninja' ),
+			'billingPortal'    => __( 'Billing portal', 'invoiceninja' ),
+			'accountTabs'      => __( 'Account sections', 'invoiceninja' ),
+			'balanceDue'       => __( 'Balance due', 'invoiceninja' ),
+			'allPaid'          => __( 'All paid', 'invoiceninja' ),
+			/* translators: %s: amount */
+			'payAmount'        => __( 'Pay %s', 'invoiceninja' ),
+			/* translators: %s: invoice number */
+			'payNumber'        => __( 'Pay invoice %s', 'invoiceninja' ),
+			'payInPortal'      => __( 'Pay in billing portal', 'invoiceninja' ),
+			'colValid'         => __( 'Valid until', 'invoiceninja' ),
+			'colActions'       => __( 'Actions', 'invoiceninja' ),
+			/* translators: %s: store order number */
+			'orderRef'         => __( 'Order %s', 'invoiceninja' ),
+			/* translators: %s: invoice number */
+			'docInvoice'       => __( 'Invoice %s', 'invoiceninja' ),
+			/* translators: %s: quote number */
+			'docQuote'         => __( 'Quote %s', 'invoiceninja' ),
+			/* translators: %s: credit number */
+			'docCredit'        => __( 'Credit %s', 'invoiceninja' ),
+			/* translators: %s: payment number */
+			'docPayment'       => __( 'Payment %s', 'invoiceninja' ),
+			'emptyInvoices'    => __( 'No invoices yet', 'invoiceninja' ),
+			'hintInvoices'     => __( 'Your invoices will appear here.', 'invoiceninja' ),
+			'emptyQuotes'      => __( 'No quotes yet', 'invoiceninja' ),
+			'hintQuotes'       => __( 'Quotes we send you will appear here.', 'invoiceninja' ),
+			'requestQuote'     => __( 'Request a quote', 'invoiceninja' ),
+			'emptyPayments'    => __( 'No payments yet', 'invoiceninja' ),
+			'hintPayments'     => __( 'Payments you make will appear here.', 'invoiceninja' ),
+			'emptyCredits'     => __( 'No credits', 'invoiceninja' ),
+			'hintCredits'      => __( 'Credits on your account will appear here.', 'invoiceninja' ),
+			'emptySubs'        => __( 'No subscriptions', 'invoiceninja' ),
+			'hintSubs'         => __( 'Your subscriptions will appear here.', 'invoiceninja' ),
+			// Cart, checkout steps, Order Status and the Mini Cart drawer (store.js). payAmount and balanceDue are above.
+			/* translators: %s: product name */
+			'removed'          => __( '%s removed.', 'invoiceninja' ),
+			'undo'             => __( 'Undo', 'invoiceninja' ),
+			/* translators: %s: product name */
+			'undoRemove'       => __( 'Put %s back in the cart', 'invoiceninja' ),
+			/* translators: %s: product name */
+			'restored'         => __( '%s is back in your cart.', 'invoiceninja' ),
+			'taxOnPayment'     => __( 'Calculated on the payment page', 'invoiceninja' ),
+			'taxIncludedLabel' => __( 'Tax included', 'invoiceninja' ),
+			'adjustments'      => __( 'Discounts and other charges', 'invoiceninja' ),
+			'paidSoFar'        => __( 'Paid', 'invoiceninja' ),
+			'stepContact'      => __( 'Contact', 'invoiceninja' ),
+			'stepDelivery'     => __( 'Delivery address', 'invoiceninja' ),
+			'stepConfirm'      => __( 'Confirm your email', 'invoiceninja' ),
+			'stepPayment'      => __( 'Payment', 'invoiceninja' ),
+			/* translators: 1: current step number, 2: number of steps */
+			'stepOf'           => __( 'Step %1$d of %2$d', 'invoiceninja' ),
+			'edit'             => __( 'Edit', 'invoiceninja' ),
+			/* translators: %s: step name, like Contact */
+			'editStep'         => __( 'Edit %s', 'invoiceninja' ),
+			'showSummary'      => __( 'Show order summary', 'invoiceninja' ),
+			'address1'         => __( 'Address', 'invoiceninja' ),
+			'address2'         => __( 'Apartment, suite, etc.', 'invoiceninja' ),
+			'city'             => __( 'Town or city', 'invoiceninja' ),
+			'region'           => __( 'State or region', 'invoiceninja' ),
+			'taxFromDelivery'  => __( 'Work out the tax from this address', 'invoiceninja' ),
+			'taxAddressTitle'  => __( 'Billing country for tax', 'invoiceninja' ),
+			/* translators: %s: email address */
+			'codeEnter'        => __( 'Enter the 6-digit code we sent to %s.', 'invoiceninja' ),
+			/* translators: %s: time left, like 0:42 */
+			'resendCodeIn'     => __( 'Resend code in %s', 'invoiceninja' ),
+			'codeResent'       => __( 'We sent a new code.', 'invoiceninja' ),
+			'differentEmail'   => __( 'Use a different email', 'invoiceninja' ),
+			'emailConfirmed'   => __( 'Email confirmed', 'invoiceninja' ),
+			'required'         => __( 'Fill this in.', 'invoiceninja' ),
+			'invalidEmail'     => __( 'Enter a valid email address.', 'invoiceninja' ),
+			'checkField'       => __( 'Check this.', 'invoiceninja' ),
+			/* translators: %s: order number */
+			'savedAs'          => __( 'Your order is saved as #%s.', 'invoiceninja' ),
+			'paySecure'        => __( "You'll pay on our secure payment page.", 'invoiceninja' ),
+			'headWaiting'      => __( 'Your order is waiting for payment.', 'invoiceninja' ),
+			/* translators: %s: the buyer's first name */
+			'headPaidName'     => __( 'Thanks, %s. Your order is paid.', 'invoiceninja' ),
+			'headPaid'         => __( 'Thanks. Your order is paid.', 'invoiceninja' ),
+			'headCancelled'    => __( 'This order was cancelled.', 'invoiceninja' ),
+			'receiptOnWay'     => __( 'Your receipt is on its way by email.', 'invoiceninja' ),
+			/* translators: %s: date */
+			'placedOn'         => __( 'Placed %s', 'invoiceninja' ),
+			'progress'         => __( 'Order progress', 'invoiceninja' ),
+			'stagePlaced'      => __( 'Placed', 'invoiceninja' ),
+			'stageNotYet'      => __( 'Not yet', 'invoiceninja' ),
+			'deliveryAddress'  => __( 'Delivery address', 'invoiceninja' ),
+			'downloadInvoice'  => __( 'Download invoice', 'invoiceninja' ),
+			/* translators: %s: invoice number */
+			'downloadNumber'   => __( 'Download invoice %s (PDF)', 'invoiceninja' ),
+			'needHelp'         => __( 'Need help with this order?', 'invoiceninja' ),
+			/* translators: %s: order number */
+			'helpSubject'      => __( 'Order #%s', 'invoiceninja' ),
+			'keepShopping'     => __( 'Keep shopping', 'invoiceninja' ),
 		);
 	}
 }

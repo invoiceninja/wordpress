@@ -16,7 +16,8 @@ use InvoiceNinja\Plugin;
 /**
  * Shared by checkout, the quote form, WooCommerce and customer sync. Matching is on the
  * contact email (active and archived clients, never deleted ones). An existing client is
- * never changed here: its name, phone and address stay as the business keeps them.
+ * never changed by findOrCreate: its name, phone and address stay as the business keeps
+ * them. The one exception is updateShipping, for the delivery address checkout asked for.
  */
 final class ClientResolver {
 
@@ -71,7 +72,8 @@ final class ClientResolver {
 	 * @param string               $email   Email.
 	 * @param array<string, mixed> $details first_name, last_name, phone, company, and optional
 	 *                                      address1, address2, city, state, postal_code, country_id,
-	 *                                      currency_id, plus `client` (extra client fields).
+	 *                                      shipping_address1 … shipping_country_id, currency_id,
+	 *                                      plus `client` (extra client fields).
 	 * @return array{client_id: string, contact_id: string, created: bool, client: array<string, mixed>}
 	 * @throws ApiException When Invoice Ninja can't be asked or refuses.
 	 */
@@ -95,7 +97,7 @@ final class ClientResolver {
 				),
 			),
 		);
-		foreach ( array( 'address1', 'address2', 'city', 'state', 'postal_code', 'country_id', 'phone', 'vat_number' ) as $field ) {
+		foreach ( array( 'address1', 'address2', 'city', 'state', 'postal_code', 'country_id', 'phone', 'vat_number', 'shipping_address1', 'shipping_address2', 'shipping_city', 'shipping_state', 'shipping_postal_code', 'shipping_country_id' ) as $field ) {
 			if ( isset( $details[ $field ] ) && '' !== (string) $details[ $field ] ) {
 				$body[ $field ] = (string) $details[ $field ];
 			}
@@ -115,5 +117,33 @@ final class ClientResolver {
 			'created'    => true,
 			'client'     => $created,
 		);
+	}
+
+	/**
+	 * Save a delivery address as a client's shipping address. Only the shipping fields are
+	 * sent, plus the client's own currency unchanged: Invoice Ninja fills an update without
+	 * one with the company's currency (UpdateClientRequest::prepareForValidation), which
+	 * would pin a client that follows its group or the company. Callers skip clients that
+	 * have no currency of their own.
+	 *
+	 * @param HttpClient            $client      API client.
+	 * @param string                $client_id   Client id.
+	 * @param array<string, string> $address     shipping_address1, shipping_address2, shipping_city, shipping_state, shipping_postal_code, shipping_country_id.
+	 * @param string                $currency_id The client's own currency, sent back as it is.
+	 * @throws ApiException When Invoice Ninja can't be asked or refuses.
+	 */
+	public function updateShipping( HttpClient $client, string $client_id, array $address, string $currency_id = '' ): void {
+		$body = array();
+		foreach ( array( 'shipping_address1', 'shipping_address2', 'shipping_city', 'shipping_state', 'shipping_postal_code', 'shipping_country_id' ) as $field ) {
+			$body[ $field ] = (string) ( $address[ $field ] ?? '' );
+		}
+		if ( '' === $body['shipping_country_id'] ) {
+			unset( $body['shipping_country_id'] ); // An integer field: leave it as it is.
+		}
+		if ( '' !== $currency_id ) {
+			$body['settings'] = array( 'currency_id' => $currency_id );
+		}
+		$client->put( 'clients/' . rawurlencode( $client_id ), $body, array(), 5.0 );
+		$this->plugin->logger->info( 'customers', 'Saved a delivery address on an Invoice Ninja client' );
 	}
 }

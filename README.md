@@ -123,13 +123,17 @@ Stock limits come from Invoice Ninja's **Track inventory** setting. Stock is che
 
 The checkout is built for people who just want to pay.
 
-**1. The cart.** Change quantities or remove items, and see the subtotal. Tax is added on the payment page, from your Invoice Ninja tax settings.
+**1. The cart.** Change quantities or remove items (with Undo), and see the total. When the plugin can work out the tax exactly as the invoice will, the cart shows it; when Invoice Ninja calculates the tax itself, it's added on the payment page.
 
 <p align="center"><img src="docs/images/checkout-cart.png" alt="The cart step" width="900"></p>
 
 **2. The customer's details.** Email and name. Customers who are logged in and have confirmed their email skip straight ahead.
 
 <p align="center"><img src="docs/images/checkout-details.png" alt="The details step" width="900"></p>
+
+**Delivery address (optional).** Turn on **Ask for a delivery address** in Settings → Store and checkout asks for it before the code. It's saved as the client's shipping address in Invoice Ninja and shown on the order. The plugin doesn't add shipping charges.
+
+<p align="center"><img src="docs/images/checkout-delivery.png" alt="The delivery address step" width="900"></p>
 
 **3. A 6-digit code from their email.** This confirms the email belongs to them, so invoices and payment links only ever reach the owner of the address:
 - the order is placed as soon as the 6th digit is typed or pasted;
@@ -142,7 +146,7 @@ The checkout is built for people who just want to pay.
 
 <p align="center"><img src="docs/images/checkout-pay.png" alt="Order placed, ready to pay" width="900"></p>
 
-**Order Status.** The link in the order email opens the order: what's paid, the items, and a **Pay** button while it's unpaid. Lost the email? **Find my order** sends a fresh link.
+**Order Status.** The link in the order email opens the order: where it stands, the invoice's items and totals, **Download invoice**, and a **Pay** button while it's unpaid. Lost the email? **Find my order** sends a fresh link.
 
 <p align="center"><img src="docs/images/order-status.png" alt="The Order Status page" width="900"></p>
 

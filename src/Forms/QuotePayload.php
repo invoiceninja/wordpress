@@ -82,8 +82,9 @@ final class QuotePayload {
 	 * @param array<string, string> $fields   Submitted fields.
 	 * @param array<string, mixed>  $consents Consents (which => {at, title}).
 	 * @param string                $site     Site host.
+	 * @param bool                  $on_line  Whether the quantity is already the line item's quantity.
 	 */
-	public static function privateNotes( string $marker, array $fields, array $consents, string $site ): string {
+	public static function privateNotes( string $marker, array $fields, array $consents, string $site, bool $on_line = false ): string {
 		$lines = array(
 			/* translators: %s: site host name */
 			sprintf( __( 'Quote Request Form on %s', 'invoiceninja' ), $site ),
@@ -94,6 +95,15 @@ final class QuotePayload {
 		}
 		if ( FormConfig::NOT_SURE === ( $fields['product'] ?? '' ) ) {
 			$lines[] = __( 'Product: Not sure yet', 'invoiceninja' );
+		}
+		if ( '' !== ( $fields['quantity'] ?? '' ) && ! $on_line ) {
+			/* translators: %s: number of items */
+			$lines[] = sprintf( __( 'Quantity requested: %s', 'invoiceninja' ), $fields['quantity'] );
+		}
+		if ( '' !== ( $fields['needed_by'] ?? '' ) ) {
+			// Not the quote's due date: on a quote that is the date it expires.
+			/* translators: %s: date (YYYY-MM-DD) */
+			$lines[] = sprintf( __( 'Needed by: %s', 'invoiceninja' ), $fields['needed_by'] );
 		}
 		foreach ( $consents as $consent ) {
 			if ( is_array( $consent ) && ! empty( $consent['agreed'] ) ) {
@@ -111,7 +121,7 @@ final class QuotePayload {
 	 * @param string                                                     $client_id     Client id.
 	 * @param string                                                     $public_notes  The requester's message.
 	 * @param string                                                     $private_notes Notes with the marker.
-	 * @param array{product_key: string, notes?: string, price: float}|null $product    The chosen product (prices from our synced copy, never the browser).
+	 * @param array{product_key: string, notes?: string, price: float, quantity?: int}|null $product The chosen product (prices from our synced copy, never the browser) and the quantity asked for.
 	 * @param list<string>                                               $tag_ids       Existing tag ids (empty: no tags sent).
 	 * @return array<string, mixed>
 	 */
@@ -127,7 +137,7 @@ final class QuotePayload {
 				'product_key' => $product['product_key'],
 				'notes'       => (string) ( $product['notes'] ?? '' ),
 				'cost'        => round( (float) $product['price'], 6 ),
-				'quantity'    => 1,
+				'quantity'    => max( 1, (int) ( $product['quantity'] ?? 1 ) ),
 			);
 		}
 		if ( $tag_ids ) {

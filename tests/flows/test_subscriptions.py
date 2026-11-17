@@ -141,11 +141,32 @@ def pricing_table_and_subscribe_button_render():
     _, _, html = Browser().get(unknown)
     check('Plans are not available right now' in html, 'unknown plans: a neutral message')
 
+    details = json.dumps({'ids': 'SUBT,SUBM,SUBW', 'yearly': 'SUBM:SUBY', 'highlight': 'SUBM', 'planDetails': {
+        'SUBM': {'name': 'Pro', 'description': 'For regulars.', 'perks': 'First pick of every kiln\nA new piece every season'}}})
+    texts, pid5 = page('<!-- wp:invoiceninja/pricing-table %s /-->' % details)
+    _, _, html = Browser().get(texts)
+    check('>Pro</h3>' in html and 'Pro Monthly' not in html and 'Pro Yearly' not in html, 'the display name replaces the Invoice Ninja name on both periods', html[:4000])
+    check('For regulars.' in html and 'First pick of every kiln' in html, 'description and perks shown', html[:4000])
+    check(html.count('invoiceninja-plan__perks" role="list"') == 2, 'perks only on the plan that has them (both its periods): no demo perks', html.count('invoiceninja-plan__perks" role="list"'))
+    check(re.search(r'Yearly<span class="invoiceninja-pricing__hint"> · 2 months free</span>', html), 'the yearly toggle says 2 months free (12 x 10 - 100 = 20)', html[:4000])
+    check(re.search(r'Save \$?20(\.00)? a year', html), 'the yearly card shows the saving in money', html[:4000])
+    check(re.search(r'</h3><p class="invoiceninja-plan__badge">Most popular', html), 'the highlight is said in words, after the name')
+    wp_eval("update_option('in_mock_subscription_fields', array('SUBY' => array('price' => 105)));")
+    b.api('POST', '/admin/subscriptions/sync')
+    _, _, html = Browser().get(texts)
+    check('save up to 12%' in html and 'months free' not in html, 'a saving that is not whole months is a percentage, rounded down', html[:4000])
+    wp_eval("update_option('in_mock_subscription_fields', array('SUBY' => array('price' => 120)));")
+    b.api('POST', '/admin/subscriptions/sync')
+    _, _, html = Browser().get(texts)
+    check('invoiceninja-pricing__hint' not in html and 'a year</p>' not in html, 'no saving: no hint and no saving line', html[:4000])
+    wp('option', 'delete', 'in_mock_subscription_fields', check_ok=False)
+    b.api('POST', '/admin/subscriptions/sync')
+
     b.api('POST', '/settings', {'modules': {'subs': False}})
     _, _, html = Browser().get(path)
     check('invoiceninja-pricing__plans' not in html, 'feature off: not rendered')
     b.api('POST', '/settings', {'modules': {'subs': True}})
-    for p in (pid, pid2, pid3, pid4):
+    for p in (pid, pid2, pid3, pid4, pid5):
         wp('post', 'delete', p, '--force')
 
 

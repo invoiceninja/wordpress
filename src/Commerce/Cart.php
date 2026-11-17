@@ -226,6 +226,8 @@ final class Cart {
 				'line_total'  => $line,
 				'tax'         => $info['tax'],
 				'inclusive'   => $inclusive,
+				'image'       => self::thumbnail( (int) $info['post_id'] ), // Only cart lines need it.
+				'url'         => (string) get_permalink( $info['post_id'] ),
 			);
 		}
 		return array(
@@ -329,6 +331,16 @@ final class Cart {
 				'tax_rate3' => (float) get_post_meta( $post_id, 'tax_rate3', true ),
 			),
 		);
+	}
+
+	/**
+	 * A product's featured image for cart lines (small), or '' when it has none.
+	 *
+	 * @param int $post_id Product post id.
+	 */
+	public static function thumbnail( int $post_id ): string {
+		$url = $post_id > 0 ? get_the_post_thumbnail_url( $post_id, 'thumbnail' ) : false;
+		return is_string( $url ) ? $url : '';
 	}
 
 	/**

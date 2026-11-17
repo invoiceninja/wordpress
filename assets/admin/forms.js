@@ -10,9 +10,27 @@
 		return;
 	}
 
-	const { h, Fragment, useState, useEffect, useRef, __, _n, sprintf, api, errorText, Button, Notice, Pill, External, boot } = ui;
+	const { h, Fragment, useState, useEffect, useRef, __, _n, sprintf, api, errorText, Button, Notice, Pill, External, CopyField, boot } = ui;
 
 	// ---------- Settings > Forms ----------
+
+	const RETENTION = [ 0, 30, 90, 180, 365 ];
+	const plain = ( html ) => new window.DOMParser().parseFromString( String( html || '' ), 'text/html' ).documentElement.textContent || '';
+
+	/**
+	 * Published pages for the "Go to a page" picker, from the core REST API (up to 500).
+	 */
+	async function loadPages() {
+		const out = [];
+		for ( let page = 1; page <= 5; page++ ) {
+			const rows = await window.wp.apiFetch( { path: '/wp/v2/pages?per_page=100&page=' + page + '&status=publish&orderby=title&order=asc&_fields=id,title,link' } );
+			( Array.isArray( rows ) ? rows : [] ).forEach( ( p ) => out.push( { id: p.id, title: plain( p.title && p.title.rendered ) || __( '(no title)', 'invoiceninja' ), url: p.link } ) );
+			if ( ! Array.isArray( rows ) || rows.length < 100 ) {
+				break;
+			}
+		}
+		return out;
+	}
 
 	function FormsSettings() {
 		const [ loaded, setLoaded ] = useState( null );
@@ -20,6 +38,9 @@
 		const [ text, setText ] = useState( '' );
 		const [ enabled, setEnabled ] = useState( !! data.enabled );
 		const [ products, setProducts ] = useState( null );
+		const [ pages, setPages ] = useState( null );
+		const [ after, setAfter ] = useState( 'message' );
+		const [ filter, setFilter ] = useState( '' );
 		const [ busy, setBusy ] = useState( false );
 		const [ message, setMessage ] = useState( '' );
 		const [ error, setError ] = useState( '' );
@@ -27,10 +48,12 @@
 			api( '/admin/forms' ).then( ( r ) => {
 				setLoaded( r );
 				setS( r.forms );
+				setAfter( r.forms.redirect_url ? 'page' : 'message' );
 				setText( r.autoreply_text || '' );
 				setEnabled( !! r.enabled );
 			} ).catch( ( e ) => setError( errorText( e ) ) );
 			api( '/admin/products' ).then( ( rows ) => setProducts( Array.isArray( rows ) ? rows : [] ) ).catch( () => setProducts( [] ) );
+			loadPages().then( setPages ).catch( () => setPages( [] ) );
 		}, [] );
 		if ( error && ! s ) {
 			return h( Notice, { type: 'error' }, h( 'p', null, error ) );
@@ -40,13 +63,20 @@
 		}
 		const set = ( key, value ) => setS( Object.assign( {}, s, { [ key ]: value } ) );
 		const chosen = String( s.products || '' ).split( ',' ).filter( Boolean );
+		const needsPage = after === 'page' && ! s.redirect_url;
 		const save = async () => {
+			if ( needsPage ) {
+				setError( __( 'Choose the page people go to after sending, or show a message instead.', 'invoiceninja' ) );
+				return;
+			}
 			setBusy( true );
 			setMessage( '' );
 			setError( '' );
 			try {
-				const r = await api( '/admin/forms', { method: 'POST', data: { forms: s, autoreply_text: text, enabled } } );
+				const forms = Object.assign( {}, s, { redirect_url: after === 'page' ? s.redirect_url : '' } );
+				const r = await api( '/admin/forms', { method: 'POST', data: { forms, autoreply_text: text, enabled } } );
 				setS( r.forms );
+				setAfter( r.forms.redirect_url ? 'page' : 'message' );
 				setText( r.autoreply_text || '' );
 				boot.settings = r.settings;
 				setMessage( __( 'Settings saved.', 'invoiceninja' ) );
@@ -60,32 +90,76 @@
 			h( 'td', null, control, help ? h( 'p', { className: 'description', id: id ? id + '-help' : undefined }, help ) : null ) );
 		const leads = ( loaded && loaded.settings && loaded.settings.notifications && loaded.settings.notifications.leads ) || data.leadsMode;
 		const leadModes = { instant: __( 'as each request arrives', 'invoiceninja' ), daily: __( 'once a day, in a digest', 'invoiceninja' ), off: __( 'never', 'invoiceninja' ) };
+
+		// "Go to a page": a page of this site. An address saved before this picker (or a page
+		// that's gone) stays selectable as it is, so saving never changes it behind your back.
+		const savedUrl = s.redirect_url || '';
+		const pageList = pages || [];
+		const known = pageList.some( ( p ) => p.url === savedUrl );
+		const pagePicker = h( 'span', { className: 'in-field in-indent' },
+			h( 'label', { htmlFor: 'in-qf-page' }, __( 'Page', 'invoiceninja' ) ),
+			pages === null ? h( 'span', { className: 'in-muted' }, __( 'Loading pages…', 'invoiceninja' ) )
+				: h( 'select', { id: 'in-qf-page', value: savedUrl, 'aria-invalid': needsPage ? 'true' : undefined, onChange: ( e ) => set( 'redirect_url', e.target.value ) },
+					h( 'option', { value: '' }, __( 'Choose a page…', 'invoiceninja' ) ),
+					savedUrl && ! known ? h( 'option', { value: savedUrl }, sprintf( /* translators: %s: web address */ __( 'Saved address: %s', 'invoiceninja' ), savedUrl ) ) : null,
+					pageList.map( ( p ) => h( 'option', { key: p.id, value: p.url }, p.title ) ) ) );
+
+		// Products: a searchable grid. Select all / None act on what the search shows.
+		const list = products || [];
+		const q = filter.trim().toLowerCase();
+		const visible = q ? list.filter( ( p ) => p.title.toLowerCase().includes( q ) ) : list;
+		const listed = list.map( ( p ) => p.id );
+		const selectedCount = chosen.filter( ( id ) => listed.includes( id ) ).length;
+		const setChosen = ( ids ) => set( 'products', ids.join( ',' ) );
+		const productsField = h( 'fieldset', null,
+			h( 'legend', { className: 'screen-reader-text' }, __( 'Products offered', 'invoiceninja' ) ),
+			! products ? h( 'p', null, __( 'Loading…', 'invoiceninja' ) ) : null,
+			products && ! list.length ? h( 'p', { className: 'in-muted' }, __( 'No products yet. They appear here after they sync from Invoice Ninja.', 'invoiceninja' ) ) : null,
+			list.length ? h( 'div', { className: 'in-picker__bar' },
+				list.length > 8 ? h( 'input', { type: 'search', className: 'in-picker__search', value: filter, placeholder: __( 'Search products', 'invoiceninja' ), 'aria-label': __( 'Search products', 'invoiceninja' ), 'aria-controls': 'in-qf-products', onChange: ( e ) => setFilter( e.target.value ) } ) : null,
+				h( Button, { link: true, disabled: ! visible.length, onClick: () => setChosen( chosen.concat( visible.map( ( p ) => p.id ).filter( ( id ) => ! chosen.includes( id ) ) ) ) }, q ? __( 'Select shown', 'invoiceninja' ) : __( 'Select all', 'invoiceninja' ) ),
+				h( Button, { link: true, disabled: ! visible.some( ( p ) => chosen.includes( p.id ) ), onClick: () => setChosen( chosen.filter( ( id ) => ! visible.some( ( p ) => p.id === id ) ) ) }, q ? __( 'Clear shown', 'invoiceninja' ) : __( 'None', 'invoiceninja' ) ),
+				h( 'span', { className: 'in-muted', role: 'status' }, sprintf( /* translators: 1: selected, 2: total */ __( '%1$d of %2$d selected', 'invoiceninja' ), selectedCount, list.length ) ) ) : null,
+			list.length ? h( 'div', { id: 'in-qf-products', className: 'in-check-grid in-picker__grid' + ( list.length > 30 ? ' is-long' : '' ) },
+				visible.map( ( p ) => h( 'label', { key: p.id, className: 'in-check' },
+					h( 'input', { type: 'checkbox', checked: chosen.includes( p.id ), onChange: ( e ) => setChosen( e.target.checked ? chosen.concat( [ p.id ] ) : chosen.filter( ( id ) => id !== p.id ) ) } ),
+					h( 'span', { className: 'in-check__inline' }, p.title ) ) ),
+				! visible.length ? h( 'p', { className: 'in-muted' }, __( 'No products match.', 'invoiceninja' ) ) : null ) : null,
+			h( 'p', { className: 'description' }, __( 'The default list for forms that don’t choose their own products. “Not sure yet” is always offered too.', 'invoiceninja' ) ) );
+
+		const keep = parseInt( s.retention_days, 10 ) || 0;
+		const keepOptions = RETENTION.includes( keep ) ? RETENTION : RETENTION.concat( [ keep ] ).sort( ( a, b ) => a - b );
+
 		return h( Fragment, null,
 			h( 'h2', null, __( 'Quote Request Form', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
-				row( __( 'Form', 'invoiceninja' ), null, h( 'label', { className: 'in-check' },
-					h( 'input', { type: 'checkbox', checked: enabled, onChange: ( e ) => setEnabled( e.target.checked ) } ),
-					h( 'span', null, h( 'strong', null, __( 'Turn on the Quote Request Form', 'invoiceninja' ) ),
-						h( 'span', { className: 'in-muted' }, __( 'Adds the Quote Request Form block and the [invoiceninja_quote_form] shortcode. Each request becomes a draft quote in Invoice Ninja.', 'invoiceninja' ) ) ) ) ),
+				row( __( 'Form', 'invoiceninja' ), null, h( Fragment, null,
+					h( 'label', { className: 'in-check' },
+						h( 'input', { type: 'checkbox', checked: enabled, onChange: ( e ) => setEnabled( e.target.checked ) } ),
+						h( 'span', null, h( 'strong', null, __( 'Turn on the Quote Request Form', 'invoiceninja' ) ),
+							h( 'span', { className: 'in-muted' }, __( 'Each request becomes a draft quote in Invoice Ninja.', 'invoiceninja' ) ) ) ),
+					h( 'p', { className: 'in-row in-indent' },
+						h( 'span', null, __( 'Add the Quote Request Form block, or this shortcode:', 'invoiceninja' ) ),
+						h( CopyField, { value: '[invoiceninja_quote_form]', label: __( 'Shortcode', 'invoiceninja' ) } ) ) ) ),
 				row( __( 'Reply time', 'invoiceninja' ), 'in-qf-days', h( 'span', { className: 'in-row' },
 					h( 'span', null, __( 'We’ll reply within', 'invoiceninja' ) ),
 					h( 'input', { id: 'in-qf-days', type: 'number', min: 0, max: 60, className: 'small-text', value: s.reply_days, 'aria-describedby': 'in-qf-days-help', onChange: ( e ) => set( 'reply_days', e.target.value ) } ),
 					h( 'span', null, __( 'days', 'invoiceninja' ) ) ), __( 'Shown under the form and in the confirmation. 0 hides it.', 'invoiceninja' ) ),
-				row( __( 'After sending', 'invoiceninja' ), 'in-qf-redirect', h( 'input', { id: 'in-qf-redirect', type: 'url', className: 'regular-text', value: s.redirect_url, placeholder: 'https://', 'aria-describedby': 'in-qf-redirect-help', onChange: ( e ) => set( 'redirect_url', e.target.value ) } ),
-					__( 'Optional. Empty shows the confirmation in place of the form; an address takes people to that page instead (for example a thank-you page).', 'invoiceninja' ) ),
+				row( __( 'After sending', 'invoiceninja' ), null, h( 'fieldset', null,
+					h( 'legend', { className: 'screen-reader-text' }, __( 'After sending', 'invoiceninja' ) ),
+					h( 'label', { className: 'in-check' },
+						h( 'input', { type: 'radio', name: 'in-qf-after', checked: after === 'message', onChange: () => setAfter( 'message' ) } ),
+						h( 'span', null, h( 'strong', null, __( 'Show a message', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'The confirmation takes the place of the form.', 'invoiceninja' ) ) ) ),
+					h( 'label', { className: 'in-check' },
+						h( 'input', { type: 'radio', name: 'in-qf-after', checked: after === 'page', onChange: () => setAfter( 'page' ) } ),
+						h( 'span', null, h( 'strong', null, __( 'Go to a page', 'invoiceninja' ) ), h( 'span', { className: 'in-muted' }, __( 'For example a thank-you page.', 'invoiceninja' ) ) ) ),
+					after === 'page' ? pagePicker : null ) ),
 				row( __( 'Tags', 'invoiceninja' ), 'in-qf-tags', h( 'input', { id: 'in-qf-tags', className: 'regular-text', value: s.tags, 'aria-describedby': 'in-qf-tags-help', onChange: ( e ) => set( 'tags', e.target.value ) } ),
 					__( 'Added to each quote in Invoice Ninja. Separate tags with commas. Needs Invoice Ninja 5.13.25 or newer.', 'invoiceninja' ) ),
-				row( __( 'Products offered', 'invoiceninja' ), null, h( 'fieldset', null,
-					h( 'legend', { className: 'screen-reader-text' }, __( 'Products offered', 'invoiceninja' ) ),
-					! products ? h( 'p', null, __( 'Loading…', 'invoiceninja' ) ) : null,
-					products && ! products.length ? h( 'p', { className: 'in-muted' }, __( 'No products yet. They appear here after they sync from Invoice Ninja.', 'invoiceninja' ) ) : null,
-					products ? products.map( ( p ) => h( 'label', { key: p.id, className: 'in-check' },
-						h( 'input', { type: 'checkbox', checked: chosen.includes( p.id ), onChange: ( e ) => set( 'products', ( e.target.checked ? chosen.concat( [ p.id ] ) : chosen.filter( ( id ) => id !== p.id ) ).join( ',' ) ) } ),
-						h( 'span', null, p.title ) ) ) : null,
-					h( 'p', { className: 'description' }, __( 'Used by forms that don’t choose their own products in the block settings. “Not sure yet” is always offered too.', 'invoiceninja' ) ) ) ) ) ),
+				row( __( 'Products offered', 'invoiceninja' ), null, productsField ) ) ),
 			h( 'h2', null, __( 'Emails', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
-				row( __( 'To you', 'invoiceninja' ), null, h( 'p', null,
+				row( __( 'To you', 'invoiceninja' ), null, h( 'p', { className: 'in-flush' },
 					sprintf( /* translators: %s: e.g. "once a day, in a digest" */ __( 'You’re emailed about new requests %s.', 'invoiceninja' ), leadModes[ leads ] || leads ), ' ',
 					h( 'a', { href: data.advanced }, __( 'Change in Advanced', 'invoiceninja' ) ) ) ),
 				row( __( 'Auto-reply', 'invoiceninja' ), null, h( 'label', { className: 'in-check' },
@@ -97,10 +171,10 @@
 					__( 'You can use {first_name}, {site} and {days}.', 'invoiceninja' ) ) : null ) ),
 			h( 'h2', null, __( 'Privacy', 'invoiceninja' ) ),
 			h( 'table', { className: 'form-table', role: 'presentation' }, h( 'tbody', null,
-				row( __( 'Keep requests for', 'invoiceninja' ), 'in-qf-keep', h( 'span', { className: 'in-row' },
-					h( 'input', { id: 'in-qf-keep', type: 'number', min: 0, max: 3650, className: 'small-text', value: s.retention_days, 'aria-describedby': 'in-qf-keep-help', onChange: ( e ) => set( 'retention_days', e.target.value ) } ),
-					h( 'span', null, __( 'days', 'invoiceninja' ) ) ),
-					__( 'Requests saved on this site are deleted after this many days. 0 keeps them. Clients and quotes in Invoice Ninja are never deleted.', 'invoiceninja' ) ) ) ),
+				row( __( 'Keep requests on this site', 'invoiceninja' ), 'in-qf-keep',
+					h( 'select', { id: 'in-qf-keep', value: String( keep ), 'aria-describedby': 'in-qf-keep-help', onChange: ( e ) => set( 'retention_days', parseInt( e.target.value, 10 ) ) },
+						keepOptions.map( ( d ) => h( 'option', { key: d, value: String( d ) }, d === 0 ? __( 'Forever', 'invoiceninja' ) : sprintf( /* translators: %d: number of days */ _n( 'For %d day', 'For %d days', d, 'invoiceninja' ), d ) ) ) ),
+					__( 'Older requests are deleted from this site. Clients and quotes in Invoice Ninja are never deleted.', 'invoiceninja' ) ) ) ),
 			error ? h( Notice, { type: 'error' }, h( 'p', null, error ) ) : null,
 			h( 'p', { className: 'in-row' }, h( Button, { primary: true, busy, onClick: save }, __( 'Save changes', 'invoiceninja' ) ), h( 'span', { role: 'status' }, message ) ) );
 	}
@@ -270,6 +344,8 @@
 							open === l.id ? h( 'tr', { className: 'in-confirm-row' }, h( 'td', { colSpan: cols },
 								h( 'dl', { className: 'in-dl', id: 'in-lead-' + l.id },
 									h( 'dt', null, __( 'Phone', 'invoiceninja' ) ), h( 'dd', null, l.phone || '—' ),
+									l.quantity ? [ h( 'dt', { key: 'qt' }, __( 'Quantity', 'invoiceninja' ) ), h( 'dd', { key: 'qd' }, l.quantity ) ] : null,
+									l.needed_by ? [ h( 'dt', { key: 'nt' }, __( 'Needed by', 'invoiceninja' ) ), h( 'dd', { key: 'nd' }, l.needed_by ) ] : null,
 									h( 'dt', null, __( 'Message', 'invoiceninja' ) ), h( 'dd', { style: { whiteSpace: 'pre-wrap' } }, l.message || '—' ),
 									l.consents.map( ( c ) => h( Fragment, { key: c.which },
 										h( 'dt', null, c.title || c.which ),

@@ -7,7 +7,8 @@
 .invoiceninja-checkout,
 .invoiceninja-status,
 .invoiceninja-minicart,
-.invoiceninja-banner {
+.invoiceninja-banner,
+.invoiceninja-drawer {
 	--invoiceninja-gap: 1.5rem;
 	--invoiceninja-radius: 0.75rem;
 	--invoiceninja-border: color-mix(in srgb, currentColor 18%, transparent);
@@ -52,10 +53,18 @@
 @media (max-width: 781px) {
 	.invoiceninja-products__grid { grid-template-columns: repeat(min(2, var(--invoiceninja-columns, 3)), minmax(0, 1fr)); }
 }
+/* Phones: two narrow columns (one column made eight products about 10,000 px tall). */
 @media (max-width: 480px) {
-	.invoiceninja-products__grid { grid-template-columns: minmax(0, 1fr); }
+	.invoiceninja-products__grid { gap: 1.5rem 0.75rem; }
+	.invoiceninja-card { font-size: 0.9375em; }
+	.invoiceninja-card .invoiceninja-add__button { inline-size: 100%; padding-inline: 0.5em; }
+	.invoiceninja-card .invoiceninja-add { display: block; }
+	.invoiceninja-card .invoiceninja-toast { padding: 0.5rem 0.6rem; font-size: 0.875rem; overflow-wrap: anywhere; }
+	.invoiceninja-card .invoiceninja-badge { inset-block-start: 0.5rem; inset-inline-start: 0.5rem; font-size: 0.75rem; }
+	.invoiceninja-shop__sort { margin-inline-start: 0; }
 }
-.invoiceninja-card { display: flex; flex-direction: column; gap: 0.5rem; }
+.invoiceninja-products__item { display: flex; min-inline-size: 0; }
+.invoiceninja-card { display: flex; flex: 1 1 auto; flex-direction: column; gap: 0.5rem; min-inline-size: 0; }
 .invoiceninja-card__media {
 	position: relative;
 	display: block;
@@ -76,8 +85,17 @@
 	border-radius: var(--invoiceninja-radius);
 	box-sizing: border-box;
 }
-.invoiceninja-card__title { margin: 0.25rem 0 0; font-size: 1.1em; }
+.invoiceninja-card__title { margin: 0.25rem 0 0; font-size: 1.1em; overflow-wrap: anywhere; }
 .invoiceninja-card__title a { text-decoration: none; }
+.invoiceninja-card__title a:hover { text-decoration: underline; }
+.invoiceninja-card__title a:focus-visible,
+.invoiceninja-shop__chip:focus-visible,
+.invoiceninja-gallery__thumb:focus-visible,
+.invoiceninja-qty__step:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.invoiceninja-card__descriptor,
+.invoiceninja-product__descriptor { margin: -0.25rem 0 0; color: var(--invoiceninja-muted); font-size: 0.9em; }
+.invoiceninja-card__excerpt { margin: 0; }
+.invoiceninja-card .invoiceninja-add { margin-block-start: auto; padding-block-start: 0.25rem; }
 .invoiceninja-card__meta,
 .invoiceninja-product__meta { margin: 0; display: flex; flex-wrap: wrap; gap: 0.25rem 0.75rem; align-items: baseline; }
 .invoiceninja-price { font-weight: 600; }
@@ -95,17 +113,99 @@
 	font-size: 0.8em;
 	font-weight: 700;
 }
+.invoiceninja-badge.is-low { color: var(--invoiceninja-warning); border-color: currentColor; }
 .invoiceninja-products__pages { margin-block-start: var(--invoiceninja-gap); }
+
+/* Shop toolbar: category chips and the sort menu */
+.invoiceninja-shop__toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.75rem 1.5rem;
+	align-items: center;
+	justify-content: space-between;
+	margin: 0 0 var(--invoiceninja-gap);
+}
+.invoiceninja-shop__chips { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.invoiceninja-shop__chip {
+	min-block-size: 2.75rem;
+	padding: 0 1rem;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: var(--invoiceninja-radius);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	cursor: pointer;
+}
+.invoiceninja-shop__chip:hover { border-color: currentColor; }
+/* Pressed: a heavier outline and weight, not a colour swap (the theme owns the colours). */
+.invoiceninja-shop__chip[aria-pressed="true"] { border-color: currentColor; box-shadow: inset 0 0 0 1px currentColor; background: var(--invoiceninja-surface); font-weight: 700; }
+.invoiceninja-shop__sort { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; margin: 0; margin-inline-start: auto; }
+.invoiceninja-shop__sort select { min-block-size: 2.75rem; padding: 0 0.6rem; font: inherit; max-inline-size: 100%; }
+.invoiceninja-products > .invoiceninja-empty { color: var(--invoiceninja-muted); }
+
+/* Product page: photos */
+.invoiceninja-gallery { display: flex; flex-direction: column; gap: 0.75rem; }
+.invoiceninja-gallery__main {
+	aspect-ratio: 1 / 1;
+	border-radius: var(--invoiceninja-radius);
+	overflow: hidden;
+	background: var(--invoiceninja-surface);
+}
+.invoiceninja-gallery__main img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.invoiceninja-gallery__thumbs {
+	display: grid;
+	grid-template-columns: repeat(auto-fill, minmax(4.5rem, 1fr));
+	gap: 0.5rem;
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+.invoiceninja-gallery__thumb {
+	display: block;
+	inline-size: 100%;
+	aspect-ratio: 1 / 1;
+	padding: 0;
+	border: 2px solid transparent;
+	border-radius: calc(var(--invoiceninja-radius) * 0.75);
+	overflow: hidden;
+	background: var(--invoiceninja-surface);
+	cursor: pointer;
+}
+.invoiceninja-gallery__thumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+.invoiceninja-gallery__thumb[aria-pressed="true"] { border-color: currentColor; }
+
+/* Product page: quantity stepper and the button's total */
+.invoiceninja-qty { display: inline-flex; align-items: stretch; }
+.invoiceninja-qty__step {
+	min-inline-size: 2.75rem;
+	min-block-size: 2.75rem;
+	padding: 0;
+	border: 1px solid var(--invoiceninja-border);
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: 1.2em;
+	line-height: 1;
+	cursor: pointer;
+}
+.invoiceninja-qty__step:first-child { border-start-start-radius: 0.5rem; border-end-start-radius: 0.5rem; border-inline-end: 0; }
+.invoiceninja-qty__step:last-child { border-start-end-radius: 0.5rem; border-end-end-radius: 0.5rem; border-inline-start: 0; }
+.invoiceninja-qty__step[disabled] { opacity: 0.45; cursor: not-allowed; }
+.invoiceninja-qty__step:not([hidden]) + input { inline-size: 3.5em; border-radius: 0; text-align: center; -moz-appearance: textfield; appearance: textfield; }
+.invoiceninja-qty__step:not([hidden]) + input::-webkit-inner-spin-button,
+.invoiceninja-qty__step:not([hidden]) + input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.invoiceninja-add__total { font-variant-numeric: tabular-nums; }
 
 /* Add to cart */
 .invoiceninja-add { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: flex-end; margin: 0.25rem 0 0; }
 .invoiceninja-add__qty { display: flex; flex-direction: column; gap: 0.25rem; font-size: 0.9em; }
-.invoiceninja-add__qty input { inline-size: 5.5em; min-block-size: 2.75rem; padding: 0.4em 0.6em; font: inherit; }
+.invoiceninja-add__qty input[type="number"] { inline-size: 5.5em; min-block-size: 2.75rem; padding: 0.4em 0.6em; font: inherit; box-sizing: border-box; }
+.invoiceninja-add__button { min-block-size: 2.75rem; }
 .invoiceninja-add__button[disabled] { opacity: 0.6; cursor: not-allowed; }
 .invoiceninja-toast { margin: 0.5rem 0 0; padding: 0.6rem 0.9rem; border-radius: 0.5rem; background: var(--invoiceninja-surface); }
 .invoiceninja-toast.is-error { color: var(--invoiceninja-error); }
 
-/* Mini Cart */
+/* Mini Cart: the header button, and the drawer it opens from the end edge */
 .invoiceninja-minicart { position: relative; display: inline-block; }
 .invoiceninja-minicart__button {
 	display: inline-flex;
@@ -114,49 +214,86 @@
 	min-block-size: 2.75rem;
 	padding: 0 1rem;
 	border: 1px solid currentColor;
-	border-radius: 999px;
+	border-radius: var(--invoiceninja-radius);
 	background: transparent;
 	color: inherit;
 	font: inherit;
+	text-decoration: none;
 	cursor: pointer;
 }
 .invoiceninja-minicart__count {
 	min-inline-size: 1.4em;
 	padding: 0 0.35em;
 	border: 1px solid currentColor;
-	border-radius: 999px;
+	border-radius: 0.4em;
 	text-align: center;
 	font-size: 0.8em;
 	font-weight: 700;
 }
-.invoiceninja-minicart__panel {
+html.invoiceninja-locked { overflow: hidden; }
+.invoiceninja-drawer {
+	position: fixed;
+	inset: 0;
+	z-index: 100000;
+	color: var(--invoiceninja-fg, CanvasText);
+}
+.invoiceninja-drawer__backdrop { position: absolute; inset: 0; background: rgb(0 0 0 / 40%); opacity: 0; }
+.invoiceninja-drawer__panel {
 	position: absolute;
+	inset-block: 0;
 	inset-inline-end: 0;
-	inset-block-start: calc(100% + 0.5rem);
-	z-index: 100;
-	inline-size: min(22rem, calc(100vw - 2rem));
-	padding: 1.25rem;
-	border: 1px solid var(--invoiceninja-border);
-	border-radius: var(--invoiceninja-radius);
-	background: Canvas;
-	color: CanvasText;
-	box-shadow: 0 12px 32px rgb(0 0 0 / 12%);
+	inline-size: min(26rem, 100%);
+	display: flex;
+	flex-direction: column;
+	background: var(--invoiceninja-bg, Canvas);
+	box-shadow: 0 0 40px rgb(0 0 0 / 18%);
+	transform: translateX(100%);
+}
+[dir="rtl"] .invoiceninja-drawer__panel { transform: translateX(-100%); }
+.invoiceninja-drawer.is-open .invoiceninja-drawer__backdrop { opacity: 1; }
+.invoiceninja-drawer.is-open .invoiceninja-drawer__panel { transform: none; }
+@media (prefers-reduced-motion: no-preference) {
+	.invoiceninja-drawer__backdrop { transition: opacity 0.2s ease; }
+	.invoiceninja-drawer__panel { transition: transform 0.2s ease; }
+}
+.invoiceninja-drawer__head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem;
+	padding: 0.75rem 1rem 0.75rem 1.25rem;
+	border-block-end: 1px solid var(--invoiceninja-border);
+}
+.invoiceninja-drawer__title { margin: 0; font-size: 1.25em; }
+.invoiceninja-drawer__title:focus { outline: none; }
+.invoiceninja-drawer__body { flex: 1 1 auto; overflow-y: auto; overscroll-behavior: contain; padding: 0.5rem 1.25rem; }
+.invoiceninja-drawer__body > .invoiceninja-loading,
+.invoiceninja-drawer__empty { margin: 1rem 0; }
+.invoiceninja-drawer > .invoiceninja-drawer__panel > .invoiceninja-loading { padding: 1rem 1.25rem; }
+.invoiceninja-drawer__foot {
 	display: flex;
 	flex-direction: column;
 	gap: 0.75rem;
+	padding: 1rem 1.25rem max(1rem, env(safe-area-inset-bottom));
+	border-block-start: 1px solid var(--invoiceninja-border);
 }
-.invoiceninja-minicart__panel[hidden] { display: none; }
-.invoiceninja-minicart__head,
-.invoiceninja-minicart__total { display: flex; justify-content: space-between; align-items: center; margin: 0; }
-.invoiceninja-minicart__lines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.5rem; }
-.invoiceninja-minicart__lines li { display: flex; justify-content: space-between; gap: 1rem; }
+.invoiceninja-drawer__foot .invoiceninja-linkbutton { align-self: center; }
+.invoiceninja-drawer,
+.invoiceninja-drawer .invoiceninja-drawer__panel {
+	--invoiceninja-radius: 0.75rem;
+	--invoiceninja-border: color-mix(in srgb, currentColor 18%, transparent);
+	--invoiceninja-muted: color-mix(in srgb, currentColor 70%, transparent);
+	--invoiceninja-surface: color-mix(in srgb, currentColor 5%, transparent);
+	--invoiceninja-warning: #8a4b00;
+	--invoiceninja-error: #b32d2e;
+}
 
 /* Shared controls */
 .invoiceninja-iconbutton {
 	min-inline-size: 2.75rem;
 	min-block-size: 2.75rem;
 	border: 1px solid var(--invoiceninja-border);
-	border-radius: 999px;
+	border-radius: var(--invoiceninja-radius);
 	background: transparent;
 	color: inherit;
 	font: inherit;
@@ -172,55 +309,333 @@
 	color: inherit;
 	font: inherit;
 	text-decoration: underline;
+	text-underline-offset: 0.2em;
 	cursor: pointer;
+}
+.invoiceninja-linkbutton[disabled] { text-decoration: none; color: var(--invoiceninja-muted); cursor: default; }
+/* Pointers can aim: link buttons sit in the line of text; touch keeps 44 px. */
+@media (pointer: fine) {
+	.invoiceninja-linkbutton { min-block-size: 0; }
 }
 .invoiceninja-secondary {
 	background: transparent !important;
 	color: inherit !important;
 	border: 1px solid currentColor !important;
 }
-.invoiceninja-actions { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: center; }
+/* Main actions (Checkout, Continue, Pay) in the theme's strongest colours, never a washed-out grey. */
+.invoiceninja-primary {
+	background-color: var(--invoiceninja-primary, var(--wp--preset--color--contrast, CanvasText)) !important;
+	color: var(--invoiceninja-on-primary, var(--wp--preset--color--base, Canvas)) !important;
+	border-color: transparent;
+}
+.invoiceninja-primary:hover { filter: brightness(1.15); }
+.invoiceninja-primary:focus-visible,
+.invoiceninja-secondary:focus-visible,
+.invoiceninja-linkbutton:focus-visible,
+.invoiceninja-iconbutton:focus-visible,
+.invoiceninja-stepper__button:focus-visible,
+.invoiceninja-summary__toggle:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.invoiceninja-primary:focus-visible { outline-color: var(--invoiceninja-primary, var(--wp--preset--color--contrast, CanvasText)); }
+.invoiceninja-wide { display: flex; inline-size: 100%; box-sizing: border-box; justify-content: center; text-align: center; }
+.invoiceninja-actions { display: flex; flex-wrap: wrap; gap: 0.75rem 1.25rem; align-items: center; margin: 0; }
+.invoiceninja-links { display: flex; flex-wrap: wrap; gap: 0.25rem 1.5rem; align-items: center; margin: 0; }
 .invoiceninja-pay { display: inline-flex; align-items: center; gap: 0.5rem; }
+.invoiceninja-lead { margin: 0; font-size: 1.15em; font-weight: 600; }
 
-/* Checkout */
+/* Thumbnails: the product's featured image, or a plain tile with its initial */
+.invoiceninja-thumb {
+	flex: none;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	inline-size: var(--invoiceninja-thumb, 4rem);
+	block-size: var(--invoiceninja-thumb, 4rem);
+	border-radius: calc(var(--invoiceninja-radius) * 0.66);
+	overflow: hidden;
+	background: var(--invoiceninja-surface);
+	color: var(--invoiceninja-muted);
+	font-weight: 600;
+}
+.invoiceninja-thumb img { display: block; inline-size: 100%; block-size: 100%; object-fit: cover; }
+
+/* Totals */
+.invoiceninja-totals { display: flex; flex-direction: column; gap: 0.4rem; }
+.invoiceninja-total { display: flex; justify-content: space-between; gap: 1rem; margin: 0; font-variant-numeric: tabular-nums; }
+.invoiceninja-total__value { text-align: end; }
+.invoiceninja-total.is-muted { color: var(--invoiceninja-muted); }
+.invoiceninja-total.is-grand { padding-block-start: 0.6rem; border-block-start: 1px solid var(--invoiceninja-border); font-weight: 700; font-size: 1.1em; }
+.invoiceninja-total.is-grand:first-child { padding-block-start: 0; border: 0; }
+
+/* Cart lines (cart page and drawer) */
+.invoiceninja-cartlines { list-style: none; margin: 0; padding: 0; }
+.invoiceninja-cartline {
+	display: flex;
+	gap: 1rem;
+	align-items: flex-start;
+	padding: 1rem 0;
+	border-block-end: 1px solid var(--invoiceninja-border);
+}
+.invoiceninja-cartline__body { flex: 1 1 auto; min-inline-size: 0; display: flex; flex-direction: column; gap: 0.15rem; }
+.invoiceninja-cartline__top { display: flex; justify-content: space-between; align-items: baseline; gap: 1rem; }
+.invoiceninja-cartline__name { font-weight: 600; overflow-wrap: anywhere; color: inherit; text-decoration: none; }
+a.invoiceninja-cartline__name:hover { text-decoration: underline; }
+.invoiceninja-cartline__total { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.invoiceninja-cartline__meta { margin: 0; font-size: 0.9em; }
+.invoiceninja-cartline__controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.5rem 1rem; margin-block-start: 0.5rem; }
+.invoiceninja-cartline__remove { font-size: 0.9em; color: var(--invoiceninja-muted); }
+.invoiceninja-cartline__limit { margin: 0.25rem 0 0; font-size: 0.9em; color: var(--invoiceninja-warning); }
+.invoiceninja-undo {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 0 0.5rem;
+	margin: 0.5rem 0 0;
+	padding: 0.25rem 0.85rem;
+	border-radius: 0.5rem;
+	background: var(--invoiceninja-surface);
+}
+/* The quantity stepper: compact for a mouse, 44 px targets on touch. */
+.invoiceninja-stepper {
+	display: inline-flex;
+	align-items: stretch;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: 0.5rem;
+}
+.invoiceninja-stepper__button {
+	min-inline-size: 2.75rem;
+	min-block-size: 2.75rem;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font: inherit;
+	font-size: 1.1em;
+	line-height: 1;
+	cursor: pointer;
+}
+.invoiceninja-stepper__button[disabled] { opacity: 0.4; cursor: not-allowed; }
+.invoiceninja-stepper__value { display: flex; align-items: center; justify-content: center; min-inline-size: 2em; font-weight: 600; font-variant-numeric: tabular-nums; }
+@media (pointer: fine) {
+	.invoiceninja-stepper__button { min-inline-size: 2rem; min-block-size: 2rem; }
+}
+
+/* Cart page: lines beside the totals when the block is wide; on phones a Checkout bar pinned to the bottom */
 .invoiceninja-checkout,
 .invoiceninja-status { display: flex; flex-direction: column; gap: 1rem; }
+/* Layout follows the block's own width (themes often keep page content narrow), not the screen's. */
+.invoiceninja-checkout { container: invoiceninja-checkout / inline-size; }
 .invoiceninja-heading:focus { outline: none; }
-.invoiceninja-columns { display: flex; flex-wrap: wrap; gap: 2rem; align-items: flex-start; }
-.invoiceninja-columns > form { flex: 999 1 26rem; min-inline-size: 0; display: flex; flex-direction: column; gap: 1rem; }
-.invoiceninja-aside { flex: 1 1 18rem; padding: 1.25rem; border-radius: var(--invoiceninja-radius); background: var(--invoiceninja-surface); }
-.invoiceninja-aside h3 { margin-block-start: 0; }
+.invoiceninja-cart {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr);
+	grid-template-areas: "head" "items" "summary" "bar" "more";
+	column-gap: clamp(1.5rem, 4vw, 3rem);
+	align-items: start;
+}
+.invoiceninja-cart__head {
+	grid-area: head;
+	display: flex;
+	flex-wrap: wrap;
+	justify-content: space-between;
+	align-items: baseline;
+	gap: 0.5rem 1rem;
+	padding-block-end: 0.75rem;
+	border-block-end: 1px solid var(--invoiceninja-border);
+}
+.invoiceninja-cart__title { margin: 0; }
+.invoiceninja-cart__items { grid-area: items; min-inline-size: 0; }
+.invoiceninja-cart__summary {
+	grid-area: summary;
+	margin-block-start: 1.25rem;
+	padding: 1.25rem;
+	border-radius: var(--invoiceninja-radius) var(--invoiceninja-radius) 0 0;
+	background: var(--invoiceninja-surface);
+}
+.invoiceninja-cart__bar {
+	grid-area: bar;
+	padding: 0 1.25rem 1.25rem;
+	border-radius: 0 0 var(--invoiceninja-radius) var(--invoiceninja-radius);
+	background: var(--invoiceninja-surface);
+}
+.invoiceninja-cart__checkout { justify-content: space-between; gap: 1rem; }
+.invoiceninja-cart__more { grid-area: more; margin: 1rem 0 0; text-align: center; }
+.invoiceninja-cart.is-empty { display: flex; flex-direction: column; align-items: stretch; gap: 1rem; }
+.invoiceninja-cart.is-empty p { margin: 0; }
+.invoiceninja-cart.is-empty .invoiceninja-undo { align-self: flex-start; }
+.invoiceninja-cart__empty { color: var(--invoiceninja-muted); }
+@container invoiceninja-checkout (min-width: 46rem) {
+	.invoiceninja-cart {
+		grid-template-columns: minmax(0, 1fr) 20rem;
+		grid-template-areas:
+			"head head"
+			"items summary"
+			"items bar"
+			"items more";
+		grid-template-rows: auto auto auto 1fr;
+	}
+}
+@media (max-width: 781px) {
+	.invoiceninja-cart__summary { border-radius: var(--invoiceninja-radius); }
+	/* In the page's flow, so it never covers the last line; it sticks while the cart scrolls. */
+	.invoiceninja-cart__bar {
+		position: sticky;
+		inset-block-end: 0;
+		z-index: 2;
+		margin-block-start: 1rem;
+		padding: 0.75rem 0 max(0.75rem, env(safe-area-inset-bottom));
+		border-radius: 0;
+		border-block-start: 1px solid var(--invoiceninja-border);
+		background: var(--invoiceninja-bg, Canvas);
+	}
+}
+
+/* Checkout: the steps, with the order summary beside them when there's room, else folded on top */
+.invoiceninja-checkout__layout { display: grid; grid-template-columns: minmax(0, 1fr); gap: 1rem; align-items: start; }
+.invoiceninja-steps { display: flex; flex-direction: column; gap: 0.75rem; min-inline-size: 0; }
+.invoiceninja-steps__count { margin: 0; text-align: end; font-size: 0.9em; }
+.invoiceninja-step {
+	padding: 1rem;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: var(--invoiceninja-radius);
+}
+.invoiceninja-step.is-current { border-color: color-mix(in srgb, currentColor 45%, transparent); }
+.invoiceninja-step__head { display: flex; justify-content: space-between; align-items: center; gap: 1rem; }
+.invoiceninja-step__title { margin: 0; font-size: 1.2em; }
+/* Steps still to come: dimmer, but still at AA contrast. */
+.invoiceninja-step.is-todo .invoiceninja-step__title { color: var(--invoiceninja-muted); font-weight: 500; }
+.invoiceninja-step__summary { margin: 0.35rem 0 0; overflow-wrap: anywhere; }
+.invoiceninja-step__body { display: flex; flex-direction: column; gap: 1rem; margin-block-start: 1rem; }
+.invoiceninja-step__body p { margin: 0; }
+.invoiceninja-form { display: flex; flex-direction: column; gap: 1rem; }
+.invoiceninja-fieldset { margin: 0; padding: 0; border: 0; display: flex; flex-direction: column; gap: 1rem; }
+.invoiceninja-fieldset legend { padding: 0; margin-block-end: 0.5rem; font-weight: 600; }
+.invoiceninja-summary { border-radius: var(--invoiceninja-radius); background: var(--invoiceninja-surface); }
+.invoiceninja-summary__toggle {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	gap: 1rem;
+	min-block-size: 2.75rem;
+	padding: 0.5rem 1rem;
+	list-style: none;
+	font-weight: 700;
+	cursor: pointer;
+}
+.invoiceninja-summary__toggle::-webkit-details-marker { display: none; }
+.invoiceninja-summary__wide { display: none; }
+.invoiceninja-summary__narrow { text-decoration: underline; text-underline-offset: 0.2em; }
+.invoiceninja-summary[open] .invoiceninja-summary__narrow { text-decoration: none; }
+.invoiceninja-summary__body { display: flex; flex-direction: column; gap: 1rem; padding: 0.25rem 1rem 1rem; }
+.invoiceninja-summary__edit { margin: 0; font-size: 0.9em; }
+.invoiceninja-slines { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 0.75rem; }
+.invoiceninja-sline { display: flex; align-items: center; gap: 0.75rem; }
+.invoiceninja-sline__title { flex: 1 1 auto; min-inline-size: 0; overflow-wrap: anywhere; }
+.invoiceninja-sline__total { font-weight: 600; white-space: nowrap; font-variant-numeric: tabular-nums; }
+@container invoiceninja-checkout (min-width: 50rem) {
+	.invoiceninja-checkout__layout { grid-template-columns: minmax(0, 1fr) 21rem; gap: 2rem clamp(1.5rem, 4vw, 3rem); }
+	.invoiceninja-steps { grid-column: 1; grid-row: 1; }
+	.invoiceninja-checkout__summary { grid-column: 2; grid-row: 1; position: sticky; inset-block-start: 1.5rem; }
+	.invoiceninja-summary { padding: 1.25rem; }
+	.invoiceninja-summary__toggle { min-block-size: 0; padding: 0; cursor: default; font-size: 1.1em; }
+	.invoiceninja-summary__wide { display: inline; }
+	.invoiceninja-summary__narrow,
+	.invoiceninja-summary__amount { display: none; }
+	.invoiceninja-summary__body { padding: 0; margin-block-start: 0.75rem; }
+	.invoiceninja-step { padding: 1.1rem 1.25rem; }
+}
 .invoiceninja-row { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 @media (max-width: 480px) {
 	.invoiceninja-row { grid-template-columns: minmax(0, 1fr); }
 }
 .invoiceninja-field { display: flex; flex-direction: column; gap: 0.35rem; margin: 0; }
 .invoiceninja-field label { font-weight: 600; }
-.invoiceninja-field input { min-block-size: 2.75rem; font: inherit; }
+.invoiceninja-field input,
+.invoiceninja-field select { min-block-size: 2.75rem; font: inherit; max-inline-size: 100%; box-sizing: border-box; }
+.invoiceninja-field.is-invalid input,
+.invoiceninja-field.is-invalid select { border-color: var(--invoiceninja-error); box-shadow: inset 0 0 0 1px var(--invoiceninja-error); }
+.invoiceninja-field__error { color: var(--invoiceninja-error); font-size: 0.9em; font-weight: 600; }
+.invoiceninja-field__error::before { content: "! "; }
 .invoiceninja-help { color: var(--invoiceninja-muted); font-size: 0.9em; }
 .invoiceninja-code { inline-size: 11em; font-size: 1.6em !important; letter-spacing: 0.3em; font-variant-numeric: tabular-nums; }
+.invoiceninja-check { margin: 0; }
 .invoiceninja-check label { display: inline-flex; flex-wrap: wrap; gap: 0 0.5rem; align-items: center; min-block-size: 2.75rem; }
-.invoiceninja-summary { display: flex; flex-direction: column; gap: 0.5rem; }
-.invoiceninja-lines { list-style: none; margin: 0; padding: 0; }
-.invoiceninja-line {
-	display: grid;
-	grid-template-columns: minmax(0, 1fr) auto auto;
-	gap: 0.5rem 1rem;
+.invoiceninja-check input { inline-size: 1.15rem; block-size: 1.15rem; margin: 0; }
+/* The email code: six boxes drawn under one real input */
+.invoiceninja-otp { position: relative; inline-size: 100%; max-inline-size: 21rem; }
+.invoiceninja-otp__boxes { display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 0.5rem; }
+.invoiceninja-otp__box {
+	display: flex;
 	align-items: center;
-	padding: 0.75rem 0;
-	border-block-end: 1px solid var(--invoiceninja-border);
+	justify-content: center;
+	block-size: 3.5rem;
+	border: 1px solid color-mix(in srgb, currentColor 40%, transparent);
+	border-radius: 0.5rem;
+	font-size: 1.5em;
+	font-weight: 600;
+	font-variant-numeric: tabular-nums;
 }
-.invoiceninja-line__title { display: flex; flex-direction: column; }
-.invoiceninja-line__total { font-weight: 600; text-align: end; }
-@media (max-width: 480px) {
-	.invoiceninja-line { grid-template-columns: minmax(0, 1fr) auto; }
-	.invoiceninja-line .invoiceninja-stepper { grid-column: 1 / -1; }
+.invoiceninja-otp__box.is-active { border-color: currentColor; box-shadow: 0 0 0 1px currentColor; }
+.invoiceninja-field.is-invalid .invoiceninja-otp__box { border-color: var(--invoiceninja-error); }
+.invoiceninja-otp__input {
+	position: absolute;
+	inset: 0;
+	inline-size: 100%;
+	block-size: 100%;
+	margin: 0;
+	padding: 0;
+	border: 0 !important;
+	background: transparent !important;
+	color: transparent !important;
+	caret-color: transparent;
+	font-size: 16px;
+	letter-spacing: 2.5rem;
+	box-shadow: none !important;
+	outline: none;
+	-webkit-text-fill-color: transparent;
 }
-.invoiceninja-stepper { display: inline-flex; flex-wrap: wrap; align-items: center; gap: 0.25rem 0.5rem; }
-.invoiceninja-stepper__value { min-inline-size: 2em; text-align: center; font-weight: 600; }
-.invoiceninja-summary__row { display: flex; justify-content: space-between; gap: 1rem; margin: 0; }
+.invoiceninja-otp__input::selection { background: transparent; }
+@media (max-width: 400px) {
+	.invoiceninja-otp__boxes { gap: 0.35rem; }
+	.invoiceninja-otp__box { block-size: 3rem; }
+}
 .invoiceninja-panel { padding: 1.25rem; border-radius: var(--invoiceninja-radius); background: var(--invoiceninja-surface); display: flex; flex-direction: column; gap: 0.75rem; }
 .invoiceninja-panel h2 { margin: 0; }
+
+/* Order Status */
+.invoiceninja-status p { margin: 0; }
+.invoiceninja-status__meta { font-size: 0.9em; }
+.invoiceninja-status__headline { margin: 0; }
+.invoiceninja-progress {
+	display: grid;
+	grid-template-columns: repeat(2, minmax(0, 1fr));
+	gap: 0.5rem;
+	list-style: none;
+	margin: 0.5rem 0;
+	padding: 0;
+}
+.invoiceninja-progress__stage {
+	display: flex;
+	flex-direction: column;
+	gap: 0.1rem;
+	padding-block-start: 0.6rem;
+	border-block-start: 4px solid var(--invoiceninja-border);
+	color: var(--invoiceninja-muted);
+}
+.invoiceninja-progress__stage.is-done { border-block-start-color: currentColor; color: inherit; }
+.invoiceninja-progress__label { font-weight: 600; }
+.invoiceninja-progress__date { font-size: 0.9em; }
+.invoiceninja-facts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr));
+	gap: 1rem 2rem;
+	padding: 1.25rem;
+	border-radius: var(--invoiceninja-radius);
+	background: var(--invoiceninja-surface);
+}
+.invoiceninja-fact__label { margin: 0 0 0.25rem; font-size: 0.85em; font-weight: 400; color: var(--invoiceninja-muted); }
+.invoiceninja-fact p { overflow-wrap: anywhere; }
+.invoiceninja-status__lines { display: flex; flex-direction: column; gap: 1rem; padding-block-start: 1rem; border-block-start: 1px solid var(--invoiceninja-border); }
+.invoiceninja-status__help { margin-block-start: 0.5rem; }
 
 /* Notices and pills */
 .invoiceninja-notice {
@@ -236,7 +651,7 @@
 	display: inline-block;
 	padding: 0.2em 0.8em;
 	border: 1px solid currentColor;
-	border-radius: 999px;
+	border-radius: 0.4em;
 	font-weight: 700;
 	font-size: 0.9em;
 }
@@ -256,10 +671,6 @@
 	background: var(--invoiceninja-surface);
 }
 .invoiceninja-banner__text { flex: 1 1 18rem; }
-
-@media (prefers-reduced-motion: no-preference) {
-	.invoiceninja-minicart__panel { transition: opacity 0.12s ease; }
-}
 
 /* Account */
 .invoiceninja-account { display: flex; flex-direction: column; gap: 1rem; }

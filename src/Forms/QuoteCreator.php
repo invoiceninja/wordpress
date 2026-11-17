@@ -217,6 +217,12 @@ final class QuoteCreator {
 				);
 			}
 		}
+		// The quantity asked for becomes the line's quantity; without a line it goes in the notes.
+		$quantity = FormConfig::quantity( (string) ( $fields['quantity'] ?? '' ) );
+		$on_line  = null !== $product && '' !== $product['product_key'] && null !== $quantity;
+		if ( $on_line ) {
+			$product['quantity'] = $quantity;
+		}
 		$state = $this->plugin->state->get();
 		/**
 		 * Tag names for a lead's quote (commas are removed; at most 20).
@@ -227,7 +233,7 @@ final class QuoteCreator {
 		 */
 		$names   = QuotePayload::tagNames( (array) apply_filters( 'invoiceninja_quote_tags', QuotePayload::tagNames( (string) $this->plugin->options->setting( 'forms.tags' ) ), $lead ) );
 		$tag_ids = $this->tags->ids( $client, $names, (string) ( $state['version'] ?? '' ) );
-		$notes   = QuotePayload::privateNotes( $marker, $fields, (array) $lead['consents'], (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ) );
+		$notes   = QuotePayload::privateNotes( $marker, $fields, (array) $lead['consents'], (string) wp_parse_url( (string) home_url(), PHP_URL_HOST ), $on_line );
 		$body    = QuotePayload::quoteBody( $client_id, (string) ( $fields['message'] ?? '' ), $notes, $product, $tag_ids );
 		/**
 		 * The body of the draft quote created for a lead.

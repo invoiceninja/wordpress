@@ -77,6 +77,13 @@ final class PortalModule implements Module {
 			'manage'
 		);
 		$routes->add( '/customers/verify-role', 'POST', array( $this, 'verifyRole' ), 'manage_site' );
+		// Admin redesign: how many users "Create clients" would queue for the saved roles.
+		$routes->add(
+			'/customers/export',
+			'GET',
+			fn(): \WP_REST_Response => new \WP_REST_Response( array( 'pending' => $this->links->pendingExport() ) ),
+			'manage'
+		);
 	}
 
 	/**
@@ -123,9 +130,25 @@ final class PortalModule implements Module {
 
 	/**
 	 * The Customers settings tab.
+	 *
+	 * @param string $screen Admin screen.
 	 */
-	public function adminAssets(): void {
+	public function adminAssets( string $screen = '' ): void {
 		wp_enqueue_script( 'invoiceninja-portal-admin', $this->plugin->url() . 'assets/admin/portal.js', array( 'invoiceninja-admin' ), INVOICENINJA_VERSION, true );
 		wp_set_script_translations( 'invoiceninja-portal-admin', 'invoiceninja' );
+		if ( 'settings' !== $screen ) {
+			return;
+		}
+		// Roles with their user counts, for the role checkboxes and the "Mark as confirmed" picker.
+		$counts = (array) ( count_users()['avail_roles'] ?? array() );
+		$roles  = array();
+		foreach ( wp_roles()->get_names() as $id => $name ) {
+			$roles[] = array(
+				'id'    => (string) $id,
+				'name'  => translate_user_role( (string) $name ),
+				'count' => (int) ( $counts[ $id ] ?? 0 ),
+			);
+		}
+		wp_add_inline_script( 'invoiceninja-portal-admin', 'window.invoiceNinjaPortalAdmin = ' . wp_json_encode( array( 'roles' => $roles ) ) . ';', 'before' );
 	}
 }

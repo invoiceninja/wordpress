@@ -32,6 +32,10 @@
 		"showTrial": {
 			"type": "boolean",
 			"default": true
+		},
+		"planDetails": {
+			"type": "object",
+			"default": {}
 		}
 	},
 	"supports": {

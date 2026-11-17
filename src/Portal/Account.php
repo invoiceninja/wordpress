@@ -10,7 +10,10 @@ declare(strict_types=1);
 namespace InvoiceNinja\Portal;
 
 use InvoiceNinja\Api\ApiException;
+use InvoiceNinja\Api\Money;
 use InvoiceNinja\Commerce\Checkout;
+use InvoiceNinja\Commerce\OrderService;
+use InvoiceNinja\Commerce\Orders;
 use InvoiceNinja\Plugin;
 use InvoiceNinja\Rest\Routes;
 
@@ -23,7 +26,16 @@ use InvoiceNinja\Rest\Routes;
  */
 final class Account {
 
+	/** Pages of 100 unpaid invoices read for the Balance due panel, at most. */
+	private const MAX_UNPAID_PAGES = 5;
+
+	/** Seconds the Balance due panel may spend reading them. */
+	private const UNPAID_BUDGET = 8.0;
+
 	public const TABS = array( 'invoices', 'quotes', 'payments', 'credits', 'subscriptions' );
+
+	/** Transient: the page with the Quote Request Form, for the empty Quotes tab. */
+	private const QUOTE_PAGE = 'invoiceninja_quote_page';
 
 	/**
 	 * Constructor.
@@ -46,12 +58,14 @@ final class Account {
 		add_action( 'template_redirect', array( $this, 'redirect' ), 5 );
 		add_action( 'invoiceninja_rest_routes', array( $this, 'routes' ) );
 		add_action( 'wp_enqueue_scripts', array( $this, 'registerScript' ) );
+		add_action( 'save_post_page', array( self::class, 'forgetQuotePage' ) );
 	}
 
 	/**
-	 * Register the portal script.
+	 * Register the portal script and style.
 	 */
 	public function registerScript(): void {
+		wp_register_style( 'invoiceninja-portal', $this->plugin->url() . 'assets/portal/portal.css', array( \InvoiceNinja\Frontend\Store::HANDLE ), INVOICENINJA_VERSION );
 		wp_register_script(
 			'invoiceninja-portal',
 			$this->plugin->url() . 'assets/portal/portal.js',
@@ -82,7 +96,7 @@ final class Account {
 	/**
 	 * Account block, or its Portal Link variation.
 	 *
-	 * @param array<string, mixed> $a mode (account or link), label, style (link or button), class, tabs.
+	 * @param array<string, mixed> $a mode (account or link), label, style (link or button), class, tabs, balance.
 	 */
 	public function render( array $a ): string {
 		$mode = (string) ( $a['mode'] ?? 'account' );
@@ -97,11 +111,17 @@ final class Account {
 		}
 		$this->plugin->store->enqueue();
 		wp_enqueue_script( 'invoiceninja-portal' );
-		$tabs = array_values( array_intersect( self::TABS, array_map( 'strval', (array) ( $a['tabs'] ?? self::TABS ) ) ) );
+		wp_enqueue_style( 'invoiceninja-portal' );
+		// A block passes a list; a shortcode a comma-separated string (tabs="invoices,payments").
+		$wanted = $a['tabs'] ?? self::TABS;
+		$wanted = is_string( $wanted ) ? explode( ',', $wanted ) : (array) $wanted;
+		$tabs   = array_values( array_intersect( self::TABS, array_map( static fn( $tab ): string => trim( (string) $tab ), $wanted ) ) );
+		// The Balance due panel is on unless turned off (balance: false, or balance="0" in a shortcode).
+		$balance = ! in_array( $a['balance'] ?? true, array( false, 0, '0', 'no', 'off', '' ), true );
 		// Where to go once the email is confirmed (e.g. back to a product), on this site only.
 		// phpcs:ignore WordPress.Security.NonceVerification.Recommended -- a link; nothing changes.
 		$back = ConfirmEmail::back( (string) ( $a['return'] ?? ( isset( $_GET['invoiceninja_return'] ) && is_string( $_GET['invoiceninja_return'] ) ? esc_url_raw( wp_unslash( $_GET['invoiceninja_return'] ) ) : '' ) ) );
-		return '<div class="invoiceninja-account" data-invoiceninja-account data-tabs="' . esc_attr( implode( ',', $tabs ? $tabs : self::TABS ) ) . '"' . ( '' !== $back ? ' data-return="' . esc_url( $back ) . '"' : '' ) . ' data-invoiceninja-store>'
+		return '<div class="invoiceninja-account" data-invoiceninja-account data-tabs="' . esc_attr( implode( ',', $tabs ? $tabs : self::TABS ) ) . '" data-balance="' . ( $balance ? '1' : '0' ) . '"' . ( '' !== $back ? ' data-return="' . esc_url( $back ) . '"' : '' ) . ' data-invoiceninja-store>'
 			. '<noscript><p>' . esc_html__( 'Your account needs JavaScript.', 'invoiceninja' ) . '</p></noscript>'
 			. '<p class="invoiceninja-loading">' . esc_html__( 'Loading your account…', 'invoiceninja' ) . '</p></div>';
 	}
@@ -175,6 +195,8 @@ final class Account {
 				'unavailable'    => $down,
 				'portalPassword' => ! empty( $company['portal_password'] ),
 				'portalUrl'      => home_url( '/?invoiceninja=portal' ),
+				// Has a nonce, so it comes with this uncached reply, never in the page.
+				'logoutUrl'      => $user ? wp_logout_url( home_url( '/' ) ) : '',
 			)
 		);
 	}
@@ -193,10 +215,10 @@ final class Account {
 		$tab   = (string) $request->get_param( 'tab' );
 		$link  = $this->links->get( $user_id );
 		$cache = 'invoiceninja_acct_' . $user_id . '_' . $tab;
-		$rows  = null === $link || 'subscriptions' === $tab ? false : get_transient( $cache );
-		// Cached rows are only kept for a minute after the link was confirmed for this email.
-		if ( is_array( $rows ) && ( $rows['client_id'] ?? null ) === $link['client_id'] && is_array( $rows['rows'] ?? null ) ) {
-			return new \WP_REST_Response( array( 'rows' => $rows['rows'] ) );
+		$saved = null === $link || 'subscriptions' === $tab ? false : get_transient( $cache );
+		// Cached replies are only kept for a minute after the link was confirmed for this email.
+		if ( is_array( $saved ) && ( $saved['client_id'] ?? null ) === $link['client_id'] && is_array( $saved['reply'] ?? null ) ) {
+			return new \WP_REST_Response( $saved['reply'] );
 		}
 		try {
 			$link = $this->links->confirmed( $user_id );
@@ -208,7 +230,7 @@ final class Account {
 				$rows = (array) apply_filters( 'invoiceninja_account_subscriptions', array(), $link['client_id'], $user_id );
 				return new \WP_REST_Response( array( 'rows' => array_values( $rows ) ) );
 			}
-			$rows = $this->rows( $tab, $link['client_id'] );
+			$reply = $this->reply( $tab, $link['client_id'], $link['client'] );
 		} catch ( ApiException $e ) {
 			return Routes::fail( 'unavailable', __( 'Your invoices are temporarily unavailable. Please try again later.', 'invoiceninja' ), 503 );
 		}
@@ -216,23 +238,26 @@ final class Account {
 			$cache,
 			array(
 				'client_id' => $link['client_id'],
-				'rows'      => $rows,
+				'reply'     => $reply,
 			),
 			MINUTE_IN_SECONDS
 		);
-		return new \WP_REST_Response( array( 'rows' => $rows ) );
+		return new \WP_REST_Response( $reply );
 	}
 
 	/**
-	 * Rows for a tab, from Invoice Ninja.
+	 * A tab's reply: its rows, plus the Balance due summary (invoices) or the quote request
+	 * page (quotes).
 	 *
-	 * @param string $tab       invoices, quotes, payments or credits.
-	 * @param string $client_id Client id.
-	 * @return list<array<string, mixed>>
+	 * @param string               $tab       invoices, quotes, payments or credits.
+	 * @param string               $client_id Client id.
+	 * @param array<string, mixed> $client    Client record (currency, credit balance).
+	 * @return array<string, mixed>
 	 * @throws ApiException When Invoice Ninja can't be asked.
 	 */
-	private function rows( string $tab, string $client_id ): array {
-		$data  = $this->plugin->api()->get(
+	private function reply( string $tab, string $client_id, array $client ): array {
+		$api      = $this->plugin->api();
+		$response = $api->get(
 			$tab,
 			array(
 				'client_id'  => $client_id,
@@ -241,41 +266,78 @@ final class Account {
 				'is_deleted' => 'false',
 			),
 			5.0
-		)->data();
-		$rows  = array();
-		$today = gmdate( 'Y-m-d' );
-		foreach ( $data as $item ) {
-			if ( ! is_array( $item ) || ! empty( $item['is_deleted'] ) || (string) ( $item['client_id'] ?? $client_id ) !== $client_id ) {
-				continue;
+		);
+		$items    = array();
+		foreach ( $response->data() as $item ) {
+			if ( is_array( $item ) && empty( $item['is_deleted'] ) && (string) ( $item['client_id'] ?? $client_id ) === $client_id ) {
+				$items[] = $item;
 			}
+		}
+		$money = $this->moneyFor( $client );
+		$today = gmdate( 'Y-m-d' );
+		$reply = array( 'rows' => $this->rows( $tab, $items, $money, $today ) );
+		if ( 'invoices' === $tab ) {
+			$unpaid = $this->unpaid( $api, $client_id, $items, $response->totalPages() );
+			if ( null !== $unpaid ) {
+				$reply['balance'] = $this->balance( self::summarize( $unpaid, $client_id, $today ), $client, $money );
+			}
+		} elseif ( 'quotes' === $tab ) {
+			$reply['requestUrl'] = $this->quotePage();
+		}
+		return $reply;
+	}
+
+	/**
+	 * Rows for a tab.
+	 *
+	 * @param string                     $tab   invoices, quotes, payments or credits.
+	 * @param list<array<string, mixed>> $items Invoices, quotes, payments or credits.
+	 * @param callable(float): string    $money Formats an amount in the client's currency.
+	 * @param string                     $today Today (Y-m-d).
+	 * @return list<array<string, mixed>>
+	 */
+	private function rows( string $tab, array $items, callable $money, string $today ): array {
+		$rows   = array();
+		$orders = 'invoices' === $tab ? $this->orderNumbers( array_map( static fn( array $item ): string => (string) ( $item['id'] ?? '' ), $items ) ) : array();
+		foreach ( $items as $item ) {
 			$status = (string) ( $item['status_id'] ?? '' );
 			if ( in_array( $tab, array( 'invoices', 'quotes', 'credits' ), true ) && '1' === $status ) {
 				continue; // Drafts aren't the customer's business yet.
 			}
 			$id      = (string) ( $item['id'] ?? '' );
 			$balance = (float) ( $item['balance'] ?? 0 );
-			$row     = array(
+			// A quote's due date is its "valid until".
+			$due              = (string) ( ( $item['due_date'] ?? '' ) ?: ( $item['valid_until'] ?? '' ) );
+			[ $label, $tone ] = self::status( $tab, $status, $balance, $due, $today );
+			$row              = array(
 				'id'      => $id,
 				'number'  => (string) ( $item['number'] ?? '' ),
-				'date'    => (string) ( $item['date'] ?? '' ),
-				'due'     => (string) ( $item['due_date'] ?? ( $item['valid_until'] ?? '' ) ),
-				'amount'  => $this->plugin->statics->money( (float) ( $item['amount'] ?? 0 ) ),
-				'balance' => $this->plugin->statics->money( $balance ),
-				'status'  => $this->statusLabel( $tab, $status, $balance, (string) ( $item['due_date'] ?? '' ), $today ),
+				'date'    => self::day( (string) ( $item['date'] ?? '' ) ),
+				'due'     => self::day( $due ),
+				'amount'  => $money( (float) ( $item['amount'] ?? 0 ) ),
+				'balance' => $money( $balance ),
+				'status'  => $label,
+				'tone'    => $tone,
 				'links'   => array(),
 			);
 			if ( 'invoices' === $tab ) {
-				$row['links']['pdf'] = $this->link( 'pdf', 'invoice', $id );
-				if ( $balance > 0 && in_array( $status, array( '2', '3' ), true ) ) {
+				$row['links']['view'] = $this->link( 'view', 'invoice', $id );
+				$row['links']['pdf']  = $this->link( 'pdf', 'invoice', $id );
+				if ( self::payable( $item ) ) {
 					$row['links']['pay'] = $this->link( 'pay', 'invoice', $id );
+				}
+				if ( isset( $orders[ $id ] ) ) {
+					$row['order']          = $orders[ $id ];
+					$row['links']['order'] = $this->plugin->checkout->statusUrl( array( 'number' => $orders[ $id ] ) );
 				}
 			} elseif ( 'quotes' === $tab ) {
 				$row['links']['pdf']  = $this->link( 'pdf', 'quote', $id );
 				$row['links']['view'] = $this->link( 'view', 'quote', $id );
 			} elseif ( 'credits' === $tab ) {
-				$row['links']['pdf'] = $this->link( 'pdf', 'credit', $id );
+				$row['links']['view'] = $this->link( 'view', 'credit', $id );
+				$row['links']['pdf']  = $this->link( 'pdf', 'credit', $id );
 			} elseif ( 'payments' === $tab ) {
-				$row['number'] = (string) ( $item['number'] ?? ( $item['transaction_reference'] ?? '' ) );
+				$row['number'] = (string) ( ( $item['number'] ?? '' ) ?: ( $item['transaction_reference'] ?? '' ) );
 				$row['method'] = (string) ( $item['type_id'] ?? '' );
 			}
 			$rows[] = $row;
@@ -284,52 +346,317 @@ final class Account {
 	}
 
 	/**
-	 * A plain status for a customer.
+	 * Every unpaid invoice, for the Balance due panel. One page of invoices covers them when
+	 * there is only one; else the unpaid ones are asked for, up to MAX_UNPAID_PAGES pages
+	 * within UNPAID_BUDGET seconds. Null when they can't all be read: no panel then, rather
+	 * than a wrong total or a failed Invoices tab.
+	 *
+	 * @param \InvoiceNinja\Api\HttpClient $api       API client.
+	 * @param string                       $client_id Client id.
+	 * @param list<array<string, mixed>>   $first     The first page of invoices.
+	 * @param int                          $pages     How many pages of invoices there are.
+	 * @return list<array<string, mixed>>|null
+	 */
+	private function unpaid( \InvoiceNinja\Api\HttpClient $api, string $client_id, array $first, int $pages ): ?array {
+		if ( $pages <= 1 ) {
+			return $first;
+		}
+		$deadline = microtime( true ) + self::UNPAID_BUDGET;
+		$unpaid   = array();
+		$page     = 1;
+		try {
+			do {
+				$left = $deadline - microtime( true );
+				if ( $left < 1.0 ) {
+					return null;
+				}
+				$part   = $api->get(
+					'invoices',
+					array(
+						'client_id'     => $client_id,
+						'client_status' => 'unpaid',
+						'per_page'      => 100,
+						'page'          => $page,
+						'is_deleted'    => 'false',
+					),
+					min( 5.0, $left )
+				);
+				$unpaid = array_merge( $unpaid, $part->data() );
+				++$page;
+				if ( $page > $part->totalPages() ) {
+					return $unpaid;
+				}
+			} while ( $page <= self::MAX_UNPAID_PAGES );
+		} catch ( \InvoiceNinja\Api\ApiException $e ) {
+			return null;
+		}
+		return null; // More unpaid invoices than the panel reads.
+	}
+
+	/**
+	 * What a client owes: the unpaid (sent or partly paid) invoices with a balance.
+	 * Invoice Ninja bills a client in one currency, so one total is the whole story.
+	 *
+	 * @param array<mixed> $invoices  Invoices from Invoice Ninja.
+	 * @param string       $client_id The client's id.
+	 * @param string       $today     Today (Y-m-d).
+	 * @return array{total: float, count: int, overdue: int, next_due: string, single: array<string, mixed>|null}
+	 */
+	public static function summarize( array $invoices, string $client_id, string $today ): array {
+		$total   = 0.0;
+		$count   = 0;
+		$overdue = 0;
+		$next    = '';
+		$last    = null;
+		$seen    = array();
+		foreach ( $invoices as $invoice ) {
+			if ( ! is_array( $invoice ) || ! self::opensFor( $invoice, $client_id ) || ! self::payable( $invoice ) || isset( $seen[ (string) ( $invoice['id'] ?? '' ) ] ) ) {
+				continue;
+			}
+			$seen[ (string) ( $invoice['id'] ?? '' ) ] = true;
+			$total                                    += (float) $invoice['balance'];
+			++$count;
+			$due = (string) ( $invoice['due_date'] ?? '' );
+			if ( '' !== $due && $due < $today ) {
+				++$overdue;
+			}
+			if ( '' !== $due && ( '' === $next || $due < $next ) ) {
+				$next = $due;
+			}
+			$last = $invoice;
+		}
+		return array(
+			'total'    => round( $total, 6 ),
+			'count'    => $count,
+			'overdue'  => $overdue,
+			'next_due' => $next,
+			'single'   => 1 === $count ? $last : null,
+		);
+	}
+
+	/**
+	 * Whether an invoice can be paid now: sent or partly paid, with a balance.
+	 *
+	 * @param array<string, mixed> $invoice Invoice.
+	 */
+	public static function payable( array $invoice ): bool {
+		return (float) ( $invoice['balance'] ?? 0 ) > 0 && in_array( (string) ( $invoice['status_id'] ?? '' ), array( '2', '3' ), true );
+	}
+
+	/**
+	 * The Balance due panel, formatted.
+	 *
+	 * @param array{total: float, count: int, overdue: int, next_due: string, single: array<string, mixed>|null} $sum    Summary.
+	 * @param array<string, mixed>                                                                                $client Client record.
+	 * @param callable(float): string                                                                             $money  Formats an amount.
+	 * @return array<string, mixed>
+	 */
+	private function balance( array $sum, array $client, callable $money ): array {
+		$credit = (float) ( $client['credit_balance'] ?? 0 );
+		$detail = array();
+		if ( $sum['count'] > 0 ) {
+			/* translators: %d: number of unpaid invoices */
+			$detail[] = sprintf( _n( '%d unpaid invoice', '%d unpaid invoices', $sum['count'], 'invoiceninja' ), $sum['count'] );
+			if ( $sum['overdue'] > 0 ) {
+				/* translators: %d: number of overdue invoices */
+				$detail[] = sprintf( _n( '%d overdue', '%d overdue', $sum['overdue'], 'invoiceninja' ), $sum['overdue'] );
+			} elseif ( '' !== $sum['next_due'] ) {
+				/* translators: %s: date */
+				$detail[] = sprintf( __( 'Due %s', 'invoiceninja' ), self::day( $sum['next_due'] ) );
+			}
+		}
+		$out = array(
+			'count'     => $sum['count'],
+			'total'     => $money( $sum['total'] ),
+			'overdue'   => $sum['overdue'],
+			'detail'    => implode( ' · ', $detail ),
+			/* translators: %s: amount */
+			'credit'    => $credit > 0 ? sprintf( __( 'Available credit: %s', 'invoiceninja' ), $money( $credit ) ) : '',
+			'pay'       => '',
+			'payAmount' => '',
+			'number'    => '',
+		);
+		if ( null !== $sum['single'] ) {
+			$out['pay']    = $this->link( 'pay', 'invoice', (string) ( $sum['single']['id'] ?? '' ) );
+			$out['number'] = (string) ( $sum['single']['number'] ?? '' );
+			// With a deposit due, the payment page asks for that first: no amount on the button then.
+			$out['payAmount'] = (float) ( $sum['single']['partial'] ?? 0 ) > 0 ? '' : $out['total'];
+		} elseif ( $sum['count'] > 1 ) {
+			// Invoice Ninja pays several invoices at once only from its own invoice list.
+			$out['pay'] = add_query_arg(
+				array(
+					'invoiceninja' => 'portal',
+					'to'           => 'invoices',
+				),
+				home_url( '/' )
+			);
+		}
+		return $out;
+	}
+
+	/**
+	 * Formats amounts in the client's currency: the company's, or the client's own (its
+	 * format is looked up once a day).
+	 *
+	 * @param array<string, mixed> $client Client record.
+	 * @return callable(float): string
+	 */
+	private function moneyFor( array $client ): callable {
+		$company = (string) ( $this->plugin->state->get()['company']['currency_id'] ?? '' );
+		if ( ! OrderService::currencyDiffers( $client, $company ) ) {
+			return fn( float $amount ): string => $this->plugin->statics->money( $amount );
+		}
+		$id       = (string) $client['settings']['currency_id'];
+		$key      = 'invoiceninja_currency_' . substr( md5( $this->plugin->credentials->url() . '|' . $id ), 0, 12 );
+		$currency = get_transient( $key );
+		if ( ! is_array( $currency ) ) {
+			$currency = array();
+			try {
+				foreach ( (array) ( $this->plugin->api()->get( 'statics', array(), 10.0 )->json['currencies'] ?? array() ) as $row ) {
+					if ( is_array( $row ) && (string) ( $row['id'] ?? '' ) === $id ) {
+						$currency = array_intersect_key( $row, array_flip( array( 'code', 'symbol', 'precision', 'thousand_separator', 'decimal_separator', 'swap_currency_symbol' ) ) );
+					}
+				}
+			} catch ( ApiException $e ) {
+				unset( $e ); // Plain numbers this time; asked again in an hour.
+			}
+			set_transient( $key, $currency, $currency ? DAY_IN_SECONDS : HOUR_IN_SECONDS );
+		}
+		return static fn( float $amount ): string => $currency ? Money::format( $amount, $currency ) : number_format_i18n( $amount, 2 );
+	}
+
+	/**
+	 * Store order numbers for invoices made by this plugin's checkout.
+	 *
+	 * @param list<string> $invoice_ids Invoice ids.
+	 * @return array<string, string> Invoice id => order number.
+	 */
+	private function orderNumbers( array $invoice_ids ): array {
+		$invoice_ids = array_values( array_unique( array_filter( $invoice_ids ) ) );
+		if ( ! $invoice_ids ) {
+			return array();
+		}
+		global $wpdb;
+		$table = Orders::table();
+		$list  = implode( ',', array_fill( 0, count( $invoice_ids ), '%s' ) );
+		// phpcs:ignore WordPress.DB.PreparedSQL.InterpolatedNotPrepared, WordPress.DB.DirectDatabaseQuery, WordPress.DB.PreparedSQLPlaceholders.UnfinishedPrepare -- our own table; one placeholder per id.
+		$rows = $wpdb->get_results( $wpdb->prepare( "SELECT invoice_id, number FROM {$table} WHERE invoice_id IN ({$list})", $invoice_ids ), ARRAY_A );
+		$out  = array();
+		foreach ( is_array( $rows ) ? $rows : array() as $row ) {
+			$out[ (string) $row['invoice_id'] ] = (string) $row['number'];
+		}
+		return $out;
+	}
+
+	/**
+	 * A page was saved: look for the Quote Request Form page again next time.
+	 */
+	public static function forgetQuotePage(): void {
+		delete_transient( self::QUOTE_PAGE );
+	}
+
+	/**
+	 * The page with the Quote Request Form, or an empty string.
+	 */
+	private function quotePage(): string {
+		$url = get_transient( self::QUOTE_PAGE );
+		if ( ! is_string( $url ) ) {
+			global $wpdb;
+			// phpcs:ignore WordPress.DB.DirectDatabaseQuery -- one indexed lookup, cached for an hour.
+			$id  = (int) $wpdb->get_var(
+				$wpdb->prepare(
+					"SELECT ID FROM {$wpdb->posts} WHERE post_type = 'page' AND post_status = 'publish' AND post_password = '' AND ( post_content LIKE %s OR post_content LIKE %s ) ORDER BY menu_order, ID LIMIT 1",
+					'%' . $wpdb->esc_like( '<!-- wp:invoiceninja/quote-form' ) . '%',
+					'%' . $wpdb->esc_like( '[invoiceninja_quote_form' ) . '%'
+				)
+			);
+			$url = $id > 0 ? (string) get_permalink( $id ) : '';
+			set_transient( self::QUOTE_PAGE, $url, HOUR_IN_SECONDS );
+		}
+		/**
+		 * The quote request page the Account block's empty Quotes tab links to ('' for none).
+		 *
+		 * @since 2.1.0
+		 * @param string $url Found page with the Quote Request Form, or ''.
+		 */
+		return (string) apply_filters( 'invoiceninja_quote_page_url', $url );
+	}
+
+	/**
+	 * A short date in the site's language (Nov 12, 2026), or an empty string.
+	 *
+	 * @param string $ymd Date (Y-m-d).
+	 */
+	private static function day( string $ymd ): string {
+		$time = preg_match( '/^\d{4}-\d{2}-\d{2}/', $ymd ) ? strtotime( substr( $ymd, 0, 10 ) . ' 00:00:00 UTC' ) : false;
+		/* translators: a short date format, see https://www.php.net/manual/datetime.format.php */
+		return false === $time ? '' : (string) wp_date( _x( 'M j, Y', 'short date', 'invoiceninja' ), $time, new \DateTimeZone( 'UTC' ) );
+	}
+
+	/**
+	 * A plain status for a customer, and its tone: alert (overdue), open (waiting for
+	 * something), done, or off (cancelled, expired, used up).
 	 *
 	 * @param string $tab     Tab.
 	 * @param string $status  Invoice Ninja status id.
 	 * @param float  $balance Balance.
-	 * @param string $due     Due date.
+	 * @param string $due     Due date (a quote's valid until).
 	 * @param string $today   Today (Y-m-d).
+	 * @return array{0: string, 1: string}
 	 */
-	private function statusLabel( string $tab, string $status, float $balance, string $due, string $today ): string {
+	public static function status( string $tab, string $status, float $balance, string $due, string $today ): array {
+		$past = '' !== $due && substr( $due, 0, 10 ) < $today;
 		if ( 'invoices' === $tab ) {
-			if ( in_array( $status, array( '2', '3' ), true ) && $balance > 0 && '' !== $due && $due < $today ) {
-				return __( 'Overdue', 'invoiceninja' );
+			if ( in_array( $status, array( '2', '3' ), true ) && $balance > 0 && $past ) {
+				return array( __( 'Overdue', 'invoiceninja' ), 'alert' );
 			}
 			return array(
-				'2' => __( 'Unpaid', 'invoiceninja' ),
-				'3' => __( 'Partly paid', 'invoiceninja' ),
-				'4' => __( 'Paid', 'invoiceninja' ),
-				'5' => __( 'Cancelled', 'invoiceninja' ),
-				'6' => __( 'Reversed', 'invoiceninja' ),
-			)[ $status ] ?? '';
+				'2' => array( __( 'Unpaid', 'invoiceninja' ), 'open' ),
+				'3' => array( __( 'Partly paid', 'invoiceninja' ), 'open' ),
+				'4' => array( __( 'Paid', 'invoiceninja' ), 'done' ),
+				'5' => array( __( 'Cancelled', 'invoiceninja' ), 'off' ),
+				'6' => array( __( 'Reversed', 'invoiceninja' ), 'off' ),
+			)[ $status ] ?? array( '', 'off' );
 		}
 		if ( 'quotes' === $tab ) {
+			if ( '2' === $status && $past ) {
+				return array( __( 'Expired', 'invoiceninja' ), 'off' ); // Sent, never approved, past its date.
+			}
 			return array(
-				'2'  => __( 'Waiting for you', 'invoiceninja' ),
-				'3'  => __( 'Approved', 'invoiceninja' ),
-				'4'  => __( 'Converted', 'invoiceninja' ),
-				'5'  => __( 'Cancelled', 'invoiceninja' ),
-				'6'  => __( 'Cancelled', 'invoiceninja' ),
-				'-1' => __( 'Expired', 'invoiceninja' ),
-			)[ $status ] ?? '';
+				'2'  => array( __( 'Waiting for you', 'invoiceninja' ), 'open' ),
+				'3'  => array( __( 'Approved', 'invoiceninja' ), 'done' ),
+				'4'  => array( __( 'Converted', 'invoiceninja' ), 'done' ),
+				'5'  => array( __( 'Cancelled', 'invoiceninja' ), 'off' ),
+				'6'  => array( __( 'Cancelled', 'invoiceninja' ), 'off' ),
+				'-1' => array( __( 'Expired', 'invoiceninja' ), 'off' ),
+			)[ $status ] ?? array( '', 'off' );
 		}
 		if ( 'payments' === $tab ) {
 			return array(
-				'1' => __( 'Pending', 'invoiceninja' ),
-				'2' => __( 'Voided', 'invoiceninja' ),
-				'3' => __( 'Failed', 'invoiceninja' ),
-				'4' => __( 'Completed', 'invoiceninja' ),
-				'5' => __( 'Partly refunded', 'invoiceninja' ),
-				'6' => __( 'Refunded', 'invoiceninja' ),
-			)[ $status ] ?? '';
+				'1' => array( __( 'Pending', 'invoiceninja' ), 'open' ),
+				'2' => array( __( 'Voided', 'invoiceninja' ), 'off' ),
+				'3' => array( __( 'Failed', 'invoiceninja' ), 'off' ),
+				'4' => array( __( 'Completed', 'invoiceninja' ), 'done' ),
+				'5' => array( __( 'Partly refunded', 'invoiceninja' ), 'done' ),
+				'6' => array( __( 'Refunded', 'invoiceninja' ), 'off' ),
+			)[ $status ] ?? array( '', 'off' );
 		}
 		return array(
-			'2' => __( 'Available', 'invoiceninja' ),
-			'3' => __( 'Partly used', 'invoiceninja' ),
-			'4' => __( 'Used', 'invoiceninja' ),
-		)[ $status ] ?? '';
+			'2' => array( __( 'Available', 'invoiceninja' ), 'open' ),
+			'3' => array( __( 'Partly used', 'invoiceninja' ), 'open' ),
+			'4' => array( __( 'Used', 'invoiceninja' ), 'off' ),
+		)[ $status ] ?? array( '', 'off' );
+	}
+
+	/**
+	 * Where the portal link goes: the portal's home, or (to=invoices) its invoice list, where
+	 * several invoices can be paid at once. Invoice Ninja's login link takes a `next` path.
+	 *
+	 * @param string $login The contact's login link.
+	 * @param string $to    '' or invoices.
+	 */
+	public static function portalTarget( string $login, string $to ): string {
+		return 'invoices' === $to && str_contains( $login, '/client/key_login/' ) ? add_query_arg( 'next', rawurlencode( '/client/invoices' ), $login ) : $login;
 	}
 
 	/**
@@ -550,6 +877,7 @@ final class Account {
 		}
 		$type = isset( $_GET['type'] ) ? sanitize_key( wp_unslash( $_GET['type'] ) ) : '';
 		$id   = isset( $_GET['id'] ) ? \InvoiceNinja\Catalog\ProductSync::cleanId( sanitize_text_field( wp_unslash( $_GET['id'] ) ) ) : '';
+		$to   = isset( $_GET['to'] ) && 'invoices' === sanitize_key( wp_unslash( $_GET['to'] ) ) ? 'invoices' : '';
 		// phpcs:enable
 		nocache_headers();
 		$user_id = Checkout::userId();
@@ -561,6 +889,7 @@ final class Account {
 						'invoiceninja' => $action,
 						'type'         => $type,
 						'id'           => $id,
+						'to'           => $to,
 					)
 				),
 				home_url( '/' )
@@ -578,6 +907,7 @@ final class Account {
 								'invoiceninja' => $action,
 								'type'         => $type,
 								'id'           => $id,
+								'to'           => $to,
 							)
 						),
 						home_url( '/' )
@@ -596,7 +926,7 @@ final class Account {
 			$api = $this->plugin->api();
 			if ( 'portal' === $action ) {
 				if ( ! empty( $link['contact']['link'] ) ) {
-					wp_redirect( (string) $link['contact']['link'] ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- the customer's own Invoice Ninja portal, which lives on another host.
+					wp_redirect( self::portalTarget( (string) $link['contact']['link'], $to ) ); // phpcs:ignore WordPress.Security.SafeRedirect.wp_redirect_wp_redirect -- the customer's own Invoice Ninja portal, which lives on another host.
 					exit;
 				}
 				wp_safe_redirect( $back );

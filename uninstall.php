@@ -66,7 +66,26 @@ function invoiceninja_uninstall_site() {
 		)
 	);
 	foreach ( $invoiceninja_posts as $invoiceninja_post ) {
+		// Product photos synced from Invoice Ninja documents (attachments outlive their post).
+		$invoiceninja_gallery = get_post_meta( (int) $invoiceninja_post, '_invoiceninja_gallery', true );
+		foreach ( is_array( $invoiceninja_gallery ) ? $invoiceninja_gallery : array() as $invoiceninja_photo ) {
+			if ( is_array( $invoiceninja_photo ) && ! empty( $invoiceninja_photo['attachment'] ) ) {
+				wp_delete_attachment( (int) $invoiceninja_photo['attachment'], true );
+			}
+		}
 		wp_delete_post( (int) $invoiceninja_post, true );
+	}
+	// Product categories (Invoice Ninja's product tags). The taxonomy isn't registered while uninstalling.
+	register_taxonomy( 'invoiceninja_category', 'invoiceninja_product', array( 'public' => false ) );
+	$invoiceninja_terms = get_terms(
+		array(
+			'taxonomy'   => 'invoiceninja_category',
+			'hide_empty' => false,
+			'fields'     => 'ids',
+		)
+	);
+	foreach ( is_array( $invoiceninja_terms ) ? $invoiceninja_terms : array() as $invoiceninja_term ) {
+		wp_delete_term( (int) $invoiceninja_term, 'invoiceninja_category' );
 	}
 	// Our meta on WooCommerce orders and products, and on users (links and verification).
 	// User meta is shared by the whole network: on multisite only this site's keys (with its

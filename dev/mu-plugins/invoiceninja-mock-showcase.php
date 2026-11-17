@@ -15,6 +15,28 @@ function in_mock_showcase_products() {
         [ 'POUROVER', 'Pour-over cone', 'Fits standard #2 filters. Slate-blue glaze.', 32, 8 ],
         [ 'BUTTERDISH', 'Butter dish', 'Keeps a standard block of butter, with a lid.', 34, 5 ],
     ];
+    // Catalog extras: categories (Invoice Ninja product tags), a short line in custom field 1,
+    // and extra photos (public image documents) for the teapot.
+    $tag    = function ( $name ) {
+        return [ 'id' => 'TAG' . strtoupper( $name ), 'name' => $name, 'color' => null ];
+    };
+    $extras = [
+        'SPECKLEDMUG'  => [ 'Drinkware', '350 ml' ],
+        'SERVINGBOWL'  => [ 'Tableware', 'Sage glaze' ],
+        'BUDVASE'      => [ 'Home', 'Iron red glaze' ],
+        'DINNERPLATES' => [ 'Tableware', 'Lavender glaze' ],
+        'TEAPOT'       => [ 'Drinkware', '900 ml, with strainer' ],
+        'PLANTER'      => [ 'Home', 'With saucer' ],
+        'POUROVER'     => [ 'Drinkware', 'Fits #2 filters' ],
+        'BUTTERDISH'   => [ 'Tableware', 'Oat glaze, lidded' ],
+    ];
+    $photo  = function ( $id, $name, $public = true, $type = 'png' ) {
+        return [ 'id' => $id, 'name' => $name, 'type' => $type, 'hash' => md5( $id ), 'size' => 40000, 'width' => 800, 'height' => 800, 'is_public' => $public, 'is_default' => false, 'archived_at' => 0, 'is_deleted' => false ];
+    };
+    $documents = [
+        'TEAPOT' => [ $photo( 'TEAPOTSIDE', 'teapot-side.png' ), $photo( 'TEAPOTDETAIL', 'teapot-detail.png' ), $photo( 'TEAPOTWARM', 'teapot-warm.png' ),
+                      $photo( 'TEAPOTINTERNAL', 'kiln-notes.png', false ), $photo( 'TEAPOTSPEC', 'care-card.pdf', true, 'pdf' ) ],
+    ];
     $products = [];
     foreach ( $rows as [ $id, $key, $notes, $price, $stock ] ) {
         $products[] = [
@@ -22,7 +44,9 @@ function in_mock_showcase_products() {
             'max_quantity' => 0, 'in_stock_quantity' => $stock, 'custom_value1' => '', 'custom_value2' => '', 'custom_value3' => '',
             'custom_value4' => '', 'tax_name1' => '', 'tax_rate1' => 0, 'tax_name2' => '', 'tax_rate2' => 0, 'tax_name3' => '',
             'tax_rate3' => 0, 'tax_id' => '', 'product_image' => '', 'updated_at' => 1700000000, 'archived_at' => 0, 'is_deleted' => false,
+            'tags' => [ $tag( $extras[ $id ][0] ) ], 'documents' => $documents[ $id ] ?? [],
         ];
+        $products[ count( $products ) - 1 ]['custom_value1'] = $extras[ $id ][1];
     }
     return $products;
 }
@@ -47,6 +71,26 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
             }
         }
     }
+    // The teapot's extra photos: its picture turned, closer and warmer.
+    if ( preg_match( '#^documents/(TEAPOT[A-Z]+)/download$#', $path, $m ) && 'GET' === $method ) {
+        $file = WP_PLUGIN_DIR . '/invoiceninja/dev/showcase/images/teapot.png';
+        $body = (string) file_get_contents( $file );
+        if ( function_exists( 'imagecreatefrompng' ) && ( $img = imagecreatefrompng( $file ) ) ) {
+            $w = imagesx( $img );
+            $h = imagesy( $img );
+            if ( 'TEAPOTSIDE' === $m[1] ) {
+                imageflip( $img, IMG_FLIP_HORIZONTAL );
+            } elseif ( 'TEAPOTDETAIL' === $m[1] ) {
+                $img = imagescale( imagecrop( $img, [ 'x' => (int) ( $w * 0.2 ), 'y' => (int) ( $h * 0.25 ), 'width' => (int) ( $w * 0.6 ), 'height' => (int) ( $h * 0.6 ) ] ), $w, $h );
+            } else {
+                imagefilter( $img, IMG_FILTER_COLORIZE, 30, 8, -20 );
+            }
+            ob_start();
+            imagepng( $img );
+            $body = (string) ob_get_clean();
+        }
+        return [ 'headers' => [ 'x-app-version' => '5.13.52', 'content-type' => 'text/html; charset=UTF-8' ], 'body' => $body, 'response' => [ 'code' => 200, 'message' => 'OK' ], 'cookies' => [], 'filename' => null ];
+    }
     // The member shops as Mei Lin: give her the member's fixed client.
     if ( 'clients' === $path && false !== strpos( urldecode( $route ), 'email=mei.lin@example.com' ) ) {
         return $reply( [ 'data' => [ [
@@ -57,7 +101,7 @@ add_filter( 'pre_http_request', function ( $pre, $args, $url ) {
     if ( 0 === strpos( $path, 'companies/current' ) ) {
         return $reply( [ 'data' => [
             'id' => 'COMPANY1', 'track_inventory' => true, 'calculate_taxes' => false,
-            'settings' => [ 'name' => 'Larch & Pine Ceramics', 'website' => '', 'currency_id' => '1', 'country_id' => '840', 'show_currency_code' => false, 'primary_color' => '#5d7a6b', 'company_logo' => '' ],
+            'settings' => [ 'name' => 'Larch & Pine Ceramics', 'email' => 'studio@example.com', 'website' => '', 'currency_id' => '1', 'country_id' => '840', 'show_currency_code' => false, 'primary_color' => '#5d7a6b', 'company_logo' => '' ],
         ] ] );
     }
     return $pre;

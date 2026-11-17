@@ -190,6 +190,55 @@ def submit_saves_the_lead_then_creates_a_draft_quote_with_tags():
 
 
 @test
+def product_chips_quantity_and_needed_by():
+    forms_ready()
+    slug = 'quote-form-chips'
+    blocks = {'chips': '<!-- wp:invoiceninja/quote-form {"showQuantity":true,"showNeededBy":true} /-->',
+              'dropdown': '<!-- wp:invoiceninja/quote-form {"productDisplay":"dropdown"} /-->'}
+    pages = []
+    for name, content in blocks.items():
+        pages.append(wp('post', 'create', '--post_type=page', '--post_status=publish', '--post_title=Quote ' + name,
+                        '--post_name=' + slug + '-' + name, '--post_content=' + content, '--porcelain'))
+    try:
+        _, _, html = Browser().get('/%s-chips/' % slug)
+        group = re.search(r'<fieldset[^>]*data-field="product".*?</fieldset>', html, re.S)
+        check(group and '<legend' in group.group(0), 'two products and "Not sure yet": a fieldset with a legend', html[:3000])
+        radios = re.findall(r'<input type="radio"[^>]*name="product"[^>]*>', group.group(0))
+        check(len(radios) == 3 and not any('checked' in r for r in radios), 'a real radio per answer, none chosen up front', radios)
+        check('<select' not in html, 'no dropdown for three answers')
+        check(re.search(r'<input type="text" inputmode="numeric"[^>]*name="quantity"', html) and re.search(r'<input type="date"[^>]*name="needed_by"', html),
+              'quantity and needed-by fields when the block turns them on')
+        check('invoiceninja-quote-form__row' in html, 'short fields pair up')
+        _, _, html = Browser().get('/%s-dropdown/' % slug)
+        check(re.search(r'<select[^>]*name="product"', html) and 'type="radio"' not in html, 'the block can ask for a dropdown')
+        check('name="quantity"' not in html and 'name="needed_by"' not in html, 'quantity and date are off by default')
+    finally:
+        for pid in pages:
+            wp('post', 'delete', pid, '--force')
+
+    form = token(showQuantity=True, showNeededBy=True)
+    status, r = submit(Browser(), form, quantity='a dozen', needed_by='2001-01-01')
+    check(status == 422 and set(r['errors']) == {'quantity', 'needed_by'}, 'a quantity must be a number and the date still to come', r)
+    needed = wp_eval("echo gmdate('Y-m-d', time() + 30 * DAY_IN_SECONDS);")
+    status, r = submit(Browser(), form, quantity='24', needed_by=needed)
+    check(status == 200 and r['ok'] and 'quinn.new@example.com' in r['message'], 'the confirmation says where the reply goes', r)
+    saved = lead('quinn.new@example.com')
+    check(saved['fields']['quantity'] == '24' and saved['fields']['needed_by'] == needed, 'stored with the lead', saved['fields'])
+    run_job(saved['id'])
+    q = mock_quotes()[0]
+    check(q['line_items'][0]['quantity'] == 24, 'the requested quantity is the line quantity', q['line_items'])
+    check('Needed by: ' + needed in q['private_notes'] and 'Quantity requested' not in q['private_notes'], 'the date goes in the private notes', q['private_notes'])
+    _, listing = admin().api('GET', '/admin/quote-requests')
+    row = listing['items'][0]
+    check(row['quantity'] == '24' and row['needed_by'] == needed, 'the Quote requests screen shows both', row)
+
+    status, r = submit(Browser(), form, email='nosure@example.com', product='not_sure', quantity='300')
+    run_job(lead('nosure@example.com')['id'])
+    q = [x for x in mock_quotes() if 'Quantity requested: 300' in x['private_notes']]
+    check(len(q) == 1 and q[0]['line_items'] == [], 'without a product line the quantity goes in the private notes', mock_quotes())
+
+
+@test
 def invoice_ninja_down_queues_the_lead_and_the_retry_creates_it_once():
     forms_ready()
     option('in_mock_mode', 'down')

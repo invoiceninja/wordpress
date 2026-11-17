@@ -70,7 +70,7 @@ The hook API follows semantic versioning: names and payload shapes don't change 
 
 Everything is under `/wp-json/invoiceninja/v1`.
 - **Admin routes** need the `view_invoiceninja` or `manage_invoiceninja` capability (connection routes need `manage_options`) and the usual `X-WP-Nonce`.
-- **Public store routes** are an allowlist (`Routes::PUBLIC_ROUTES`): `/cart`, `/cart/items`, `/checkout/start`, `/checkout/confirm`, `/checkout/forget`, `/orders/{number}` (key in the `X-Order-Key` header), `/orders/find`, `/orders/last`, `/orders/last/change`, `/pay-invoice`, and the module callbacks. `Routes::add()` skips a `public`, `same_site` or `logged_in` route that isn't on it, with a `_doing_it_wrong` notice and an error in the plugin's log. An add-on that needs an open route registers it itself with `register_rest_route()`.
+- **Public store routes** are an allowlist (`Routes::PUBLIC_ROUTES`): `/cart`, `/cart/items`, `/checkout/start`, `/checkout/confirm`, `/checkout/forget`, `/orders/{number}` and `/orders/{number}/pdf` (key in the `X-Order-Key` header), `/orders/find`, `/orders/last`, `/orders/last/change`, `/pay-invoice`, and the module callbacks. `Routes::add()` skips a `public`, `same_site` or `logged_in` route that isn't on it, with a `_doing_it_wrong` notice and an error in the plugin's log. An add-on that needs an open route registers it itself with `register_rest_route()`.
   - Writes must come from your own site's pages, checked by Origin or Referer, instead of a nonce, so pages stay cacheable.
   - They're rate-limited per IP; IPv6 is limited per /64.
 

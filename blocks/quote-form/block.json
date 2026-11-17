@@ -54,6 +54,31 @@
 			"type": "boolean",
 			"default": false
 		},
+		"productDisplay": {
+			"type": "string",
+			"enum": [
+				"auto",
+				"chips",
+				"dropdown"
+			],
+			"default": "auto"
+		},
+		"showQuantity": {
+			"type": "boolean",
+			"default": false
+		},
+		"requireQuantity": {
+			"type": "boolean",
+			"default": false
+		},
+		"showNeededBy": {
+			"type": "boolean",
+			"default": false
+		},
+		"requireNeededBy": {
+			"type": "boolean",
+			"default": false
+		},
 		"showMessage": {
 			"type": "boolean",
 			"default": true

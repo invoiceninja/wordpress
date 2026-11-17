@@ -4,7 +4,7 @@ Tags: invoice, billing, payments, quotes, subscriptions
 Requires at least: 6.7
 Tested up to: 7.1
 Requires PHP: 8.1
-Stable tag: 2.1.0
+Stable tag: 2.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -88,7 +88,7 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 == Screenshots ==
 
 1. A shop built with the Invoice Ninja blocks, in the theme's own style.
-2. The checkout: cart, details, a 6-digit email code, then pay on Invoice Ninja's secure page.
+2. The checkout on one page: contact, an optional delivery address, a 6-digit email code, then pay on Invoice Ninja's secure page.
 3. Order Status, opened from the link in the order email.
 4. The customer Account: invoices, quotes, payments, credits and subscriptions.
 5. A Pricing Table for Invoice Ninja subscriptions.
@@ -99,6 +99,23 @@ A copy of your site at a new address pauses orders until you allow them, so stag
 10. The setup wizard tests the connection step by step.
 
 == Changelog ==
+
+= 2.2.0 =
+* New: a redesigned checkout on one page. Numbered steps fold into a summary as you go, the order summary sits beside them (collapsible on phones), the email code has six boxes with Resend and Use a different email, and the Pay button shows the amount.
+* New: an optional delivery address step (Settings → Store → Ask for a delivery address). It's saved as the Invoice Ninja client's shipping address and shown on Order Status and in Orders.
+* New: a redesigned cart with product photos, a compact quantity control, Undo after removing an item, a proper empty state and a Checkout button that stays in view on phones. Tax is shown when it matches the invoice exactly; otherwise the cart says it's added on the payment page.
+* New: the Mini Cart opens as a slide-in panel.
+* New: Order Status says where the order stands, with its placed and paid dates, the invoice breakdown, Download invoice and a help link.
+* New: shop categories from your Invoice Ninja product tags, with category filters and a price sort in the Products block.
+* New: a short line under each product name, from a product custom field you pick in the block.
+* New: product photo galleries from a product's public image documents in Invoice Ninja.
+* New: the product page has a quantity stepper and an "Add to cart · $64.00" button; the shop shows two columns on phones.
+* New: a redesigned Account page with a Balance due panel and Pay button, clearer invoice rows (status, order number, PDF and Pay together), cards on phones, and sign out.
+* New: the Quote Request Form shows product choices as buttons, and can ask for a quantity and a "needed by" date.
+* New: the Pricing Table can show a description, perks and a display name for each plan, and works out yearly savings from your prices.
+* Improved: the setup wizard, Welcome screen and Store, Customers and Forms settings are redesigned. Switching the store display now asks first.
+* Fix: "Only N left" shows the stock left, not the per-order limit.
+* Fix: Settings → Store options no longer run together, and Home's latest orders fit on phones.
 
 = 2.1.0 =
 * New: hide products from your site. In Products, use Hide from site under a product or as a bulk action. Hidden products stay in Invoice Ninja and keep syncing, but shoppers never see them. Setting a product to Draft does the same.

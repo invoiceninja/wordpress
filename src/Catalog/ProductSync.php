@@ -65,10 +65,43 @@ final class ProductSync {
 	public const HIDDEN_META = '_invoiceninja_hidden';
 
 	/**
+	 * Post meta: the public image documents the gallery should hold, and what it holds.
+	 */
+	public const GALLERY_WANT = '_invoiceninja_gallery_docs';
+
+	public const GALLERY_META = '_invoiceninja_gallery';
+
+	/**
+	 * Hook of the job that downloads a product's gallery images.
+	 */
+	public const GALLERY_HOOK = 'invoiceninja_sideload_gallery';
+
+	/**
+	 * At most this many gallery images per product.
+	 */
+	public const GALLERY_MAX = 12;
+
+	/**
+	 * Raise to make the next sync a full one, so products synced before a new synced field
+	 * (2.1: tags and photos) get it without waiting for their next change in Invoice Ninja.
+	 */
+	public const FIELDS_VERSION = 1;
+
+	/**
+	 * Image document types shown in the gallery (browsers can't show TIFF or PSD).
+	 */
+	private const GALLERY_TYPES = array( 'png', 'jpg', 'jpeg', 'gif', 'webp' );
+
+	/**
 	 * Set while this plugin changes a product's status itself, so Visibility doesn't take
 	 * it for an admin's choice.
 	 */
 	private static bool $quiet = false;
+
+	/**
+	 * Whether this run set any product's categories (unused ones are removed afterwards).
+	 */
+	private bool $tagged = false;
 
 	/**
 	 * The lock this object holds, if any.
@@ -254,6 +287,8 @@ final class ProductSync {
 		$deadline = microtime( true ) + self::TIME_BUDGET;
 		$batch    = $this->batch();
 		$cursor   = (int) $this->plugin->options->get( 'sync_cursor_products', 0 );
+		$catch_up = (int) $this->plugin->options->get( 'sync_fields_version', 0 ) < self::FIELDS_VERSION;
+		$full     = $full || $catch_up;
 		$query    = array( 'status' => 'active,archived,deleted' );
 		if ( ! $full && $cursor > 0 ) {
 			$query['updated_at'] = 'gte:' . max( 0, $cursor - 300 );
@@ -363,7 +398,7 @@ final class ProductSync {
 			$this->mapping->save( 'product', $id, 'post', $written, $desired['hash'] );
 			++$result[ 'create' === $action ? 'created' : ( 'draft' === $action ? 'drafted' : 'updated' ) ];
 			$max = max( $max, $updated_at );
-			$this->maybeQueueImage( $written, $desired['image'] );
+			$this->afterWrite( $written, $desired );
 			if ( 0 === ( $i + 1 ) % 50 ) {
 				$this->refreshLock();
 			}
@@ -376,6 +411,15 @@ final class ProductSync {
 		}
 		$this->plugin->options->set( 'sync_cursor_products', $max );
 		$this->plugin->options->delete( 'sync_paused' );
+		if ( $this->tagged ) {
+			Categories::prune();
+			$this->tagged = false;
+		}
+		// The catch-up is done once every page was read. A product that failed to save is
+		// tried again through the cursor above, so it mustn't keep every later sync full.
+		if ( $catch_up && 0 === $result['remaining'] ) {
+			$this->plugin->options->set( 'sync_fields_version', self::FIELDS_VERSION );
+		}
 		if ( $result['remaining'] > 0 ) {
 			// Continue in a moment; the next run skips what this one wrote (its hash matches).
 			$this->plugin->options->set(
@@ -528,7 +572,11 @@ final class ProductSync {
 				return 'failed';
 			}
 			$this->mapping->save( 'product', $id, 'post', $written, $desired['hash'] );
-			$this->maybeQueueImage( $written, $desired['image'] );
+			$this->afterWrite( $written, $desired );
+			if ( $this->tagged ) {
+				Categories::prune();
+				$this->tagged = false;
+			}
 			$this->plugin->logger->log( LogLevel::Info, 'sync', sprintf( 'Product %s %s from an Invoice Ninja update', $desired['post']['post_title'], $action ), array(), 'product', $id );
 			return $action;
 		} finally {
@@ -728,7 +776,7 @@ final class ProductSync {
 	 * What the post should look like.
 	 *
 	 * @param array<string, mixed> $item Invoice Ninja product.
-	 * @return array{post: array<string, mixed>, meta: array<string, string>, image: string, hash: string, key: string}
+	 * @return array{post: array<string, mixed>, meta: array<string, string>, image: string, tags: list<array{id: string, name: string}>|null, gallery: list<array{id: string, hash: string, type: string, name: string}>, hash: string, key: string}
 	 */
 	public static function desired( array $item ): array {
 		// Discount and credit items (a negative price) are never sold on their own: shoppers
@@ -762,14 +810,87 @@ final class ProductSync {
 			'tax_id'            => $text( 'tax_id' ),
 		);
 		$image  = esc_url_raw( (string) ( $item['product_image'] ?? '' ) );
+		// Invoice Ninja before tags existed sends none: leave the categories alone then.
+		$tags    = array_key_exists( 'tags', $item ) ? Categories::fromProduct( $item['tags'] ) : null;
+		$gallery = self::galleryFrom( $item['documents'] ?? null );
+		$hashed  = array( $post, $meta, $image );
+		if ( $tags || $gallery ) {
+			// Only then: products without either keep the hash they had before 2.1.
+			$hashed[] = array( $tags, $gallery );
+		}
 		return array(
-			'post'  => $post,
-			'meta'  => $meta,
-			'image' => $image,
-			'hash'  => sha1( (string) wp_json_encode( array( $post, $meta, $image ) ) ),
-			// What shoppers notice (for the circuit breaker): not stock, costs or images.
-			'key'   => sha1( (string) wp_json_encode( array( $post['post_title'], $post['post_content'], $post['post_status'], $meta['price'] ) ) ),
+			'post'    => $post,
+			'meta'    => $meta,
+			'image'   => $image,
+			'tags'    => $tags,
+			'gallery' => $gallery,
+			'hash'    => sha1( (string) wp_json_encode( $hashed ) ),
+			// What shoppers notice (for the circuit breaker): not stock, costs, images or categories.
+			'key'     => sha1( (string) wp_json_encode( array( $post['post_title'], $post['post_content'], $post['post_status'], $meta['price'] ) ) ),
 		);
+	}
+
+	/**
+	 * The product's public image documents, in Invoice Ninja's order (pure, for tests).
+	 * Private documents, other file types, archived ones and files over the size limit are left out.
+	 *
+	 * @param mixed $documents The product's documents.
+	 * @return list<array{id: string, hash: string, type: string, name: string}>
+	 */
+	public static function galleryFrom( mixed $documents ): array {
+		$out = array();
+		foreach ( is_array( $documents ) ? $documents : array() as $doc ) {
+			if ( ! is_array( $doc ) || empty( $doc['is_public'] ) || ! empty( $doc['is_deleted'] ) || ! empty( $doc['archived_at'] ) ) {
+				continue;
+			}
+			$type = strtolower( (string) ( $doc['type'] ?? '' ) );
+			$id   = self::cleanId( (string) ( $doc['id'] ?? '' ) );
+			if ( '' === $id || ! in_array( $type, self::GALLERY_TYPES, true ) || (int) ( $doc['size'] ?? 0 ) > ImageSideloader::MAX_BYTES || isset( $out[ $id ] ) ) {
+				continue;
+			}
+			$out[ $id ] = array(
+				'id'   => $id,
+				'hash' => substr( (string) preg_replace( '/[^A-Za-z0-9]/', '', (string) ( $doc['hash'] ?? '' ) ), 0, 64 ),
+				'type' => $type,
+				'name' => sanitize_text_field( (string) ( $doc['name'] ?? '' ) ),
+			);
+			if ( count( $out ) >= self::GALLERY_MAX ) {
+				break;
+			}
+		}
+		return array_values( $out );
+	}
+
+	/**
+	 * After a product was written: its categories, image and gallery.
+	 *
+	 * @param int                  $post_id Post.
+	 * @param array<string, mixed> $desired Desired state.
+	 */
+	private function afterWrite( int $post_id, array $desired ): void {
+		if ( is_array( $desired['tags'] ?? null ) ) {
+			Categories::assign( $post_id, $desired['tags'] );
+			$this->tagged = true;
+		}
+		$this->maybeQueueImage( $post_id, (string) ( $desired['image'] ?? '' ) );
+		$this->maybeQueueGallery( $post_id, is_array( $desired['gallery'] ?? null ) ? $desired['gallery'] : array() );
+	}
+
+	/**
+	 * Queue the gallery download when the product's image documents changed.
+	 *
+	 * @param int                                                              $post_id Post.
+	 * @param list<array{id: string, hash: string, type: string, name: string}> $wanted  Documents.
+	 */
+	private function maybeQueueGallery( int $post_id, array $wanted ): void {
+		$done = get_post_meta( $post_id, self::GALLERY_META, true );
+		$done = is_array( $done ) ? $done : array();
+		$keys = static fn( array $rows ): array => array_map( static fn( $row ): string => is_array( $row ) ? (string) ( $row['id'] ?? '' ) . ':' . (string) ( $row['hash'] ?? '' ) : '', $rows );
+		if ( $keys( $wanted ) === $keys( $done ) ) {
+			return;
+		}
+		update_post_meta( $post_id, self::GALLERY_WANT, $wanted );
+		$this->plugin->queue->push( self::GALLERY_HOOK, array( 'post_id' => $post_id ) );
 	}
 
 	/**

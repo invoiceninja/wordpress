@@ -346,6 +346,8 @@ final class FormsModule implements Module {
 			'email'        => (string) $lead['email'],
 			'phone'        => (string) ( $fields['phone'] ?? '' ),
 			'product'      => (string) ( $fields['product_title'] ?? '' ),
+			'quantity'     => (string) ( $fields['quantity'] ?? '' ),
+			'needed_by'    => (string) ( $fields['needed_by'] ?? '' ),
 			'message'      => (string) ( $fields['message'] ?? '' ),
 			'consents'     => $consents,
 			'matched'      => (bool) $lead['matched'],

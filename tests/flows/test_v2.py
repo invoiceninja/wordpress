@@ -1625,3 +1625,218 @@ def browser_store_smoke():
         check(result.returncode == 0 and 'browser smoke ok' in result.stdout, 'store works in a real browser', (result.stdout[-1500:], result.stderr[-3000:]))
     finally:
         b.api('POST', '/store/display', {'action': 'legacy'})
+
+
+@test
+def admin_settings_screens_get_pages_roles_and_the_pending_export():
+    """Settings > Store lists the store pages; Settings > Customers gets role counts, and
+    "Create clients for N users" counts unlinked users in the SAVED roles."""
+    b = admin()
+    b.api('POST', '/pages', {'pages': ['shop', 'checkout', 'status']})
+    st, _, html = b.get('/wp-admin/admin.php?page=invoiceninja-settings&tab=store')
+    check(st == 200 and '"pages":{"shop":{"id":' in html and '"edit":' in html, 'Settings boot data lists the store pages', st)
+    check('window.invoiceNinjaPortalAdmin' in html and '"id":"subscriber"' in html, 'Customers gets the roles with counts')
+    try:
+        b.api('POST', '/settings', {'customers': {'roles': 'editor'}})
+        _, none = b.api('GET', '/customers/export')
+        b.api('POST', '/settings', {'customers': {'roles': 'subscriber'}})
+        _, before = b.api('GET', '/customers/export')
+        wp('user', 'create', 'pending_export_probe', 'pending.probe@example.com', '--role=subscriber')
+        _, after = b.api('GET', '/customers/export')
+        check(none['pending'] == 0 and after['pending'] == before['pending'] + 1, 'the pending count follows the saved roles', (none, before, after))
+        status, _ = Browser().api('GET', '/customers/export')
+        check(status in (401, 403), 'the count is admin-only', status)
+    finally:
+        wp('user', 'delete', 'pending_export_probe', '--yes', check_ok=False)
+        b.api('POST', '/settings', {'customers': {'roles': 'customer,subscriber'}})
+
+
+@test
+def product_tags_photos_filters_and_the_product_page():
+    """Invoice Ninja product tags become shop categories, public image documents a photo gallery."""
+    import json
+    import re
+    png = lambda i, public=True, kind='png': {'id': i, 'name': i + '.' + kind, 'type': kind, 'hash': 'h' + i, 'size': 900, 'is_public': public, 'archived_at': 0}
+    extras = lambda gifts='Gifts', p1_tags=True, photos=('D1', 'D5'): json.dumps({
+        'P1': {'custom_value1': 'Blue glaze',
+               'tags': [{'id': 'T1', 'name': 'Tools'}] + ([{'id': 'T2', 'name': gifts}] if p1_tags else []),
+               'documents': [png(d) for d in photos] + [png('D2', public=False), png('TXTD3'), png('D4', kind='pdf')]},
+        'P2': {'tags': [{'id': 'T1', 'name': 'Tools'}]}})
+    terms = lambda post: wp_eval("echo wp_json_encode(wp_get_object_terms(%s, 'invoiceninja_category', array('fields' => 'names')));" % post)
+    gallery = lambda post: json.loads(wp_eval("echo wp_json_encode(get_post_meta(%s, '_invoiceninja_gallery', true));" % post) or '[]')
+    b, pages = blocks_store()
+    shop = str(pages['shop']['id'])
+    content = wp_eval("echo get_post_field('post_content', %s);" % shop)
+    try:
+        option('in_mock_product_extras', extras())
+        sync(b)
+        run_jobs('invoiceninja_sideload_gallery')
+        ids = product_ids()
+        widget, gadget = ids['Widget'][0], ids['Gadget'][0]
+        check(json.loads(terms(widget)) == ['Gifts', 'Tools'] and json.loads(terms(gadget)) == ['Tools'], 'tags became categories', (terms(widget), terms(gadget)))
+        photos = gallery(widget)
+        check([p['id'] for p in photos] == ['D1', 'D5', 'TXTD3'] and all(p['attachment'] > 0 for p in photos[:2]) and photos[2]['attachment'] == 0,
+              'public images only; a file that is not an image is skipped', photos)
+        downloads = [c['url'] for c in api_calls() if '/documents/' in c['url']]
+        check(not any('D2' in u or 'D4' in u for u in downloads), 'private documents and PDFs are never downloaded', downloads)
+
+        # The shop: chips (2+ categories), a sort menu, the descriptor, all through query args
+        wp_eval("wp_update_post(array('ID' => %s, 'post_content' => '<!-- wp:invoiceninja/products {\"descriptor\":\"custom_value1\"} /-->'));" % shop)
+        path = '/' + pages['shop']['url'].split('8089/', 1)[-1]
+        _, _, html = Browser().get(path)
+        check('role="group"' in html and re.search(r'name="category" value="gifts" aria-pressed="false"', html) and 'aria-pressed="true">All<' in html, 'category chips', html[:3000])
+        check(re.search(r'<label for="[^"]+-sort">Sort</label> <select[^>]*name="sort"', html), 'a labelled sort menu', html[:3000])
+        check('invoiceninja-card__descriptor">Blue glaze<' in html, 'the descriptor under the name')
+        _, _, gifts = Browser().get(path + ('&' if '?' in path else '?') + 'category=gifts')
+        check('Widget' in gifts and 'Gadget' not in gifts and 'value="gifts" aria-pressed="true"' in gifts, 'filtered by category', gifts[:3000])
+        _, _, by_price = Browser().get(path + ('&' if '?' in path else '?') + 'sort=price-desc')
+        check(0 < by_price.find('Gadget') < by_price.find('Widget') and 'value="price-desc" selected' in by_price, 'sorted by price, high to low')
+        wp_eval("wp_update_post(array('ID' => %s, 'post_content' => '<!-- wp:invoiceninja/products {\"showFilter\":false,\"showSort\":false} /-->'));" % shop)
+        _, _, plain = Browser().get(path + ('&' if '?' in path else '?') + 'category=gifts')
+        check('data-invoiceninja-shop' not in plain and 'Gadget' in plain, 'both can be turned off (and the query arg is then ignored)')
+
+        # The product page: photos with thumbnails, the stepper and the total on the button
+        out = wp_eval("echo do_shortcode('[invoiceninja_product product_id=\"P1\" show=\"gallery\"]');")
+        check(out.count('class="invoiceninja-gallery__thumb"') == 2 and 'aria-pressed="true"' in out and 'loading="lazy"' in out, 'photo thumbnails', out)
+        out = wp_eval("echo do_shortcode('[invoiceninja_product product_id=\"P1\" descriptor=\"custom_value1\"]');")
+        check('data-invoiceninja-step="1"' in out and 'aria-label="Increase quantity"' in out and 'data-invoiceninja-total="10"' in out and '$10.00</span></button>' in out,
+              'quantity stepper and Add to cart with the price', out)
+        check('invoiceninja-product__descriptor">Blue glaze<' in out, 'the descriptor on the product page', out)
+        _, _, page = Browser().get('/' + wp_eval("echo get_permalink(%s);" % widget).split('8089/', 1)[-1])
+        check(page.count('data-invoiceninja-add="P1"') == 1 and 'invoiceninja-gallery' in page and page.count('Widget description') == 1, 'the product page shows photos, one button and the description once', page[:3000])
+
+        # Renamed and removed in Invoice Ninja
+        before = wp_eval("echo get_term_by('name', 'Gifts', 'invoiceninja_category')->term_id;")
+        option('in_mock_product_extras', extras(gifts='Presents', photos=('D1',)))
+        sync(b)
+        run_jobs('invoiceninja_sideload_gallery')
+        check(wp_eval("echo get_term_by('name', 'Presents', 'invoiceninja_category')->term_id;") == before, 'a renamed tag renames its category', before)
+        removed = [p['attachment'] for p in photos if p['id'] == 'D5'][0]
+        check([p['id'] for p in gallery(widget)][:1] == ['D1'] and not wp_eval("echo get_post_type(%s);" % removed), 'a photo deleted in Invoice Ninja is deleted here', gallery(widget))
+        option('in_mock_product_extras', extras(p1_tags=False))
+        sync(b)
+        check(wp_eval("echo get_term_by('name', 'Presents', 'invoiceninja_category') ? 'kept' : 'removed';") == 'removed', 'a tag no product has any more is removed')
+    finally:
+        # Tags and photos taken off again (removes the categories and photos), then the plain mock.
+        option('in_mock_product_extras', json.dumps({'P1': {'tags': [], 'documents': []}, 'P2': {'tags': [], 'documents': []}}))
+        sync(b)
+        run_jobs('invoiceninja_sideload_gallery')
+        wp('option', 'delete', 'in_mock_product_extras', check_ok=False)
+        wp_eval("wp_update_post(array('ID' => %s, 'post_content' => '%s'));" % (shop, content.replace("'", "\\'")))
+        b.api('POST', '/store/display', {'action': 'legacy'})
+
+
+# ---------- Checkout redesign: delivery address, Order Status breakdown and invoice PDF ----------
+
+def _delivery(**extra):
+    address = {'shipping_address1': '22 Elm St', 'shipping_address2': '', 'shipping_city': 'Portland',
+               'shipping_state': 'OR', 'shipping_postal_code': '97201', 'shipping_country_id': '840'}
+    address.update(extra)
+    return address
+
+
+@test
+def delivery_address_is_optional_and_saved_as_the_clients_shipping_address():
+    store_ready()
+    b = admin()
+    wp_eval("InvoiceNinja\\Plugin::instance()->statics->refresh();")
+    try:
+        s = shopper()
+        _, cart = s.api('GET', '/cart?checkout=1')
+        check(cart['delivery_address']['fields'] is False, 'off by default: checkout asks for no address', cart.get('delivery_address'))
+        b.api('POST', '/settings', {'store': {'delivery_address': True}})
+        _, cart = s.api('GET', '/cart?checkout=1')
+        check(cart['delivery_address']['fields'] and ['840', 'United States'] in cart['delivery_address']['countries'], 'on: the checkout cart asks for it, with the countries', cart['delivery_address'])
+        email = 'deliver.me@example.com'
+        details = {'email': email, 'first_name': 'Del', 'last_name': 'Ivery'}
+        status, r = s.api('POST', '/checkout/start', details)
+        check(status == 422 and r['code'] == 'delivery_address' and set(r['fields']) == {'shipping_address1', 'shipping_city', 'shipping_country_id'}, 'the address is checked before the code is sent', r)
+        check(not mails(email), 'no code yet')
+        details.update(_delivery(shipping_postal_code='97#01'))
+        status, r = s.api('POST', '/checkout/start', details)
+        check(status == 422 and list(r['fields']) == ['shipping_postal_code'], 'a postcode must look like one', r)
+        details.update(_delivery())
+        status, r = s.api('POST', '/checkout/start', details)
+        check(status == 200 and r['next'] == 'code', 'a valid address goes on to the code', r)
+        details['code'] = last_code(email)
+        status, r = s.api('POST', '/checkout/confirm', details)
+        check(status == 200 and r['ok'], 'order placed', r)
+        check(r['address'] == ['22 Elm St', 'Portland, OR 97201', 'United States'], 'the order shows where it goes', r.get('address'))
+        clients = client_bodies()
+        check(len(clients) == 1 and clients[0].get('shipping_address1') == '22 Elm St' and clients[0].get('shipping_country_id') == '840' and clients[0].get('shipping_postal_code') == '97201', "the new client's shipping address", clients)
+        row = order_row(r['number'])
+        check(row['customer']['shipping']['shipping_city'] == 'Portland', 'kept on the order record', row['customer'])
+        _, listed = b.api('GET', '/admin/orders?search=' + r['number'])
+        check(listed['items'][0]['address'] == '22 Elm St, Portland, OR 97201, United States', 'the Orders screen has it', listed['items'][0])
+        import json
+        # An existing client that follows the company's currency is left alone: any update
+        # would make Invoice Ninja pin the company's currency on it.
+        reset_mock_log()
+        s2 = shopper()
+        known = {'email': 'a+b@x.com', 'first_name': 'Known', 'last_name': 'Client'}
+        known.update(_delivery(shipping_address1='9 Oak Ave', shipping_address2='Unit 4'))
+        s2.api('POST', '/checkout/start', known)
+        known['code'] = last_code('a+b@x.com')
+        status, r2 = s2.api('POST', '/checkout/confirm', known)
+        check(status == 200 and r2['status'] == 'awaiting_payment', 'order placed for an existing client', r2)
+        run_jobs('invoiceninja_client_shipping')
+        puts = [c for c in api_calls() if c['method'] == 'PUT' and '/clients/' in c['url']]
+        check(not puts, "a client without its own currency isn't updated", describe(puts))
+        check(not client_bodies(), 'no second client is created')
+        # One with its own currency gets the address in the background, its currency sent back as it is
+        reset_mock_log()
+        s3 = shopper()
+        usd = {'email': 'usd@x.com', 'first_name': 'Usd', 'last_name': 'Client'}
+        usd.update(_delivery(shipping_address1='9 Oak Ave', shipping_address2='Unit 4'))
+        s3.api('POST', '/checkout/start', usd)
+        usd['code'] = last_code('usd@x.com')
+        status, r3 = s3.api('POST', '/checkout/confirm', usd)
+        check(status == 200 and r3['status'] == 'awaiting_payment', 'order placed for a client with its own currency', r3)
+        check(not [c for c in api_calls() if c['method'] == 'PUT'], 'placing the order never waits on the client update')
+        run_jobs('invoiceninja_client_shipping')
+        puts = [c for c in api_calls() if c['method'] == 'PUT' and c['url'].split('?')[0] == 'https://in.test/api/v1/clients/CLIENT_USD']
+        body = json.loads(puts[0]['body']) if puts else {}
+        check(len(puts) == 1 and body.get('shipping_address1') == '9 Oak Ave' and body.get('shipping_address2') == 'Unit 4' and 'contacts' not in body and 'name' not in body
+              and body.get('settings') == {'currency_id': '1'}, 'the existing client gets the new shipping address and its own currency, nothing else', describe(puts))
+        # Exported and erased with the order
+        exported = wp_eval("$d = InvoiceNinja\\Plugin::instance(); $e = new InvoiceNinja\\Privacy\\Privacy($d); echo wp_json_encode($e->export('deliver.me@example.com'));")
+        check('22 Elm St' in exported, 'in the personal-data export', exported[:400])
+    finally:
+        b.api('POST', '/settings', {'store': {'delivery_address': False}})
+
+
+@test
+def order_status_shows_the_invoice_breakdown_and_its_pdf():
+    import urllib.request, urllib.error
+    store_ready()
+    s = shopper()
+    email = 'status.page@example.com'
+    _, r = checkout(s, email, first_name='Stella', last_name='Status')
+    check(r['ok'] and r['status'] == 'awaiting_payment', 'order placed', r)
+    check(r['invoice'] and r['invoice']['total'] == r['total'] and r['invoice']['lines'][0]['title'] == 'Widget', 'the checkout reply has the invoice figures', r.get('invoice'))
+    key = r['status_url'].split('key=')[1]
+    status, o = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
+    check(status == 200 and o['first_name'] == 'Stella' and o['placed_on'] and o['paid_on'] == '' and o['pdf'] is True, 'placed date, no paid date yet, and a PDF', o)
+    check(o['invoice']['lines'] == [{'title': 'Widget', 'quantity': 2, 'line_total': 20}] and o['invoice']['total'] == 20 and o['invoice']['balance'] == 20, 'the breakdown is read from the invoice', o['invoice'])
+    check(o['address'] == [], 'no delivery address was asked for')
+
+    def pdf(number, order_key):
+        from lib import BASE
+        req = urllib.request.Request(BASE + '/wp-json/invoiceninja/v1/orders/%s/pdf' % number, headers={'X-Order-Key': order_key})
+        try:
+            resp = urllib.request.urlopen(req, timeout=60)
+            return resp.status, resp.headers.get('Content-Type'), resp.headers.get('Content-Disposition'), resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers.get('Content-Type'), '', e.read()
+
+    code, kind, disposition, body = pdf(r['number'], key)
+    check(code == 200 and 'application/pdf' in kind and body.startswith(b'%PDF') and 'Invoice' in disposition, 'the invoice PDF, behind the order key', (code, kind, disposition, body[:40]))
+    # The mock's PDF names the route it was fetched from (dev/mu-plugins/invoiceninja-mock-portal.php).
+    check(b'invoice/INVITE' in body and b'/download' in body, "fetched with the buyer's own invitation", body[:60])
+    code, _, _, _ = pdf(r['number'], '0' * 32)
+    check(code == 404, 'a wrong key gets nothing', code)
+    # Paid: the second stage gets its date
+    inv = order_row(r['number'])['invoice_id']
+    wp_eval("update_option('in_mock_paid', array('%s')); $o = InvoiceNinja\\Plugin::instance()->orders->findBy('number', '%s'); delete_transient('invoiceninja_order_check_' . $o['id']);" % (inv, r['number']))
+    _, o = Browser().api('GET', '/orders/%s?key=%s' % (r['number'], key))
+    check(o['status'] == 'paid' and o['paid_on'] and o['invoice']['balance'] == 0, 'paid, with its date and nothing left to pay', o)

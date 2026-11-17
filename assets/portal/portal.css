@@ -1,0 +1,220 @@
+/**
+ * Invoice Ninja Account block. Layout only: fonts, colours and buttons come from the theme
+ * (currentColor, wp-element-button). Override any --invoiceninja-* property in your theme.
+ * Loaded after store.css, so these rules win over its older Account rules.
+ */
+.invoiceninja-account {
+	--invoiceninja-radius: 0.75rem;
+	--invoiceninja-border: color-mix(in srgb, currentColor 18%, transparent);
+	--invoiceninja-muted: color-mix(in srgb, currentColor 72%, transparent);
+	--invoiceninja-warning: #8a4b00;
+	--invoiceninja-success: #1e7a3c;
+	box-sizing: border-box;
+	gap: 1.5rem;
+	/* The rows turn into cards by the block's own width, not the window's. */
+	container: invoiceninja-account / inline-size;
+}
+.invoiceninja-account *,
+.invoiceninja-account *::before,
+.invoiceninja-account *::after { box-sizing: inherit; }
+
+/* Header: who is signed in, and the billing portal. */
+.invoiceninja-account__head {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 0.5rem 1rem;
+}
+.invoiceninja-account__who { margin: 0; color: var(--invoiceninja-muted); overflow-wrap: anywhere; }
+.invoiceninja-account__who a { color: inherit; }
+.invoiceninja-account .invoiceninja-account__portal.wp-element-button {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.25em;
+	padding: 0.45em 0.9em;
+	font-size: 0.875em;
+	background: transparent;
+	color: inherit;
+	border: 1px solid currentColor;
+	text-decoration: none;
+	white-space: nowrap;
+}
+.invoiceninja-account .invoiceninja-account__portal.wp-element-button:hover { background: color-mix(in srgb, currentColor 8%, transparent); }
+
+/* Balance due */
+.invoiceninja-balance {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: space-between;
+	gap: 1rem 2rem;
+	padding: 1.25rem 1.5rem;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: var(--invoiceninja-radius);
+}
+.invoiceninja-balance__text { min-inline-size: 0; }
+.invoiceninja-balance__title {
+	margin: 0;
+	font-size: 0.8rem;
+	font-weight: 600;
+	letter-spacing: 0.06em;
+	text-transform: uppercase;
+	color: var(--invoiceninja-muted);
+}
+.invoiceninja-balance__amount {
+	margin: 0.25rem 0 0;
+	font-size: 2em;
+	font-weight: 600;
+	line-height: 1.15;
+	font-variant-numeric: tabular-nums;
+	overflow-wrap: anywhere;
+}
+.invoiceninja-balance__amount.is-paid { font-size: 1.5em; }
+.invoiceninja-balance__detail { margin: 0.25rem 0 0; color: var(--invoiceninja-muted); }
+.invoiceninja-balance__detail.is-overdue { color: inherit; font-weight: 600; }
+.invoiceninja-balance__action { margin: 0; }
+.invoiceninja-balance__text > :last-child { margin-block-end: 0; }
+
+/* Tabs: one line; when they don't fit, they scroll with a fade on the side that has more. */
+.invoiceninja-tabs-scroll {
+	overflow-x: auto;
+	overscroll-behavior-x: contain;
+	scrollbar-width: thin;
+}
+.invoiceninja-tabs-scroll.is-more-right { mask-image: linear-gradient(to right, #000 calc(100% - 3rem), transparent); }
+.invoiceninja-tabs-scroll.is-more-left { mask-image: linear-gradient(to left, #000 calc(100% - 3rem), transparent); }
+.invoiceninja-tabs-scroll.is-more-left.is-more-right { mask-image: linear-gradient(to right, transparent, #000 3rem, #000 calc(100% - 3rem), transparent); }
+@media (pointer: coarse) {
+	.invoiceninja-tabs-scroll { scrollbar-width: none; }
+	.invoiceninja-tabs-scroll::-webkit-scrollbar { display: none; }
+}
+.invoiceninja-account .invoiceninja-tabs {
+	flex-wrap: nowrap;
+	inline-size: max-content;
+	min-inline-size: 100%;
+}
+.invoiceninja-account .invoiceninja-tab { flex: none; white-space: nowrap; }
+.invoiceninja-account .invoiceninja-tab:focus-visible { outline: 2px solid currentColor; outline-offset: -2px; }
+.invoiceninja-account .invoiceninja-tab[aria-selected="true"] { font-weight: 600; }
+.invoiceninja-account .invoiceninja-tabpanel { overflow-x: auto; } /* Only ever scrolls if a theme's type is very large. */
+.invoiceninja-account .invoiceninja-tabpanel:focus-visible { outline: 2px solid currentColor; outline-offset: 4px; }
+
+/* Rows */
+.invoiceninja-account .invoiceninja-table { font-variant-numeric: tabular-nums; }
+.invoiceninja-account .invoiceninja-table th {
+	font-size: 0.8em;
+	font-weight: 600;
+	color: var(--invoiceninja-muted);
+	white-space: nowrap;
+}
+.invoiceninja-account .invoiceninja-table th.invoiceninja-num,
+.invoiceninja-account .invoiceninja-table td.invoiceninja-num { text-align: end; white-space: nowrap; }
+.invoiceninja-account .invoiceninja-cell--date,
+.invoiceninja-account .invoiceninja-cell--due { white-space: nowrap; }
+.invoiceninja-account td.invoiceninja-cell--actions { text-align: end; white-space: nowrap; }
+.invoiceninja-account td.invoiceninja-cell--actions > * + * { margin-inline-start: 0.75rem; }
+.invoiceninja-account__number { font-weight: 600; }
+.invoiceninja-account__order { display: block; font-size: 0.85em; color: var(--invoiceninja-muted); white-space: nowrap; }
+.invoiceninja-account__order a { color: inherit; }
+.invoiceninja-account .invoiceninja-account__pay.wp-element-button { padding: 0.4em 1em; font-size: 0.875em; }
+
+/* Status: a text tag; the dot is decoration only. */
+.invoiceninja-tag {
+	display: inline-flex;
+	align-items: center;
+	gap: 0.4em;
+	padding: 0.1em 0.55em;
+	border: 1px solid var(--invoiceninja-border);
+	border-radius: 0.3em;
+	font-size: 0.85em;
+	line-height: 1.5;
+	white-space: nowrap;
+}
+.invoiceninja-tag::before {
+	content: "";
+	inline-size: 0.45em;
+	block-size: 0.45em;
+	border-radius: 50%;
+	background: currentColor;
+	flex: none;
+}
+.invoiceninja-tag--alert { font-weight: 600; border-color: var(--invoiceninja-warning); background: color-mix(in srgb, var(--invoiceninja-warning) 10%, transparent); }
+.invoiceninja-tag--alert::before { background: var(--invoiceninja-warning); }
+.invoiceninja-tag--done::before { background: var(--invoiceninja-success); }
+.invoiceninja-tag--off { color: var(--invoiceninja-muted); }
+
+/* Empty tab */
+.invoiceninja-empty { padding: 2.5rem 1rem; text-align: center; }
+.invoiceninja-empty p { margin: 0.25rem 0 0; }
+.invoiceninja-empty .invoiceninja-empty__title { margin: 0; font-weight: 600; }
+
+/* Touch: every control at least 44 px tall. */
+@media (pointer: coarse) {
+	.invoiceninja-account__action,
+	.invoiceninja-account__number,
+	.invoiceninja-account__who a,
+	.invoiceninja-account__order a,
+	.invoiceninja-empty a,
+	.invoiceninja-account .invoiceninja-account__pay.wp-element-button,
+	.invoiceninja-account .invoiceninja-account__portal.wp-element-button {
+		display: inline-flex;
+		align-items: center;
+		min-block-size: 44px;
+		min-inline-size: 44px;
+	}
+}
+
+/* Narrow: each row is a card (number and status, dates, amount and balance, actions). */
+@container invoiceninja-account (max-width: 48rem) {
+	.invoiceninja-account .invoiceninja-table,
+	.invoiceninja-account .invoiceninja-table tbody { display: block; }
+	.invoiceninja-account .invoiceninja-table thead {
+		position: absolute;
+		inline-size: 1px;
+		block-size: 1px;
+		overflow: hidden;
+		clip-path: inset(50%);
+		white-space: nowrap;
+	}
+	.invoiceninja-account .invoiceninja-table tr {
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) auto;
+		grid-template-areas:
+			"number status"
+			"date due"
+			"amount balance"
+			"actions actions";
+		gap: 0.5rem 1rem;
+		padding: 1rem 0;
+		border-block-end: 1px solid var(--invoiceninja-border);
+	}
+	.invoiceninja-account .invoiceninja-table td { display: block; padding: 0; border: 0; min-inline-size: 0; }
+	.invoiceninja-account .invoiceninja-table td[data-label]::before {
+		content: attr(data-label);
+		display: block;
+		font-size: 0.8em;
+		color: var(--invoiceninja-muted);
+	}
+	.invoiceninja-account .invoiceninja-cell--number { grid-area: number; overflow-wrap: anywhere; }
+	.invoiceninja-account .invoiceninja-cell--status { grid-area: status; justify-self: end; }
+	.invoiceninja-account .invoiceninja-cell--date { grid-area: date; }
+	.invoiceninja-account .invoiceninja-cell--due { grid-area: due; text-align: end; }
+	.invoiceninja-account .invoiceninja-table td.invoiceninja-cell--amount { grid-area: amount; text-align: start; }
+	.invoiceninja-account .invoiceninja-table td.invoiceninja-cell--balance { grid-area: balance; }
+	.invoiceninja-account .invoiceninja-table td.invoiceninja-cell--actions {
+		grid-area: actions;
+		display: flex;
+		flex-wrap: wrap;
+		align-items: center;
+		justify-content: flex-end;
+		gap: 0.5rem 1rem;
+		white-space: normal;
+	}
+	.invoiceninja-account td.invoiceninja-cell--actions > * + * { margin-inline-start: 0; }
+	.invoiceninja-account .invoiceninja-cell--date,
+	.invoiceninja-account .invoiceninja-cell--due { white-space: normal; }
+	.invoiceninja-account .invoiceninja-tabpanel { overflow: visible; }
+	.invoiceninja-balance { padding: 1rem 1.25rem; }
+}
+

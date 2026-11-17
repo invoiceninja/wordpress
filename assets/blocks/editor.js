@@ -13,7 +13,7 @@
 	}
 
 	const { createElement: h, Fragment, useEffect, useState } = wp.element;
-	const { __ } = wp.i18n;
+	const { __, sprintf } = wp.i18n;
 	const { InspectorControls, useBlockProps } = wp.blockEditor;
 	const { PanelBody, ToggleControl, RangeControl, SelectControl, TextControl, Spinner, Placeholder } = wp.components;
 	const ServerSideRender = wp.serverSideRender;
@@ -47,6 +47,22 @@
 		} );
 	}
 
+	// A product custom field shown under the product name (Invoice Ninja names them in Settings → Custom Fields).
+	function DescriptorPicker( { value, onChange } ) {
+		return h( SelectControl, {
+			label: __( 'Short line under the name', 'invoiceninja' ),
+			help: __( 'A product custom field from Invoice Ninja, such as a size or glaze.', 'invoiceninja' ),
+			value: value || '',
+			options: [ { value: '', label: __( 'None', 'invoiceninja' ) } ].concat( [ 1, 2, 3, 4 ].map( ( n ) => ( {
+				value: 'custom_value' + n,
+				/* translators: %d: custom field number (1 to 4) */
+				label: sprintf( __( 'Product custom field %d', 'invoiceninja' ), n ),
+			} ) ) ),
+			onChange,
+			__nextHasNoMarginBottom: true,
+		} );
+	}
+
 	const controls = {
 		'invoiceninja/products': ( a, set ) => [
 			h( PanelBody, { key: 'layout', title: __( 'Settings', 'invoiceninja' ) },
@@ -63,7 +79,11 @@
 				], onChange: ( v ) => set( { soldOut: v } ), __nextHasNoMarginBottom: true } ) ),
 			h( PanelBody, { key: 'show', title: __( 'Show', 'invoiceninja' ) },
 				[ [ 'showImage', __( 'Image', 'invoiceninja' ) ], [ 'showPrice', __( 'Price', 'invoiceninja' ) ], [ 'showStock', __( 'Stock left (when low)', 'invoiceninja' ) ], [ 'showExcerpt', __( 'Short description', 'invoiceninja' ) ], [ 'showButton', __( 'Add to Cart button', 'invoiceninja' ) ] ]
-					.map( ( [ key, label ] ) => h( ToggleControl, { key, label, checked: !! a[ key ], onChange: ( v ) => set( { [ key ]: v } ), __nextHasNoMarginBottom: true } ) ) ),
+					.map( ( [ key, label ] ) => h( ToggleControl, { key, label, checked: !! a[ key ], onChange: ( v ) => set( { [ key ]: v } ), __nextHasNoMarginBottom: true } ) ),
+				h( DescriptorPicker, { value: a.descriptor, onChange: ( v ) => set( { descriptor: v } ) } ) ),
+			h( PanelBody, { key: 'browse', title: __( 'Shoppers can', 'invoiceninja' ) },
+				h( ToggleControl, { label: __( 'Filter by category', 'invoiceninja' ), help: __( 'Your Invoice Ninja product tags. Shown when there are two or more.', 'invoiceninja' ), checked: !! a.showFilter, onChange: ( v ) => set( { showFilter: v } ), __nextHasNoMarginBottom: true } ),
+				h( ToggleControl, { label: __( 'Sort by price', 'invoiceninja' ), checked: !! a.showSort, onChange: ( v ) => set( { showSort: v } ), __nextHasNoMarginBottom: true } ) ),
 		],
 		'invoiceninja/product': ( a, set ) => [
 			h( PanelBody, { key: 'p', title: __( 'Settings', 'invoiceninja' ) },
@@ -73,8 +93,10 @@
 					{ value: 'price', label: __( 'Price only', 'invoiceninja' ) },
 					{ value: 'stock', label: __( 'Stock only', 'invoiceninja' ) },
 					{ value: 'button', label: __( 'Button only', 'invoiceninja' ) },
+					{ value: 'gallery', label: __( 'Photos', 'invoiceninja' ) },
 				], onChange: ( v ) => set( { show: v } ), __nextHasNoMarginBottom: true } ),
-				h( ToggleControl, { label: __( 'Quantity field', 'invoiceninja' ), checked: !! a.quantity, onChange: ( v ) => set( { quantity: v } ), __nextHasNoMarginBottom: true } ) ),
+				a.show === 'all' || a.show === 'button' ? h( ToggleControl, { label: __( 'Quantity field', 'invoiceninja' ), checked: !! a.quantity, onChange: ( v ) => set( { quantity: v } ), __nextHasNoMarginBottom: true } ) : null,
+				a.show === 'all' ? h( DescriptorPicker, { value: a.descriptor, onChange: ( v ) => set( { descriptor: v } ) } ) : null ),
 		],
 		'invoiceninja/add-to-cart': ( a, set ) => [
 			h( PanelBody, { key: 'p', title: __( 'Settings', 'invoiceninja' ) },
@@ -99,6 +121,7 @@
 				{ value: 'link', label: __( 'Link', 'invoiceninja' ) },
 				{ value: 'button', label: __( 'Button', 'invoiceninja' ) },
 			], onChange: ( v ) => set( { style: v } ), __nextHasNoMarginBottom: true } ) : null,
+			a.mode !== 'link' ? h( ToggleControl, { label: __( 'Balance due panel', 'invoiceninja' ), help: __( 'What the unpaid invoices add up to, with a Pay button.', 'invoiceninja' ), checked: a.balance !== false, onChange: ( v ) => set( { balance: v } ), __nextHasNoMarginBottom: true } ) : null,
 			a.mode !== 'link' ? [ [ 'invoices', __( 'Invoices', 'invoiceninja' ) ], [ 'quotes', __( 'Quotes', 'invoiceninja' ) ], [ 'payments', __( 'Payments', 'invoiceninja' ) ], [ 'credits', __( 'Credits', 'invoiceninja' ) ], [ 'subscriptions', __( 'Subscriptions', 'invoiceninja' ) ] ].map( ( [ key, label ] ) => h( ToggleControl, {
 				key, label, checked: ( a.tabs || [] ).includes( key ), __nextHasNoMarginBottom: true,
 				onChange: ( on ) => set( { tabs: on ? ( a.tabs || [] ).concat( [ key ] ) : ( a.tabs || [] ).filter( ( x ) => x !== key ) } ),

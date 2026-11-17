@@ -23,7 +23,15 @@ use InvoiceNinja\Plugin;
  */
 final class OrderService {
 
+	/** Background job that saves a delivery address on an existing client. */
+	public const SHIPPING_HOOK = 'invoiceninja_client_shipping';
+
 	public const CREATE_BUDGET = 8.0;
+
+	/**
+	 * Seconds an order's invoice is kept for its Order Status page (the price breakdown).
+	 */
+	public const INVOICE_CACHE = 5 * MINUTE_IN_SECONDS;
 
 	/**
 	 * Constructor.
@@ -306,6 +314,7 @@ final class OrderService {
 		} catch ( ApiException $e ) {
 			return $order;
 		}
+		$this->cacheInvoice( $order, $invoice );
 		$status_id = (string) ( $invoice['status_id'] ?? '' );
 		// Paid only when Invoice Ninja says so; cancelled (5) and reversed (6) invoices also have no balance.
 		if ( '4' === $status_id || ( ! in_array( $status_id, array( '5', '6' ), true ) && (float) ( $invoice['amount'] ?? 0 ) > 0 && (float) ( $invoice['paid_to_date'] ?? 0 ) >= (float) $invoice['amount'] ) ) {
@@ -329,6 +338,95 @@ final class OrderService {
 			$order['total'] = $total['total'];
 		}
 		return $order;
+	}
+
+	/**
+	 * The order's invoice as Invoice Ninja last returned it (kept a few minutes), or null.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 * @return array<string, mixed>|null
+	 */
+	public function cachedInvoice( array $order ): ?array {
+		$cached = get_transient( 'invoiceninja_order_invoice_' . (int) $order['id'] );
+		return is_array( $cached ) && (string) ( $cached['id'] ?? '' ) === (string) $order['invoice_id'] ? $cached : null;
+	}
+
+	/**
+	 * The order's invoice: the cached copy, or fetched now (briefly). Null when there's no
+	 * invoice yet or Invoice Ninja didn't answer in time.
+	 *
+	 * @param array<string, mixed> $order Order.
+	 * @return array<string, mixed>|null
+	 */
+	public function invoice( array $order ): ?array {
+		if ( '' === (string) $order['invoice_id'] ) {
+			return null;
+		}
+		$cached = $this->cachedInvoice( $order );
+		if ( null !== $cached ) {
+			return $cached;
+		}
+		try {
+			$invoice = $this->client()->get( 'invoices/' . rawurlencode( (string) $order['invoice_id'] ), array(), 1.5 )->data();
+		} catch ( ApiException $e ) {
+			return null;
+		}
+		$this->cacheInvoice( $order, $invoice );
+		return $invoice;
+	}
+
+	/**
+	 * Keep an order's invoice for a few minutes.
+	 *
+	 * @param array<string, mixed> $order   Order.
+	 * @param array<string, mixed> $invoice Invoice.
+	 */
+	private function cacheInvoice( array $order, array $invoice ): void {
+		if ( '' !== (string) ( $invoice['id'] ?? '' ) ) {
+			set_transient( 'invoiceninja_order_invoice_' . (int) $order['id'], $invoice, self::INVOICE_CACHE );
+		}
+	}
+
+	/**
+	 * An invoice's figures for the buyer, exactly as Invoice Ninja worked them out: its
+	 * lines, tax and total, what's been paid and what's left. Anything else on the invoice
+	 * (a discount, a surcharge) is the difference, so the rows always add up to its total.
+	 *
+	 * @param array<string, mixed> $invoice Invoice.
+	 * @return array{lines: list<array{title: string, quantity: float, line_total: float}>, subtotal: float, tax: float, inclusive: bool, adjustments: float, total: float, paid: float, balance: float}
+	 */
+	public static function breakdown( array $invoice ): array {
+		$lines = array();
+		foreach ( (array) ( $invoice['line_items'] ?? array() ) as $item ) {
+			if ( ! is_array( $item ) ) {
+				continue;
+			}
+			$quantity = (float) ( $item['quantity'] ?? 0 );
+			$title    = (string) ( $item['product_key'] ?? '' );
+			$lines[]  = array(
+				'title'      => '' !== $title ? $title : wp_trim_words( wp_strip_all_tags( (string) ( $item['notes'] ?? '' ) ), 8 ),
+				'quantity'   => $quantity,
+				'line_total' => round( isset( $item['line_total'] ) && is_numeric( $item['line_total'] ) ? (float) $item['line_total'] : (float) ( $item['cost'] ?? 0 ) * $quantity, 2 ),
+			);
+		}
+		$inclusive = ! empty( $invoice['uses_inclusive_taxes'] );
+		$subtotal  = round( array_sum( array_column( $lines, 'line_total' ) ), 2 );
+		$tax       = round( (float) ( $invoice['total_taxes'] ?? 0 ), 2 );
+		$total     = round( (float) ( $invoice['amount'] ?? 0 ), 2 );
+		$other     = round( $total - $subtotal - ( $inclusive ? 0.0 : $tax ), 2 );
+		$paid      = round( (float) ( $invoice['paid_to_date'] ?? 0 ), 2 );
+		return array(
+			'lines'       => $lines,
+			'subtotal'    => $subtotal,
+			'tax'         => $tax,
+			'inclusive'   => $inclusive,
+			'adjustments' => abs( $other ) >= 0.005 ? $other : 0.0,
+			'total'       => $total,
+			'paid'        => $paid,
+			// A deposit: Invoice Ninja's payment page asks for this before the balance.
+			'partial'     => round( max( 0.0, (float) ( $invoice['partial'] ?? 0 ) ), 2 ),
+			'balance'     => round( isset( $invoice['balance'] ) && is_numeric( $invoice['balance'] ) ? (float) $invoice['balance'] : $total - $paid, 2 ),
+		);
 	}
 
 	/**
@@ -397,6 +495,9 @@ final class OrderService {
 		if ( ! $found['created'] && self::currencyDiffers( $found['client'], $company ) ) {
 			return null;
 		}
+		if ( ! $found['created'] ) {
+			$this->saveShipping( $order, $found['client_id'], $found['client'] );
+		}
 		return $found['client_id'];
 	}
 
@@ -422,6 +523,10 @@ final class OrderService {
 	private function newClient( array $order ): array {
 		$customer = (array) $order['customer'];
 		$details  = array_intersect_key( $customer, array_flip( array( 'first_name', 'last_name', 'phone', 'country_id', 'postal_code' ) ) );
+		if ( is_array( $customer['shipping'] ?? null ) ) {
+			// The delivery address, when checkout asked for one, is the client's shipping address.
+			$details += array_intersect_key( $customer['shipping'], array_flip( Checkout::DELIVERY_FIELDS ) );
+		}
 		$settings = array_filter(
 			array(
 				'currency_id' => (string) ( $this->plugin->state->get()['company']['currency_id'] ?? '' ),
@@ -434,6 +539,79 @@ final class OrderService {
 			$details['client'] = array( 'settings' => $settings );
 		}
 		return $details;
+	}
+
+	/**
+	 * Save the order's delivery address as an existing client's shipping address, when the
+	 * order has one and it differs from what Invoice Ninja holds. It runs as a background
+	 * job, so placing the order never waits on it, and a refused update never holds the
+	 * order up. A client without its own currency is left alone: any update would pin the
+	 * company's currency on it (see ClientResolver::updateShipping).
+	 *
+	 * @param array<string, mixed> $order     Order.
+	 * @param string               $client_id Client id.
+	 * @param array<string, mixed> $current   The client as Invoice Ninja returned it.
+	 */
+	private function saveShipping( array $order, string $client_id, array $current ): void {
+		$shipping = $order['customer']['shipping'] ?? null;
+		if ( ! is_array( $shipping ) || '' === $client_id ) {
+			return;
+		}
+		$address = array();
+		foreach ( Checkout::DELIVERY_FIELDS as $field ) {
+			$address[ $field ] = (string) ( $shipping[ $field ] ?? '' );
+		}
+		$same = true;
+		foreach ( $address as $field => $value ) {
+			if ( 'shipping_country_id' === $field && '' === $value ) {
+				continue; // Not sent (see updateShipping), so not a difference.
+			}
+			$same = $same && (string) ( $current[ $field ] ?? '' ) === $value;
+		}
+		if ( $same || '' === $address['shipping_address1'] ) {
+			return;
+		}
+		$currency = (string) ( is_array( $current['settings'] ?? null ) ? ( $current['settings']['currency_id'] ?? '' ) : '' );
+		if ( '' === $currency ) {
+			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( "Order %s: the client follows its group's or the company's currency, so its shipping address wasn't changed. The delivery address is on the order here.", $order['number'] ), array(), 'order', (string) $order['number'] );
+			return;
+		}
+		if ( ! \InvoiceNinja\Core\Queue::available() ) {
+			// Never inline: placing the order mustn't wait on it.
+			$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( "Order %s: the delivery address wasn't saved on the client in Invoice Ninja (no background jobs). It's on the order here.", $order['number'] ), array(), 'order', (string) $order['number'] );
+			return;
+		}
+		// Only the order id: the job reads the address from the order, so an order erased for
+		// privacy leaves no address behind in the job queue.
+		$this->plugin->queue->push(
+			self::SHIPPING_HOOK,
+			array(
+				'order_id'    => (int) $order['id'],
+				'client_id'   => $client_id,
+				'currency_id' => $currency,
+			),
+			0,
+			false
+		);
+	}
+
+	/**
+	 * Background job: save an order's delivery address on its client (see saveShipping).
+	 *
+	 * @param array<string, mixed> $payload {order_id, client_id, currency_id}.
+	 * @throws ApiException To let the queue retry.
+	 */
+	public function shippingJob( array $payload ): void {
+		$order    = $this->orders->find( (int) ( $payload['order_id'] ?? 0 ) );
+		$shipping = is_array( $order ) && is_array( $order['customer']['shipping'] ?? null ) ? $order['customer']['shipping'] : null;
+		if ( null === $shipping || '' === (string) ( $shipping['shipping_address1'] ?? '' ) ) {
+			return; // Gone or erased since.
+		}
+		$address = array();
+		foreach ( Checkout::DELIVERY_FIELDS as $field ) {
+			$address[ $field ] = (string) ( $shipping[ $field ] ?? '' );
+		}
+		$this->plugin->clients->updateShipping( $this->client(), (string) ( $payload['client_id'] ?? '' ), $address, (string) ( $payload['currency_id'] ?? '' ) );
 	}
 
 	/**
@@ -566,6 +744,7 @@ final class OrderService {
 			return (array) $this->orders->find( (int) $order['id'] );
 		}
 		$order = (array) $this->orders->find( (int) $order['id'] );
+		$this->cacheInvoice( $order, $invoice );
 		$this->plugin->logger->log( \InvoiceNinja\Core\LogLevel::Info, 'checkout', sprintf( 'Order %s: invoice %s created', $order['number'], $order['invoice_number'] ), array(), 'order', (string) $order['number'] );
 		if ( '' === $link ) {
 			do_action( 'invoiceninja_order_needs_attention', $order ); // The buyer has no link to pay with; an admin sends the invoice.

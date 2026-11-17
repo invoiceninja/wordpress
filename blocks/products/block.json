@@ -4,7 +4,7 @@
 	"name": "invoiceninja/products",
 	"title": "Products",
 	"category": "invoiceninja",
-	"description": "Your Invoice Ninja products as a grid. Prices and stock update by themselves.",
+	"description": "Your Invoice Ninja products as a grid, with category filters and sorting. Prices and stock update by themselves.",
 	"icon": "grid-view",
 	"keywords": [
 		"shop",
@@ -57,6 +57,25 @@
 			"enum": [
 				"show",
 				"hide"
+			]
+		},
+		"showFilter": {
+			"type": "boolean",
+			"default": true
+		},
+		"showSort": {
+			"type": "boolean",
+			"default": true
+		},
+		"descriptor": {
+			"type": "string",
+			"default": "",
+			"enum": [
+				"",
+				"custom_value1",
+				"custom_value2",
+				"custom_value3",
+				"custom_value4"
 			]
 		}
 	},

@@ -54,6 +54,16 @@ final class Checkout {
 	public const POSTCODE_REQUIRED = array( '840' );
 
 	/**
+	 * A delivery address's fields, named as Invoice Ninja names a client's shipping address.
+	 */
+	public const DELIVERY_FIELDS = array( 'shipping_address1', 'shipping_address2', 'shipping_city', 'shipping_state', 'shipping_postal_code', 'shipping_country_id' );
+
+	/**
+	 * Longest value for one delivery address field.
+	 */
+	public const DELIVERY_MAX_LENGTH = 100;
+
+	/**
 	 * Constructor.
 	 *
 	 * @param Plugin         $plugin  Plugin.
@@ -255,6 +265,127 @@ final class Checkout {
 	}
 
 	/**
+	 * Whether checkout asks for a delivery address (Settings → Store, off by default). It's
+	 * saved as the client's shipping address in Invoice Ninja; nothing is charged for it.
+	 */
+	public function deliveryFields(): bool {
+		return (bool) $this->plugin->options->setting( 'store.delivery_address' );
+	}
+
+	/**
+	 * What the checkout form needs for the delivery address. Sent with the cart and with a
+	 * delivery_address error, since a cached page may predate the setting changing.
+	 *
+	 * @return array{fields: bool, countries: list<array{0: string, 1: string}>, country: string}
+	 */
+	public function deliveryConfig(): array {
+		$fields    = $this->deliveryFields();
+		$countries = array();
+		foreach ( $fields ? $this->plugin->statics->countries() : array() as $id => $name ) {
+			$countries[] = array( (string) $id, (string) $name );
+		}
+		return array(
+			'fields'    => $fields,
+			'countries' => $countries,
+			'country'   => (string) ( $this->plugin->state->get()['company']['country_id'] ?? '' ),
+		);
+	}
+
+	/**
+	 * Check the delivery address when it's asked for.
+	 *
+	 * @param array<string, string> $details Buyer details.
+	 * @return array<string, mixed>|null The error reply, or null when it's fine (or not needed).
+	 */
+	private function deliveryAddressError( array $details ): ?array {
+		if ( ! $this->deliveryFields() ) {
+			return null;
+		}
+		$errors = self::deliveryAddressErrors( self::deliveryAddress( $details ), array_keys( $this->plugin->statics->countries() ) );
+		if ( ! $errors ) {
+			return null;
+		}
+		return array(
+			'ok'               => false,
+			'code'             => 'delivery_address',
+			'message'          => __( 'Check the delivery address.', 'invoiceninja' ) . ' ' . (string) reset( $errors ),
+			'fields'           => $errors,
+			'delivery_address' => $this->deliveryConfig(),
+		);
+	}
+
+	/**
+	 * The delivery address from the buyer's details: the shipping_* fields, trimmed.
+	 *
+	 * @param array<string, mixed> $details Buyer details.
+	 * @return array<string, string>
+	 */
+	public static function deliveryAddress( array $details ): array {
+		$address = array();
+		foreach ( self::DELIVERY_FIELDS as $field ) {
+			$value             = $details[ $field ] ?? '';
+			$address[ $field ] = is_scalar( $value ) ? trim( sanitize_text_field( (string) $value ) ) : '';
+		}
+		return $address;
+	}
+
+	/**
+	 * Field errors for a delivery address. The street, town and country are required (the
+	 * country only when Invoice Ninja's country list is known); the second line, the state
+	 * or region and the postcode are optional, and a postcode that's given must look like one.
+	 *
+	 * @param array<string, string> $address   The shipping_* fields.
+	 * @param list<int|string>      $countries Known country ids (empty: not checked).
+	 * @return array<string, string> Errors by field.
+	 */
+	public static function deliveryAddressErrors( array $address, array $countries ): array {
+		$errors = array();
+		foreach ( self::DELIVERY_FIELDS as $field ) {
+			if ( mb_strlen( (string) ( $address[ $field ] ?? '' ) ) > self::DELIVERY_MAX_LENGTH ) {
+				$errors[ $field ] = __( 'This is too long.', 'invoiceninja' );
+			}
+		}
+		if ( '' === (string) ( $address['shipping_address1'] ?? '' ) ) {
+			$errors['shipping_address1'] = __( 'Enter the street address.', 'invoiceninja' );
+		}
+		if ( '' === (string) ( $address['shipping_city'] ?? '' ) ) {
+			$errors['shipping_city'] = __( 'Enter the town or city.', 'invoiceninja' );
+		}
+		$country = (string) ( $address['shipping_country_id'] ?? '' );
+		if ( $countries && ( '' === $country || ! in_array( $country, array_map( 'strval', $countries ), true ) ) ) {
+			$errors['shipping_country_id'] = __( 'Choose the country.', 'invoiceninja' );
+		} elseif ( ! $countries && '' !== $country && ! ctype_digit( $country ) ) {
+			$errors['shipping_country_id'] = __( 'Choose the country.', 'invoiceninja' );
+		}
+		$postcode = (string) ( $address['shipping_postal_code'] ?? '' );
+		if ( '' !== $postcode && ! isset( $errors['shipping_postal_code'] ) && ! preg_match( '/^[A-Za-z0-9][A-Za-z0-9 -]{0,15}$/', $postcode ) ) {
+			$errors['shipping_postal_code'] = __( 'Check the postcode.', 'invoiceninja' );
+		}
+		return $errors;
+	}
+
+	/**
+	 * A stored delivery address as lines to show: street, second line, town with region and
+	 * postcode, country.
+	 *
+	 * @param array<string, mixed>  $address   The shipping_* fields.
+	 * @param array<string, string> $countries Country names by id.
+	 * @return list<string>
+	 */
+	public static function addressLines( array $address, array $countries ): array {
+		$get     = static fn( string $field ): string => trim( (string) ( $address[ $field ] ?? '' ) );
+		$country = $get( 'shipping_country_id' );
+		$town    = trim( implode( ' ', array_filter( array( $get( 'shipping_state' ), $get( 'shipping_postal_code' ) ) ) ) );
+		$lines   = array(
+			$get( 'shipping_address1' ),
+			$get( 'shipping_address2' ),
+			implode( ', ', array_filter( array( $get( 'shipping_city' ), $town ) ) ),
+			'' !== $country ? (string) ( $countries[ $country ] ?? '' ) : '',
+		);
+		return array_values( array_filter( $lines, static fn( string $line ): bool => '' !== $line ) );
+	}
+
+	/**
 	 * The spam trap: a field people never see or fill. It isn't called "website" or anything
 	 * else autofill or a password manager would fill in for a real shopper.
 	 *
@@ -359,7 +490,7 @@ final class Checkout {
 	/**
 	 * Step 1: validate and send a code.
 	 *
-	 * @param array<string, string> $details email, first_name, last_name, phone, country_id, postal_code.
+	 * @param array<string, string> $details email, first_name, last_name, phone, country_id, postal_code, shipping_*.
 	 * @param string                $ip      Shopper IP.
 	 * @param array<string, mixed>  $form    trap (spam trap), total (as shown), input (everything sent, for a CAPTCHA).
 	 * @return array<string, mixed>
@@ -423,6 +554,10 @@ final class Checkout {
 		if ( null !== $tax ) {
 			return $tax;
 		}
+		$delivery = $this->deliveryAddressError( $details );
+		if ( null !== $delivery ) {
+			return $delivery;
+		}
 		// Stock right now, before the code is sent (limited per address: each check calls Invoice Ninja).
 		if ( $this->plugin->options->increment( 'ctr_stock_' . substr( md5( self::ipBucket( $ip ) ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) <= 60 ) {
 			$this->stock->refresh( $this->cart->items( $cart_id ) );
@@ -478,7 +613,7 @@ final class Checkout {
 	/**
 	 * Step 2: check the code and place the order.
 	 *
-	 * @param array<string, string> $details  email, first_name, last_name, phone, country_id, postal_code.
+	 * @param array<string, string> $details  email, first_name, last_name, phone, country_id, postal_code, shipping_*.
 	 * @param string                $code     Code (empty when the device is remembered).
 	 * @param bool                  $remember Remember this device.
 	 * @param string                $ip       Shopper IP.
@@ -531,6 +666,10 @@ final class Checkout {
 		if ( null !== $tax ) {
 			return $tax;
 		}
+		$delivery = $this->deliveryAddressError( $details );
+		if ( null !== $delivery ) {
+			return $delivery;
+		}
 
 		if ( ! $this->verifiedBuyer( $email ) && ! $this->device->current( $email ) ) {
 			$result = $this->codes->verify( $email, $code, 'checkout', $ip );
@@ -582,6 +721,10 @@ final class Checkout {
 				$customer['country_id']  = sanitize_text_field( $details['country_id'] ?? '' );
 				$customer['postal_code'] = strtoupper( trim( sanitize_text_field( $details['postal_code'] ?? '' ) ) );
 			}
+			if ( $this->deliveryFields() ) {
+				// Kept with the order (Order Status, Orders, the privacy export) and saved as the client's shipping address.
+				$customer['shipping'] = self::deliveryAddress( $details );
+			}
 			try {
 				$order = $this->orders->create(
 					array(
@@ -626,13 +769,16 @@ final class Checkout {
 	/**
 	 * The order as the buyer may see it.
 	 *
-	 * @param array<string, mixed> $order    Order.
-	 * @param bool                 $with_key Include the status link.
+	 * @param array<string, mixed>      $order    Order.
+	 * @param bool                      $with_key Include the status link.
+	 * @param array<string, mixed>|null $invoice  The order's invoice from Invoice Ninja, for the price breakdown (null: the cached copy, if any).
 	 * @return array<string, mixed>
 	 */
-	public function publicView( array $order, bool $with_key ): array {
-		$items = (array) $order['items'];
-		$view  = array(
+	public function publicView( array $order, bool $with_key, ?array $invoice = null ): array {
+		$items    = (array) $order['items'];
+		$invoice  = $invoice ?? ( '' !== (string) $order['invoice_id'] ? $this->service->cachedInvoice( $order ) : null );
+		$shipping = is_array( $order['customer']['shipping'] ?? null ) ? $order['customer']['shipping'] : array();
+		$view     = array(
 			'number'         => (string) $order['number'],
 			'status'         => (string) $order['status'],
 			'total'          => (float) $order['total'],
@@ -643,13 +789,25 @@ final class Checkout {
 			'invoice_number' => (string) $order['invoice_number'],
 			'items'          => array_map(
 				static fn( array $i ): array => array(
-					'product'  => (string) ( $i['product'] ?? '' ),
-					'title'    => (string) $i['title'],
-					'quantity' => (int) $i['quantity'],
-					'price'    => (float) $i['price'],
+					'product'    => (string) ( $i['product'] ?? '' ),
+					'title'      => (string) $i['title'],
+					'key'        => (string) ( $i['product_key'] ?? '' ),
+					'quantity'   => (int) $i['quantity'],
+					'price'      => (float) $i['price'],
+					'line_total' => (float) ( $i['line_total'] ?? round( (float) $i['price'] * (int) $i['quantity'], 2 ) ),
+					// Today's image when the product is still here, else the one it had.
+					'image'      => Cart::thumbnail( (int) ( $i['post_id'] ?? 0 ) ) ?: (string) ( $i['image'] ?? '' ),
 				),
 				$items
 			),
+			'first_name'     => (string) ( $order['customer']['first_name'] ?? '' ),
+			// The two real stages, with their dates: placed (the invoice was made) and paid.
+			'placed_on'      => self::day( (string) ( $order['placed_at'] ?? '' ) ?: (string) $order['created_at'] ),
+			'paid_on'        => 'paid' === $order['status'] ? self::day( (string) ( $order['paid_at'] ?? '' ) ) : '',
+			'address'        => self::addressLines( $shipping, $this->plugin->statics->countries() ),
+			// Figures from the invoice itself (lines, tax, total), once it exists.
+			'invoice'        => null !== $invoice && null === OrderService::gone( $invoice ) ? OrderService::breakdown( $invoice ) : null,
+			'pdf'            => in_array( $order['status'], array( 'awaiting_payment', 'paid' ), true ) && '' !== (string) $order['invoice_id'],
 			'email'          => self::maskEmail( (string) $order['email'] ),
 			'pay_link'       => 'awaiting_payment' === $order['status'] ? (string) $order['pay_link'] : '',
 			// The buyer's client in Invoice Ninja uses another currency: we can't take it online.
@@ -683,7 +841,85 @@ final class Checkout {
 		if ( null === $order || ! hash_equals( $this->key( (string) $order['number'] ), $key ) ) {
 			return null;
 		}
-		return $this->publicView( $this->service->refreshStatus( $order ), false );
+		$order = $this->service->refreshStatus( $order );
+		return $this->publicView( $order, false, '' !== (string) $order['invoice_id'] ? $this->service->invoice( $order ) : null );
+	}
+
+	/**
+	 * A UTC database time as a date in the site's format, or '' when there's none.
+	 *
+	 * @param string $utc Y-m-d H:i:s (UTC).
+	 */
+	private static function day( string $utc ): string {
+		$time = '' !== $utc ? strtotime( $utc . ' UTC' ) : false;
+		if ( ! $time ) {
+			return '';
+		}
+		$date = wp_date( (string) get_option( 'date_format' ), $time );
+		return is_string( $date ) ? $date : '';
+	}
+
+	/**
+	 * Requests for invoice PDFs per address an hour (each one asks Invoice Ninja).
+	 */
+	public const PDF_PER_IP_HOUR = 30;
+
+	/**
+	 * The invoice PDF for an order, for its Order Status page (the order key proves it's the
+	 * buyer). Uses the buyer's own invitation, the one in their payment link.
+	 *
+	 * @param string $number Order number.
+	 * @param string $key    Status key.
+	 * @param string $ip     Requester IP.
+	 * @return array{body: string, filename: string}|string|null The file; 'limited' when this
+	 *         address asked for too many this hour; null when the number or key is wrong or
+	 *         there is no invoice.
+	 * @throws \InvoiceNinja\Api\ApiException When Invoice Ninja can't be reached.
+	 */
+	public function invoicePdf( string $number, string $key, string $ip ): array|string|null {
+		$order = $this->orders->findBy( 'number', $number );
+		if ( null === $order || ! hash_equals( $this->key( (string) $order['number'] ), $key ) ) {
+			return null;
+		}
+		if ( ! in_array( $order['status'], array( 'awaiting_payment', 'paid' ), true ) || '' === (string) $order['invoice_id'] ) {
+			return null;
+		}
+		if ( $this->plugin->options->increment( 'ctr_pdf_' . substr( md5( self::ipBucket( $ip ) ), 0, 16 ) . '_' . (int) floor( time() / HOUR_IN_SECONDS ) ) > self::PDF_PER_IP_HOUR ) {
+			return 'limited';
+		}
+		$invitation = self::invitationKey( (string) $order['pay_link'] );
+		if ( '' === $invitation ) {
+			// No payment link kept: the buyer's own invitation on the invoice.
+			$invoice = $this->service->invoice( $order );
+			foreach ( (array) ( $invoice['invitations'] ?? array() ) as $item ) {
+				if ( is_array( $item ) && '' !== (string) ( $order['customer']['contact_id'] ?? '' ) && (string) ( $item['client_contact_id'] ?? '' ) === (string) $order['customer']['contact_id'] ) {
+					$invitation = (string) ( $item['key'] ?? '' );
+				}
+			}
+		}
+		if ( '' === $invitation || ! preg_match( '/^[A-Za-z0-9]{1,64}$/', $invitation ) ) {
+			return null;
+		}
+		$file = $this->plugin->api()->download( 'invoice/' . rawurlencode( $invitation ) . '/download', 10.0 );
+		if ( ! str_starts_with( $file['body'], '%PDF' ) ) {
+			return null;
+		}
+		$name = '' !== (string) $order['invoice_number'] ? (string) $order['invoice_number'] : (string) $order['number'];
+		return array(
+			'body'     => $file['body'],
+			/* translators: %s: invoice number */
+			'filename' => sanitize_file_name( sprintf( __( 'Invoice %s', 'invoiceninja' ), $name ) . '.pdf' ),
+		);
+	}
+
+	/**
+	 * The invitation key in an invoice's payment link (…/client/invoice/{key}), or ''.
+	 *
+	 * @param string $link Payment link.
+	 */
+	public static function invitationKey( string $link ): string {
+		$path = (string) wp_parse_url( $link, PHP_URL_PATH );
+		return preg_match( '#/client/invoice/([A-Za-z0-9]{1,64})/?$#', $path, $m ) ? $m[1] : '';
 	}
 
 	/**
@@ -869,8 +1105,12 @@ final class Checkout {
 		if ( self::taxLater( $order ) ) {
 			$lines .= '<tr><td style="padding:4px 0;color:#50575e">' . esc_html__( 'Tax', 'invoiceninja' ) . '</td><td style="padding:4px 0;text-align:right;color:#50575e">' . esc_html__( 'Added on the payment page', 'invoiceninja' ) . '</td></tr>';
 		}
-		$label = self::taxLater( $order ) ? __( 'Total before tax', 'invoiceninja' ) : __( 'Total', 'invoiceninja' );
-		$table = '<table style="width:100%;border-collapse:collapse;border:1px solid #dcdcde;margin:12px 0" cellpadding="8">' . $lines . '<tr><td style="font-weight:600;border-top:1px solid #dcdcde">' . esc_html( $label ) . '</td><td style="font-weight:600;text-align:right;border-top:1px solid #dcdcde">' . esc_html( $money->money( (float) $order['total'] ) ) . '</td></tr></table>';
+		$label   = self::taxLater( $order ) ? __( 'Total before tax', 'invoiceninja' ) : __( 'Total', 'invoiceninja' );
+		$table   = '<table style="width:100%;border-collapse:collapse;border:1px solid #dcdcde;margin:12px 0" cellpadding="8">' . $lines . '<tr><td style="font-weight:600;border-top:1px solid #dcdcde">' . esc_html( $label ) . '</td><td style="font-weight:600;text-align:right;border-top:1px solid #dcdcde">' . esc_html( $money->money( (float) $order['total'] ) ) . '</td></tr></table>';
+		$address = self::addressLines( is_array( $order['customer']['shipping'] ?? null ) ? $order['customer']['shipping'] : array(), $this->plugin->statics->countries() );
+		if ( $address ) {
+			$table .= '<p><strong>' . esc_html__( 'Delivery address', 'invoiceninja' ) . '</strong><br>' . implode( '<br>', array_map( 'esc_html', $address ) ) . '</p>';
+		}
 		if ( 'awaiting_payment' === $order['status'] && '' !== (string) $order['pay_link'] ) {
 			/* translators: %s: order number */
 			$subject = sprintf( __( 'Order #%s · complete your payment', 'invoiceninja' ), $order['number'] );

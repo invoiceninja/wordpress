@@ -10,7 +10,7 @@
 	}
 	const { useEffect, useState } = wp.element;
 	const { __, sprintf } = wp.i18n;
-	const { PanelBody, CheckboxControl, SelectControl, TextControl, ToggleControl, Spinner } = wp.components;
+	const { PanelBody, CheckboxControl, SelectControl, TextControl, TextareaControl, ToggleControl, Spinner } = wp.components;
 	const cfg = window.invoiceNinjaSubscriptionsEditor || {};
 
 	let cache = null;
@@ -47,6 +47,7 @@
 		const list = useSubscriptions();
 		const ids = split( a.ids );
 		const yearly = pairs( a.yearly );
+		const details = a.planDetails && typeof a.planDetails === 'object' && ! Array.isArray( a.planDetails ) ? a.planDetails : {};
 		if ( list === null ) {
 			return h( PanelBody, { title: __( 'Plans', 'invoiceninja' ) }, h( Spinner ) );
 		}
@@ -78,6 +79,39 @@
 						onChange: ( v ) => set( { yearly: joinPairs( Object.assign( {}, yearly, { [ id ]: v } ) ) } ),
 						__nextHasNoMarginBottom: true,
 					} );
+				} ) ) : null,
+			ids.length ? h( PanelBody, { key: 'details', title: __( 'Plan text', 'invoiceninja' ), initialOpen: false },
+				h( 'p', null, __( 'Optional. Invoice Ninja subscriptions have no description, so add one here for each plan shown. A paired plan’s other period uses the same text.', 'invoiceninja' ) ),
+				ids.map( ( id ) => {
+					const s = list.find( ( x ) => x.id === id );
+					const name = s ? s.name : id;
+					const d = details[ id ] || {};
+					const change = ( field, v ) => set( { planDetails: Object.assign( {}, details, { [ id ]: Object.assign( {}, d, { [ field ]: v } ) } ) } );
+					return h( 'fieldset', { key: id, className: 'invoiceninja-plan-text' },
+						h( 'legend', null, h( 'strong', null, name ) ),
+						h( TextControl, {
+							label: __( 'Name shown', 'invoiceninja' ),
+							help: __( 'Leave empty to use the name from Invoice Ninja.', 'invoiceninja' ),
+							placeholder: name,
+							value: d.name || '',
+							onChange: ( v ) => change( 'name', v ),
+							__nextHasNoMarginBottom: true,
+						} ),
+						h( TextareaControl, {
+							label: __( 'Description', 'invoiceninja' ),
+							value: d.description || '',
+							rows: 2,
+							onChange: ( v ) => change( 'description', v ),
+							__nextHasNoMarginBottom: true,
+						} ),
+						h( TextareaControl, {
+							label: __( 'What’s included', 'invoiceninja' ),
+							help: __( 'One per line, shown with a check mark. Only promise what the plan really includes.', 'invoiceninja' ),
+							value: d.perks || '',
+							rows: 4,
+							onChange: ( v ) => change( 'perks', v ),
+							__nextHasNoMarginBottom: true,
+						} ) );
 				} ) ) : null,
 			h( PanelBody, { key: 'look', title: __( 'Settings', 'invoiceninja' ), initialOpen: false },
 				h( SelectControl, {
