@@ -149,7 +149,7 @@
 						__( 'your Invoice Ninja address and an API token from an admin. Hosted Invoice Ninja needs a Pro or Enterprise plan to connect; self-hosted works on any plan.', 'invoiceninja' ) ) ),
 				h( Card, { className: 'in-row-card' },
 					h( 'strong', null, __( 'New to Invoice Ninja?', 'invoiceninja' ) ),
-					h( 'span', { className: 'in-muted' }, __( "It's free and open source.", 'invoiceninja' ) ),
+					h( 'span', { className: 'in-muted' }, __( "It's free to self-host.", 'invoiceninja' ) ),
 					h( External, { className: 'button', href: 'https://invoiceninja.github.io/en/self-host-installation/' }, __( 'Self-host it for free', 'invoiceninja' ) ),
 					h( External, { className: 'button', href: 'https://invoiceninja.com/pricing-plans/' }, __( 'Hosted, Pro plan', 'invoiceninja' ) ) ) );
 		}
@@ -463,7 +463,7 @@
 					h( 'p', { className: 'description' }, __( "The address you use to log in to Invoice Ninja. Paste it as it is; we'll fix the format.", 'invoiceninja' ) ),
 					normalized ? h( 'p', null, __( "We'll connect to", 'invoiceninja' ), ' ', h( 'strong', null, normalized ) ) : null ) : null,
 				where === 'none' ? h( Notice, { type: 'info', title: __( 'Get Invoice Ninja first', 'invoiceninja' ) },
-					h( 'p', null, __( 'Invoice Ninja is free, open-source invoicing. Self-hosted connects on any plan. Hosted accounts need a Pro or Enterprise plan to connect.', 'invoiceninja' ) ),
+					h( 'p', null, __( 'Invoice Ninja is source-available invoicing, free to self-host. Self-hosted connects on any plan. Hosted accounts need a Pro or Enterprise plan to connect.', 'invoiceninja' ) ),
 					h( 'p', { className: 'in-row' },
 						h( External, { className: 'button', href: 'https://invoiceninja.github.io/en/self-host-installation/' }, __( 'Self-host it for free', 'invoiceninja' ) ),
 						h( External, { className: 'button', href: 'https://invoiceninja.com/pricing-plans/' }, __( 'Create a hosted account (Pro plan)', 'invoiceninja' ) ) ),

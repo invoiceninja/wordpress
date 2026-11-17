@@ -19,7 +19,7 @@
 
 <p align="center"><img src="docs/images/shop.png" alt="A shop page built with the Invoice Ninja blocks" width="900"></p>
 
-[Invoice Ninja](https://invoiceninja.com) is open-source invoicing, either hosted at [invoicing.co](https://invoicing.co) or self-hosted. This plugin connects it to WordPress:
+[Invoice Ninja](https://invoiceninja.com) is source-available invoicing, either hosted at [invoicing.co](https://invoicing.co) or self-hosted. This plugin connects it to WordPress:
 
 - **Your products, prices and stock come from Invoice Ninja.** Change them there and the site updates by itself.
 - **Every order becomes an invoice in Invoice Ninja**, and customers pay on Invoice Ninja's secure payment page with the gateway you already use, whether that's Stripe, PayPal or any of the others.

@@ -12,7 +12,7 @@ Sell your Invoice Ninja products, give customers an account for their invoices, 
 
 == Description ==
 
-Invoice Ninja for WordPress connects your site to [Invoice Ninja](https://invoiceninja.com), the open-source invoicing app, either hosted at invoicing.co (Pro or Enterprise plan) or self-hosted (any plan, free).
+Invoice Ninja for WordPress connects your site to [Invoice Ninja](https://invoiceninja.com), the source-available invoicing app, either hosted at invoicing.co (Pro or Enterprise plan) or self-hosted (any plan, free).
 
 Your products, prices and stock come from Invoice Ninja. Every order becomes an invoice there, and customers pay on Invoice Ninja's secure payment page with the gateway you already use.
 
