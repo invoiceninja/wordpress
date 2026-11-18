@@ -24,6 +24,9 @@ final class Store {
 
 	public const HANDLE = 'invoiceninja-store';
 
+	/** The block template slug for one product's page. */
+	private const PRODUCT_TEMPLATE = 'single-' . ProductSync::POST_TYPE;
+
 	/**
 	 * Script for the shop filters, the quantity stepper and the photo gallery.
 	 */
@@ -176,23 +179,98 @@ final class Store {
 		if ( ! function_exists( 'register_block_template' ) || $this->legacy() ) {
 			return;
 		}
-		register_block_template(
-			'invoiceninja//single-' . ProductSync::POST_TYPE,
-			array(
-				'title'       => __( 'Invoice Ninja product', 'invoiceninja' ),
-				'description' => __( 'One product: image, price, Add to cart and description.', 'invoiceninja' ),
-				'post_types'  => array( ProductSync::POST_TYPE ),
-				'content'     => '<!-- wp:template-part {"slug":"header","tagName":"header"} /-->'
-					. '<!-- wp:group {"tagName":"main","style":{"spacing":{"padding":{"top":"var:preset|spacing|60","bottom":"var:preset|spacing|60"}}},"layout":{"type":"constrained"}} -->'
-					. '<main class="wp-block-group" style="padding-top:var(--wp--preset--spacing--60);padding-bottom:var(--wp--preset--spacing--60)">'
-					. '<!-- wp:columns {"align":"wide","style":{"spacing":{"blockGap":{"left":"var:preset|spacing|50"}}}} -->'
-					. '<div class="wp-block-columns alignwide">'
-					. '<!-- wp:column --><div class="wp-block-column"><!-- wp:invoiceninja/product {"show":"gallery"} /--></div><!-- /wp:column -->'
-					. '<!-- wp:column {"verticalAlignment":"center"} --><div class="wp-block-column is-vertically-aligned-center">'
-					. '<!-- wp:post-title {"level":1} /--><!-- wp:post-content {"layout":{"type":"default"}} /-->'
-					. '</div><!-- /wp:column --></div><!-- /wp:columns --></main><!-- /wp:group -->'
-					. '<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->',
-			)
+		// WordPress 6.7 refuses template names with an underscore (allowed from 6.8), and the
+		// post type's single template needs one, so 6.7 gets the same template through filters.
+		if ( version_compare( get_bloginfo( 'version' ), '6.8-alpha', '<' ) ) {
+			add_filter( 'get_block_templates', array( $this, 'addProductTemplate' ), 10, 3 );
+			add_filter( 'get_block_file_template', array( $this, 'productFileTemplate' ), 10, 3 );
+			return;
+		}
+		register_block_template( 'invoiceninja//' . self::PRODUCT_TEMPLATE, self::productTemplateArgs() );
+	}
+
+	/**
+	 * WordPress 6.7: our product template among the theme's, unless the theme has its own or
+	 * it was edited in the Site Editor (both come back with the same slug, and win).
+	 *
+	 * @param mixed                $templates Templates found.
+	 * @param array<string, mixed> $query     Query: slug__in, slug__not_in, post_type.
+	 * @param string               $type      wp_template or wp_template_part.
+	 * @return mixed
+	 */
+	public function addProductTemplate( $templates, array $query = array(), string $type = 'wp_template' ) {
+		if ( ! is_array( $templates ) || 'wp_template' !== $type
+			|| ( ! empty( $query['slug__in'] ) && ! in_array( self::PRODUCT_TEMPLATE, (array) $query['slug__in'], true ) )
+			|| ( ! empty( $query['slug__not_in'] ) && in_array( self::PRODUCT_TEMPLATE, (array) $query['slug__not_in'], true ) )
+			|| ( ! empty( $query['post_type'] ) && ProductSync::POST_TYPE !== $query['post_type'] ) ) {
+			return $templates;
+		}
+		foreach ( $templates as $template ) {
+			if ( $template instanceof \WP_Block_Template && self::PRODUCT_TEMPLATE === $template->slug ) {
+				return $templates;
+			}
+		}
+		$templates[] = self::productBlockTemplate();
+		return $templates;
+	}
+
+	/**
+	 * WordPress 6.7: the Site Editor opens our product template by its id.
+	 *
+	 * @param mixed  $template Template found, or null.
+	 * @param string $id       Template id: theme//slug.
+	 * @param string $type     wp_template or wp_template_part.
+	 * @return mixed
+	 */
+	public function productFileTemplate( $template, string $id = '', string $type = 'wp_template' ) {
+		if ( null === $template && 'wp_template' === $type && get_stylesheet() . '//' . self::PRODUCT_TEMPLATE === $id ) {
+			return self::productBlockTemplate();
+		}
+		return $template;
+	}
+
+	/**
+	 * The product template as WordPress 6.8+ builds it from register_block_template().
+	 */
+	private static function productBlockTemplate(): \WP_Block_Template {
+		$args                  = self::productTemplateArgs();
+		$template              = new \WP_Block_Template();
+		$template->id          = get_stylesheet() . '//' . self::PRODUCT_TEMPLATE;
+		$template->theme       = get_stylesheet();
+		$template->plugin      = 'invoiceninja';
+		$template->content     = $args['content'];
+		$template->source      = 'plugin';
+		$template->origin      = 'plugin';
+		$template->slug        = self::PRODUCT_TEMPLATE;
+		$template->type        = 'wp_template';
+		$template->title       = $args['title'];
+		$template->description = $args['description'];
+		$template->status      = 'publish';
+		$template->is_custom   = true;
+		$template->post_types  = $args['post_types'];
+		return $template;
+	}
+
+	/**
+	 * Title, description, post types and content of the product template.
+	 *
+	 * @return array{title: string, description: string, post_types: array<int, string>, content: string}
+	 */
+	private static function productTemplateArgs(): array {
+		return array(
+			'title'       => __( 'Invoice Ninja product', 'invoiceninja' ),
+			'description' => __( 'One product: image, price, Add to cart and description.', 'invoiceninja' ),
+			'post_types'  => array( ProductSync::POST_TYPE ),
+			'content'     => '<!-- wp:template-part {"slug":"header","tagName":"header"} /-->'
+				. '<!-- wp:group {"tagName":"main","style":{"spacing":{"padding":{"top":"var:preset|spacing|60","bottom":"var:preset|spacing|60"}}},"layout":{"type":"constrained"}} -->'
+				. '<main class="wp-block-group" style="padding-top:var(--wp--preset--spacing--60);padding-bottom:var(--wp--preset--spacing--60)">'
+				. '<!-- wp:columns {"align":"wide","style":{"spacing":{"blockGap":{"left":"var:preset|spacing|50"}}}} -->'
+				. '<div class="wp-block-columns alignwide">'
+				. '<!-- wp:column --><div class="wp-block-column"><!-- wp:invoiceninja/product {"show":"gallery"} /--></div><!-- /wp:column -->'
+				. '<!-- wp:column {"verticalAlignment":"center"} --><div class="wp-block-column is-vertically-aligned-center">'
+				. '<!-- wp:post-title {"level":1} /--><!-- wp:post-content {"layout":{"type":"default"}} /-->'
+				. '</div><!-- /wp:column --></div><!-- /wp:columns --></main><!-- /wp:group -->'
+				. '<!-- wp:template-part {"slug":"footer","tagName":"footer"} /-->',
 		);
 	}
 

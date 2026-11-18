@@ -1703,7 +1703,11 @@ def product_tags_photos_filters_and_the_product_page():
               'quantity stepper and Add to cart with the price', out)
         check('invoiceninja-product__descriptor">Blue glaze<' in out, 'the descriptor on the product page', out)
         _, _, page = Browser().get('/' + wp_eval("echo get_permalink(%s);" % widget).split('8089/', 1)[-1])
-        check(page.count('data-invoiceninja-add="P1"') == 1 and 'invoiceninja-gallery' in page and page.count('Widget description') == 1, 'the product page shows photos, one button and the description once', page[:3000])
+        seen = {'buttons': page.count('data-invoiceninja-add="P1"'), 'gallery': 'invoiceninja-gallery' in page, 'descriptions': page.count('Widget description')}
+        check(seen == {'buttons': 1, 'gallery': True, 'descriptions': 1}, 'the product page shows photos, one button and the description once', seen)
+        body = page.split('<body', 1)[-1]
+        check('wp-block-post-author' not in body and 'invoiceninja-gallery__main' in body.split('<h1 class="wp-block-post-title', 1)[0],
+              "the plugin's template: photos beside the title, no byline (WordPress 6.7 included)", body[:3000])
 
         # Renamed and removed in Invoice Ninja
         before = wp_eval("echo get_term_by('name', 'Gifts', 'invoiceninja_category')->term_id;")
